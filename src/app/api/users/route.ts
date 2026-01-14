@@ -4,6 +4,8 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     const user = await verifyAuth(request);

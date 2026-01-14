@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { processCheckout, PaymentMethod } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
+export const dynamic = "force-dynamic";
+
 interface CartItem {
   productId: string;
   size: string;
