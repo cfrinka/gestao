@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatPercentage } from "@/lib/utils";
+import { apiGet } from "@/lib/api-client";
 import { BarChart3, Download, FileText } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -48,9 +49,8 @@ export default function ReportsPage() {
       if (endDate) params.append("endDate", endDate);
       if (params.toString()) url += `?${params.toString()}`;
 
-      const res = await fetch(url);
-      const data = await res.json();
-      setReports(data);
+      const data = await apiGet(url);
+      setReports(Array.isArray(data) ? data : []);
     } catch (error) {
       toast({ title: "Erro ao carregar relatórios", variant: "destructive" });
     } finally {
