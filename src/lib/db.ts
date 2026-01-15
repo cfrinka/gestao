@@ -491,3 +491,50 @@ export async function getCashRegisterOrders(registerId: string): Promise<Order[]
     ...convertTimestamp(doc.data()),
   })) as Order[];
 }
+
+// Store Settings
+export interface StoreSettings {
+  id: string;
+  storeName: string;
+  address: string;
+  phone: string;
+  cnpj: string;
+  footerMessage: string;
+  updatedAt: Date;
+}
+
+const DEFAULT_SETTINGS: Omit<StoreSettings, 'id' | 'updatedAt'> = {
+  storeName: 'Gestão Loja',
+  address: '',
+  phone: '',
+  cnpj: '',
+  footerMessage: 'Obrigado pela preferência!\nVolte sempre!',
+};
+
+export async function getStoreSettings(): Promise<StoreSettings> {
+  const doc = await adminDb.collection("settings").doc("store").get();
+  
+  if (!doc.exists) {
+    return {
+      id: 'store',
+      ...DEFAULT_SETTINGS,
+      updatedAt: new Date(),
+    };
+  }
+  
+  return {
+    id: doc.id,
+    ...DEFAULT_SETTINGS,
+    ...convertTimestamp(doc.data()!),
+  } as StoreSettings;
+}
+
+export async function updateStoreSettings(settings: Partial<Omit<StoreSettings, 'id' | 'updatedAt'>>): Promise<StoreSettings> {
+  const now = new Date();
+  await adminDb.collection("settings").doc("store").set({
+    ...settings,
+    updatedAt: Timestamp.fromDate(now),
+  }, { merge: true });
+  
+  return getStoreSettings();
+}

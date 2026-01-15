@@ -72,6 +72,14 @@ interface Order {
   createdAt: string;
 }
 
+interface StoreSettings {
+  storeName: string;
+  address: string;
+  phone: string;
+  cnpj: string;
+  footerMessage: string;
+}
+
 export default function POSPage() {
   const { toast } = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -94,13 +102,38 @@ export default function POSPage() {
   const [openingBalance, setOpeningBalance] = useState<number>(0);
   const [closingBalance, setClosingBalance] = useState<number>(0);
   const [closingReportData, setClosingReportData] = useState<{ register: CashRegister; orders: Order[] } | null>(null);
+  
+  // Store settings for receipt
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>({
+    storeName: "Gestão Loja",
+    address: "",
+    phone: "",
+    cnpj: "",
+    footerMessage: "Obrigado pela preferência!\nVolte sempre!",
+  });
 
   useEffect(() => {
     fetchProducts();
     fetchCashRegister();
+    fetchStoreSettings();
     // Auto-focus search input for barcode scanner
     searchInputRef.current?.focus();
   }, []);
+  
+  const fetchStoreSettings = async () => {
+    try {
+      const data = await apiGet("/api/settings");
+      setStoreSettings({
+        storeName: data.storeName || "Gestão Loja",
+        address: data.address || "",
+        phone: data.phone || "",
+        cnpj: data.cnpj || "",
+        footerMessage: data.footerMessage || "Obrigado pela preferência!\nVolte sempre!",
+      });
+    } catch (error) {
+      console.error("Error fetching store settings:", error);
+    }
+  };
 
   // Re-focus search input after interactions (for continuous scanning)
   useEffect(() => {
@@ -368,6 +401,142 @@ export default function POSPage() {
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remaining = total - totalPaid;
 
+  const printReceipt = (orderId: string, orderTotal: number, orderPayments: PaymentMethod[], orderItems: CartItem[], change: number) => {
+    const receiptWindow = window.open('', '_blank', 'width=300,height=600');
+    if (!receiptWindow) {
+      toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
+      return;
+    }
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('pt-BR');
+    const timeStr = now.toLocaleTimeString('pt-BR');
+
+    const itemsHtml = orderItems.map(item => `
+      <tr>
+        <td style="text-align:left;">${item.product.name}${item.size ? ` (${item.size})` : ''}</td>
+        <td style="text-align:center;">${item.quantity}</td>
+        <td style="text-align:right;">${formatCurrency(item.product.salePrice * item.quantity)}</td>
+      </tr>
+    `).join('');
+
+    const paymentsHtml = orderPayments.filter(p => p.amount > 0).map(p => `
+      <tr>
+        <td>${p.method}</td>
+        <td style="text-align:right;">${formatCurrency(p.amount)}</td>
+      </tr>
+    `).join('');
+
+    receiptWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Cupom</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { 
+            font-family: 'Courier New', monospace; 
+            font-size: 12px; 
+            width: 80mm; 
+            padding: 5mm;
+          }
+          .header { text-align: center; margin-bottom: 10px; }
+          .header h1 { font-size: 16px; font-weight: bold; }
+          .header p { font-size: 10px; }
+          .divider { border-top: 1px dashed #000; margin: 8px 0; }
+          .info { margin-bottom: 8px; }
+          .info p { display: flex; justify-content: space-between; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { padding: 2px 0; font-size: 11px; }
+          th { text-align: left; border-bottom: 1px solid #000; }
+          .total-section { margin-top: 8px; }
+          .total-section p { display: flex; justify-content: space-between; font-size: 12px; }
+          .total-section .grand-total { font-size: 14px; font-weight: bold; }
+          .footer { text-align: center; margin-top: 15px; font-size: 10px; }
+          @media print {
+            body { width: 80mm; }
+            @page { margin: 0; size: 80mm auto; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${storeSettings.storeName.toUpperCase()}</h1>
+          ${storeSettings.address ? `<p>${storeSettings.address}</p>` : ''}
+          ${storeSettings.phone ? `<p>Tel: ${storeSettings.phone}</p>` : ''}
+          ${storeSettings.cnpj ? `<p>CNPJ: ${storeSettings.cnpj}</p>` : ''}
+          <p style="margin-top: 5px;">CUPOM NÃO FISCAL</p>
+        </div>
+        
+        <div class="divider"></div>
+        
+        <div class="info">
+          <p><span>Data:</span><span>${dateStr}</span></p>
+          <p><span>Hora:</span><span>${timeStr}</span></p>
+          <p><span>Pedido:</span><span>#${orderId.slice(-6).toUpperCase()}</span></p>
+          ${cashRegister ? `<p><span>Operador:</span><span>${cashRegister.userName}</span></p>` : ''}
+        </div>
+        
+        <div class="divider"></div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th style="text-align:center;">Qtd</th>
+              <th style="text-align:right;">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+        </table>
+        
+        <div class="divider"></div>
+        
+        <div class="total-section">
+          <p class="grand-total"><span>TOTAL:</span><span>${formatCurrency(orderTotal)}</span></p>
+        </div>
+        
+        <div class="divider"></div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Pagamento</th>
+              <th style="text-align:right;">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${paymentsHtml}
+          </tbody>
+        </table>
+        
+        ${change > 0 ? `
+          <div class="divider"></div>
+          <div class="total-section">
+            <p><span>TROCO:</span><span>${formatCurrency(change)}</span></p>
+          </div>
+        ` : ''}
+        
+        <div class="divider"></div>
+        
+        <div class="footer">
+          ${storeSettings.footerMessage.split('\n').map(line => `<p>${line}</p>`).join('')}
+        </div>
+        
+        <script>
+          window.onload = function() {
+            window.print();
+            window.onafterprint = function() { window.close(); };
+          };
+        </script>
+      </body>
+      </html>
+    `);
+    receiptWindow.document.close();
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0) {
       toast({ title: "Carrinho vazio", variant: "destructive" });
@@ -389,6 +558,10 @@ export default function POSPage() {
     }
 
     setProcessing(true);
+    const cartSnapshot = [...cart]; // Save cart before clearing
+    const paymentsSnapshot = payments.filter(p => p.amount > 0);
+    const change = totalPaid > total ? totalPaid - total : 0;
+    
     try {
       const order = await apiPost("/api/checkout", {
         items: cart.map((item) => ({
@@ -396,8 +569,12 @@ export default function POSPage() {
           size: item.size,
           quantity: item.quantity,
         })),
-        payments: payments.filter(p => p.amount > 0),
+        payments: paymentsSnapshot,
       });
+      
+      // Print receipt
+      printReceipt(order.id, order.totalAmount, paymentsSnapshot, cartSnapshot, change);
+      
       toast({
         title: "Venda realizada com sucesso!",
         description: `Pedido #${order.id.slice(-6).toUpperCase()} - ${formatCurrency(order.totalAmount)}`,
@@ -406,6 +583,7 @@ export default function POSPage() {
       setShowPaymentModal(false);
       setPayments([]);
       fetchProducts();
+      fetchCashRegister(); // Refresh cash register totals
     } catch (error) {
       toast({
         title: "Erro ao processar venda",
