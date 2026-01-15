@@ -38,7 +38,7 @@ export function Sidebar() {
 
   return (
     <div className="hidden md:flex md:w-64 md:flex-col">
-      <div className="flex flex-col flex-grow pt-5 bg-slate-900 overflow-y-auto">
+      <div className="flex flex-col flex-grow pt-5 bg-[#2A5473] overflow-y-auto">
         <div className="flex items-center flex-shrink-0 px-4 gap-2">
           <Store className="h-8 w-8 text-white" />
           <span className="text-white text-xl font-bold">Gestão Loja</span>
@@ -53,14 +53,14 @@ export function Sidebar() {
                   href={item.href}
                   className={cn(
                     isActive
-                      ? "bg-slate-800 text-white"
-                      : "text-slate-300 hover:bg-slate-700 hover:text-white",
-                    "group flex items-center px-2 py-2 text-sm font-medium rounded-md"
+                      ? "bg-[#355444] text-white"
+                      : "text-white/80 hover:bg-[#355444]/70 hover:text-white",
+                    "group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors"
                   )}
                 >
                   <item.icon
                     className={cn(
-                      isActive ? "text-white" : "text-slate-400 group-hover:text-slate-300",
+                      isActive ? "text-[#7ED957]" : "text-white/70 group-hover:text-white",
                       "mr-3 flex-shrink-0 h-5 w-5"
                     )}
                     aria-hidden="true"

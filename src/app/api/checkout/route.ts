@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { processCheckout, PaymentMethod } from "@/lib/db";
+import { processCheckout, PaymentMethod, getOpenCashRegister, updateCashRegisterSales } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +25,13 @@ export async function POST(request: NextRequest) {
     }
 
     const order = await processCheckout(items, payments || []);
+    
+    // Update cash register if open
+    const cashRegister = await getOpenCashRegister(user.uid);
+    if (cashRegister && payments && payments.length > 0) {
+      await updateCashRegisterSales(cashRegister.id, payments, order.totalAmount);
+    }
+    
     return NextResponse.json(order, { status: 201 });
   } catch (error) {
     console.error("Checkout error:", error);

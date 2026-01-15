@@ -37,15 +37,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
-      <Card className="w-full max-w-md mx-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#2A5473] to-[#355444]">
+      <Card className="w-full max-w-md mx-4 shadow-2xl">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-primary rounded-full">
-              <Store className="h-8 w-8 text-primary-foreground" />
+            <div className="p-3 bg-[#2A5473] rounded-full">
+              <Store className="h-8 w-8 text-white" />
             </div>
           </div>
-          <CardTitle className="text-2xl">Gestão Loja</CardTitle>
+          <CardTitle className="text-2xl text-[#2A5473]">Gestão Loja</CardTitle>
           <CardDescription>
             Entre com suas credenciais para acessar o sistema
           </CardDescription>

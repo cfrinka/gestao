@@ -15,13 +15,13 @@ export function Header() {
   };
 
   return (
-    <header className="bg-white shadow-sm border-b">
+    <header className="bg-white shadow-sm border-b border-[#2A5473]/10">
       <div className="flex items-center justify-between px-6 py-4">
         <div>
-          <h2 className="text-lg font-semibold text-gray-800">
+          <h2 className="text-lg font-semibold text-[#2A5473]">
             Bem-vindo, {userData?.name || "Usuário"}
           </h2>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-[#355444]">
             {userData?.role === "ADMIN"
               ? "Administrador"
               : userData?.role === "OWNER"
@@ -30,7 +30,7 @@ export function Header() {
           </p>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 text-sm text-[#2A5473]/70">
             <User className="h-4 w-4" />
             <span>{userData?.email}</span>
           </div>
@@ -38,6 +38,7 @@ export function Header() {
             variant="outline"
             size="sm"
             onClick={handleSignOut}
+            className="border-[#BE1622] text-[#BE1622] hover:bg-[#BE1622] hover:text-white"
           >
             <LogOut className="h-4 w-4 mr-2" />
             Sair

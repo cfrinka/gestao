@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiGet, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,9 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, Scan } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { Label } from "@/components/ui/label";
 
 interface ProductSize {
@@ -46,21 +48,106 @@ interface PaymentMethod {
   amount: number;
 }
 
+interface CashRegister {
+  id: string;
+  userId: string;
+  userName: string;
+  openedAt: string;
+  closedAt: string | null;
+  openingBalance: number;
+  closingBalance: number | null;
+  status: "OPEN" | "CLOSED";
+  totalSales: number;
+  totalCash: number;
+  totalDebit: number;
+  totalCredit: number;
+  totalPix: number;
+  salesCount: number;
+}
+
+interface Order {
+  id: string;
+  totalAmount: number;
+  payments: PaymentMethod[];
+  createdAt: string;
+}
+
 export default function POSPage() {
   const { toast } = useToast();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
+  const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedSize, setSelectedSize] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [payments, setPayments] = useState<PaymentMethod[]>([]);
+  
+  // Cash register state
+  const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
+  const [showOpenRegisterModal, setShowOpenRegisterModal] = useState(false);
+  const [showCloseRegisterModal, setShowCloseRegisterModal] = useState(false);
+  const [showClosingReport, setShowClosingReport] = useState(false);
+  const [openingBalance, setOpeningBalance] = useState<number>(0);
+  const [closingBalance, setClosingBalance] = useState<number>(0);
+  const [closingReportData, setClosingReportData] = useState<{ register: CashRegister; orders: Order[] } | null>(null);
 
   useEffect(() => {
     fetchProducts();
+    fetchCashRegister();
+    // Auto-focus search input for barcode scanner
+    searchInputRef.current?.focus();
   }, []);
+
+  // Re-focus search input after interactions (for continuous scanning)
+  useEffect(() => {
+    if (!selectedProduct && !showPaymentModal && !showOpenRegisterModal && !showCloseRegisterModal && !showClosingReport) {
+      searchInputRef.current?.focus();
+    }
+  }, [selectedProduct, showPaymentModal, showOpenRegisterModal, showCloseRegisterModal, showClosingReport]);
+
+  // Clear lastScanned indicator after 2 seconds
+  useEffect(() => {
+    if (lastScanned) {
+      const timer = setTimeout(() => setLastScanned(null), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [lastScanned]);
+
+  const handleBarcodeSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && search.trim()) {
+      e.preventDefault();
+      // Find exact SKU match (barcode scanners input exact codes)
+      const exactMatch = products.find(
+        (p) => p.sku.toLowerCase() === search.trim().toLowerCase()
+      );
+      
+      if (exactMatch) {
+        setLastScanned(exactMatch.name);
+        if (exactMatch.sizes?.length > 0) {
+          // Product has sizes, show size selection
+          setSelectedProduct(exactMatch);
+        } else {
+          // No sizes, add directly to cart
+          addToCart(exactMatch, "");
+          toast({
+            title: "Produto adicionado",
+            description: exactMatch.name,
+          });
+        }
+        setSearch("");
+      } else {
+        toast({
+          title: "Produto não encontrado",
+          description: `SKU: ${search}`,
+          variant: "destructive",
+        });
+      }
+    }
+  };
 
   const fetchProducts = async () => {
     try {
@@ -71,6 +158,100 @@ export default function POSPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchCashRegister = async () => {
+    try {
+      const data = await apiGet("/api/cash-register");
+      setCashRegister(data.register || null);
+    } catch (error) {
+      console.error("Error fetching cash register:", error);
+    }
+  };
+
+  const handleOpenRegister = async () => {
+    try {
+      const data = await apiPost("/api/cash-register", {
+        action: "open",
+        openingBalance,
+      });
+      setCashRegister(data.register);
+      setShowOpenRegisterModal(false);
+      setOpeningBalance(0);
+      toast({ title: "Caixa aberto com sucesso!" });
+    } catch (error) {
+      toast({ title: "Erro ao abrir caixa", variant: "destructive" });
+    }
+  };
+
+  const handleCloseRegister = async () => {
+    try {
+      const data = await apiPost("/api/cash-register", {
+        action: "close",
+        closingBalance,
+      });
+      setClosingReportData(data);
+      setShowCloseRegisterModal(false);
+      setShowClosingReport(true);
+      setCashRegister(null);
+      setClosingBalance(0);
+    } catch (error) {
+      toast({ title: "Erro ao fechar caixa", variant: "destructive" });
+    }
+  };
+
+  const exportClosingReportPDF = () => {
+    if (!closingReportData) return;
+    
+    const { register, orders } = closingReportData;
+    const doc = new jsPDF();
+    
+    doc.setFontSize(20);
+    doc.text("Relatório de Fechamento de Caixa", 14, 22);
+    
+    doc.setFontSize(10);
+    doc.text(`Operador: ${register.userName}`, 14, 32);
+    doc.text(`Abertura: ${new Date(register.openedAt).toLocaleString("pt-BR")}`, 14, 38);
+    doc.text(`Fechamento: ${register.closedAt ? new Date(register.closedAt).toLocaleString("pt-BR") : "-"}`, 14, 44);
+    
+    doc.setFontSize(12);
+    doc.text("Resumo do Caixa", 14, 56);
+    
+    autoTable(doc, {
+      startY: 60,
+      head: [["Descrição", "Valor"]],
+      body: [
+        ["Saldo Inicial", formatCurrency(register.openingBalance)],
+        ["Total em Vendas", formatCurrency(register.totalSales)],
+        ["Dinheiro", formatCurrency(register.totalCash)],
+        ["Débito", formatCurrency(register.totalDebit)],
+        ["Crédito", formatCurrency(register.totalCredit)],
+        ["PIX", formatCurrency(register.totalPix)],
+        ["Quantidade de Vendas", register.salesCount.toString()],
+        ["Saldo Final Informado", formatCurrency(register.closingBalance || 0)],
+        ["Saldo Esperado (Inicial + Dinheiro)", formatCurrency(register.openingBalance + register.totalCash)],
+      ],
+    });
+    
+    const finalY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY || 120;
+    
+    if (orders.length > 0) {
+      doc.setFontSize(12);
+      doc.text("Vendas Realizadas", 14, finalY + 10);
+      
+      autoTable(doc, {
+        startY: finalY + 14,
+        head: [["#", "Horário", "Valor", "Pagamento"]],
+        body: orders.map((order, index) => [
+          (index + 1).toString(),
+          new Date(order.createdAt).toLocaleTimeString("pt-BR"),
+          formatCurrency(order.totalAmount),
+          order.payments.map(p => `${p.method}: ${formatCurrency(p.amount)}`).join(", "),
+        ]),
+      });
+    }
+    
+    doc.save(`fechamento-caixa-${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
   const filteredProducts = products.filter(
@@ -253,19 +434,52 @@ export default function POSPage() {
   return (
     <div className="h-[calc(100vh-8rem)] flex gap-6">
       <div className="flex-1 flex flex-col">
-        <div className="mb-4">
-          <h1 className="text-3xl font-bold text-gray-900">PDV</h1>
-          <p className="text-gray-500">Ponto de Venda</p>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">PDV</h1>
+            <p className="text-gray-500">Ponto de Venda</p>
+          </div>
+          <div className="flex items-center gap-3">
+            {cashRegister ? (
+              <>
+                <div className="text-right text-sm">
+                  <p className="text-green-600 font-medium flex items-center gap-1">
+                    <Unlock className="h-4 w-4" /> Caixa Aberto
+                  </p>
+                  <p className="text-gray-500">
+                    Vendas: {cashRegister.salesCount} | Total: {formatCurrency(cashRegister.totalSales)}
+                  </p>
+                </div>
+                <Button variant="destructive" onClick={() => setShowCloseRegisterModal(true)}>
+                  <Lock className="h-4 w-4 mr-2" />
+                  Fechar Caixa
+                </Button>
+              </>
+            ) : (
+              <Button onClick={() => setShowOpenRegisterModal(true)}>
+                <Unlock className="h-4 w-4 mr-2" />
+                Abrir Caixa
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
-            placeholder="Buscar produto por nome ou SKU..."
+            ref={searchInputRef}
+            placeholder="Buscar produto por nome ou SKU (escaneie o código de barras)..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-10"
+            onKeyDown={handleBarcodeSearch}
+            className="pl-10 pr-10"
           />
+          <Scan className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#355444]" />
+          {lastScanned && (
+            <div className="absolute top-full left-0 right-0 mt-1 p-2 bg-[#355444] text-white text-sm rounded-md animate-pulse z-10">
+              ✓ Escaneado: {lastScanned}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -560,6 +774,226 @@ export default function POSPage() {
                     </div>
                   </Button>
                 ))}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Open Register Dialog */}
+      <Dialog open={showOpenRegisterModal} onOpenChange={setShowOpenRegisterModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Abrir Caixa</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Saldo Inicial (Troco)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={openingBalance || ""}
+                onChange={(e) => setOpeningBalance(parseFloat(e.target.value) || 0)}
+                placeholder="0,00"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowOpenRegisterModal(false)}>
+                Cancelar
+              </Button>
+              <Button className="flex-1" onClick={handleOpenRegister}>
+                <Unlock className="h-4 w-4 mr-2" />
+                Abrir Caixa
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Close Register Dialog */}
+      <Dialog open={showCloseRegisterModal} onOpenChange={setShowCloseRegisterModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Fechar Caixa</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {cashRegister && (
+              <div className="p-3 bg-gray-100 rounded-lg space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span>Saldo Inicial:</span>
+                  <span className="font-medium">{formatCurrency(cashRegister.openingBalance)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Total em Vendas:</span>
+                  <span className="font-medium">{formatCurrency(cashRegister.totalSales)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Dinheiro Recebido:</span>
+                  <span className="font-medium">{formatCurrency(cashRegister.totalCash)}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between font-bold">
+                  <span>Saldo Esperado:</span>
+                  <span>{formatCurrency(cashRegister.openingBalance + cashRegister.totalCash)}</span>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label>Saldo Final (Contagem do Dinheiro)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={closingBalance || ""}
+                onChange={(e) => setClosingBalance(parseFloat(e.target.value) || 0)}
+                placeholder="0,00"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowCloseRegisterModal(false)}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" className="flex-1" onClick={handleCloseRegister}>
+                <Lock className="h-4 w-4 mr-2" />
+                Fechar Caixa
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Closing Report Dialog */}
+      <Dialog open={showClosingReport} onOpenChange={setShowClosingReport}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Relatório de Fechamento de Caixa</DialogTitle>
+          </DialogHeader>
+          {closingReportData && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-gray-100 rounded-lg">
+                  <p className="text-sm text-gray-500">Operador</p>
+                  <p className="font-medium">{closingReportData.register.userName}</p>
+                </div>
+                <div className="p-3 bg-gray-100 rounded-lg">
+                  <p className="text-sm text-gray-500">Período</p>
+                  <p className="font-medium text-sm">
+                    {new Date(closingReportData.register.openedAt).toLocaleString("pt-BR")}
+                    <br />
+                    até {closingReportData.register.closedAt ? new Date(closingReportData.register.closedAt).toLocaleString("pt-BR") : "-"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="p-3">
+                    <p className="text-xs text-gray-500">Total Vendas</p>
+                    <p className="text-lg font-bold text-green-600">{formatCurrency(closingReportData.register.totalSales)}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3">
+                    <p className="text-xs text-gray-500">Qtd. Vendas</p>
+                    <p className="text-lg font-bold">{closingReportData.register.salesCount}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3">
+                    <p className="text-xs text-gray-500">Saldo Inicial</p>
+                    <p className="text-lg font-bold">{formatCurrency(closingReportData.register.openingBalance)}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3">
+                    <p className="text-xs text-gray-500">Saldo Final</p>
+                    <p className="text-lg font-bold">{formatCurrency(closingReportData.register.closingBalance || 0)}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Formas de Pagamento</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-2"><Banknote className="h-4 w-4" /> Dinheiro:</span>
+                    <span className="font-medium">{formatCurrency(closingReportData.register.totalCash)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-2"><CreditCard className="h-4 w-4" /> Débito:</span>
+                    <span className="font-medium">{formatCurrency(closingReportData.register.totalDebit)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-2"><CreditCard className="h-4 w-4" /> Crédito:</span>
+                    <span className="font-medium">{formatCurrency(closingReportData.register.totalCredit)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-2"><Smartphone className="h-4 w-4" /> PIX:</span>
+                    <span className="font-medium">{formatCurrency(closingReportData.register.totalPix)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Conferência de Caixa</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Saldo Esperado (Inicial + Dinheiro):</span>
+                    <span className="font-medium">{formatCurrency(closingReportData.register.openingBalance + closingReportData.register.totalCash)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>Saldo Informado:</span>
+                    <span className="font-medium">{formatCurrency(closingReportData.register.closingBalance || 0)}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm font-bold">
+                    <span>Diferença:</span>
+                    <span className={(closingReportData.register.closingBalance || 0) - (closingReportData.register.openingBalance + closingReportData.register.totalCash) < 0 ? "text-red-600" : "text-green-600"}>
+                      {formatCurrency((closingReportData.register.closingBalance || 0) - (closingReportData.register.openingBalance + closingReportData.register.totalCash))}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {closingReportData.orders.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Vendas Realizadas ({closingReportData.orders.length})</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="max-h-48 overflow-y-auto space-y-2">
+                      {closingReportData.orders.map((order, index) => (
+                        <div key={order.id} className="flex justify-between items-center p-2 bg-gray-50 rounded text-sm">
+                          <div>
+                            <span className="font-medium">#{index + 1}</span>
+                            <span className="text-gray-500 ml-2">{new Date(order.createdAt).toLocaleTimeString("pt-BR")}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-medium">{formatCurrency(order.totalAmount)}</span>
+                            <span className="text-gray-500 ml-2 text-xs">
+                              {order.payments.map(p => p.method).join(", ")}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setShowClosingReport(false)}>
+                  Fechar
+                </Button>
+                <Button className="flex-1" onClick={exportClosingReportPDF}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Exportar PDF
+                </Button>
               </div>
             </div>
           )}

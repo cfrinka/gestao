@@ -178,7 +178,82 @@ export default function ReportsPage() {
         <CardHeader>
           <CardTitle>Filtrar por Período</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const today = new Date().toISOString().split("T")[0];
+                setStartDate(today);
+                setEndDate(today);
+              }}
+            >
+              Hoje
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const today = new Date();
+                const dayOfWeek = today.getDay();
+                const monday = new Date(today);
+                monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+                setStartDate(monday.toISOString().split("T")[0]);
+                setEndDate(today.toISOString().split("T")[0]);
+              }}
+            >
+              Esta Semana
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const today = new Date();
+                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                setStartDate(firstDay.toISOString().split("T")[0]);
+                setEndDate(today.toISOString().split("T")[0]);
+              }}
+            >
+              Este Mês
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const today = new Date();
+                const last30 = new Date(today);
+                last30.setDate(today.getDate() - 30);
+                setStartDate(last30.toISOString().split("T")[0]);
+                setEndDate(today.toISOString().split("T")[0]);
+              }}
+            >
+              Últimos 30 dias
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const today = new Date();
+                const last90 = new Date(today);
+                last90.setDate(today.getDate() - 90);
+                setStartDate(last90.toISOString().split("T")[0]);
+                setEndDate(today.toISOString().split("T")[0]);
+              }}
+            >
+              Últimos 90 dias
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setStartDate("");
+                setEndDate("");
+              }}
+            >
+              Todo Período
+            </Button>
+          </div>
           <div className="flex gap-4 items-end">
             <div className="space-y-2">
               <Label>Data Inicial</Label>
@@ -197,16 +272,6 @@ export default function ReportsPage() {
               />
             </div>
             <Button onClick={handleFilter}>Filtrar</Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setStartDate("");
-                setEndDate("");
-                fetchReports();
-              }}
-            >
-              Limpar
-            </Button>
           </div>
         </CardContent>
       </Card>
