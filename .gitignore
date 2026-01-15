@@ -41,3 +41,6 @@ prisma/dev.db-journal
 # Windows reserved names
 nul
 db-admin.ts
+
+# Local scripts
+scripts/seed.ts
