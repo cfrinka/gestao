@@ -25,3 +25,13 @@ export function formatDate(date: Date): string {
 export function formatPercentage(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
+
+export function generateSku(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const timestamp = Date.now().toString(36).toUpperCase().slice(-4);
+  let random = "";
+  for (let i = 0; i < 6; i++) {
+    random += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `${timestamp}${random}`;
+}

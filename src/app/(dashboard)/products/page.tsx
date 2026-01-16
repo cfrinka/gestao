@@ -30,7 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, generateSku } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Package } from "lucide-react";
 
 interface Owner {
@@ -187,6 +187,7 @@ export default function ProductsPage() {
 
   const openNewDialog = () => {
     resetForm();
+    setFormData(prev => ({ ...prev, sku: generateSku() }));
     setDialogOpen(true);
   };
 
@@ -228,10 +229,8 @@ export default function ProductsPage() {
                   <Input
                     id="sku"
                     value={formData.sku}
-                    onChange={(e) =>
-                      setFormData({ ...formData, sku: e.target.value })
-                    }
-                    required
+                    readOnly
+                    className="bg-gray-100"
                   />
                 </div>
               </div>
