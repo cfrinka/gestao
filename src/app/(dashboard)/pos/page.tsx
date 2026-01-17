@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useAuth } from "@/contexts/auth-context";
 import { apiGet, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input";
@@ -70,6 +71,8 @@ interface Order {
   totalAmount: number;
   payments: PaymentMethod[];
   createdAt: string;
+  isPaidLater?: boolean;
+  clientName?: string;
 }
 
 interface StoreSettings {
@@ -80,7 +83,15 @@ interface StoreSettings {
   footerMessage: string;
 }
 
+interface Client {
+  id: string;
+  name: string;
+  phone?: string;
+  balance: number;
+}
+
 export default function POSPage() {
+  const { userData } = useAuth();
   const { toast } = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
@@ -93,6 +104,12 @@ export default function POSPage() {
   const [processing, setProcessing] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [payments, setPayments] = useState<PaymentMethod[]>([]);
+  const [discount, setDiscount] = useState<number>(0);
+  
+  // Pay later state
+  const [clients, setClients] = useState<Client[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [showPayLater, setShowPayLater] = useState(false);
   
   // Cash register state
   const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
@@ -116,9 +133,20 @@ export default function POSPage() {
     fetchProducts();
     fetchCashRegister();
     fetchStoreSettings();
+    fetchClients();
     // Auto-focus search input for barcode scanner
     searchInputRef.current?.focus();
   }, []);
+
+  const fetchClients = async () => {
+    try {
+      const data = await apiGet("/api/clients");
+      setClients(Array.isArray(data) ? data : []);
+    } catch (error) {
+      // Clients may not be accessible for cashiers
+      setClients([]);
+    }
+  };
   
   const fetchStoreSettings = async () => {
     try {
@@ -250,6 +278,8 @@ export default function POSPage() {
     doc.setFontSize(12);
     doc.text("Resumo do Caixa", 14, 56);
     
+    const totalFiado = orders.filter(o => o.isPaidLater).reduce((sum, o) => sum + o.totalAmount, 0);
+    
     autoTable(doc, {
       startY: 60,
       head: [["Descrição", "Valor"]],
@@ -260,6 +290,7 @@ export default function POSPage() {
         ["Débito", formatCurrency(register.totalDebit)],
         ["Crédito", formatCurrency(register.totalCredit)],
         ["PIX", formatCurrency(register.totalPix)],
+        ["Fiado", formatCurrency(totalFiado)],
         ["Quantidade de Vendas", register.salesCount.toString()],
         ["Saldo Final Informado", formatCurrency(register.closingBalance || 0)],
         ["Saldo Esperado (Inicial + Dinheiro)", formatCurrency(register.openingBalance + register.totalCash)],
@@ -274,12 +305,13 @@ export default function POSPage() {
       
       autoTable(doc, {
         startY: finalY + 14,
-        head: [["#", "Horário", "Valor", "Pagamento"]],
+        head: [["#", "Horário", "Valor", "Pagamento", "Cliente"]],
         body: orders.map((order, index) => [
           (index + 1).toString(),
           new Date(order.createdAt).toLocaleTimeString("pt-BR"),
           formatCurrency(order.totalAmount),
-          order.payments.map(p => `${p.method}: ${formatCurrency(p.amount)}`).join(", "),
+          order.isPaidLater ? "FIADO" : order.payments.map(p => `${p.method}: ${formatCurrency(p.amount)}`).join(", "),
+          order.clientName || "-",
         ]),
       });
     }
@@ -367,10 +399,15 @@ export default function POSPage() {
     setCart([]);
   };
 
-  const total = cart.reduce(
+  const subtotal = cart.reduce(
     (sum, item) => sum + item.product.salePrice * item.quantity,
     0
   );
+
+  const total = Math.max(0, subtotal - discount);
+
+  const canApplyDiscount = userData?.role === "ADMIN" || userData?.role === "OWNER";
+  const canUsePayLater = userData?.role === "ADMIN" || userData?.role === "OWNER";
 
   const openPaymentModal = () => {
     if (cart.length === 0) {
@@ -378,6 +415,9 @@ export default function POSPage() {
       return;
     }
     setPayments([]);
+    setDiscount(0);
+    setSelectedClientId("");
+    setShowPayLater(false);
     setShowPaymentModal(true);
   };
 
@@ -400,8 +440,9 @@ export default function POSPage() {
 
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remaining = total - totalPaid;
+  const effectiveDiscount = canApplyDiscount ? discount : 0;
 
-  const printReceipt = (orderId: string, orderTotal: number, orderPayments: PaymentMethod[], orderItems: CartItem[], change: number) => {
+  const printReceipt = (orderId: string, orderSubtotal: number, orderDiscount: number, orderTotal: number, orderPayments: PaymentMethod[], orderItems: CartItem[], change: number) => {
     const receiptWindow = window.open('', '_blank', 'width=300,height=600');
     if (!receiptWindow) {
       toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
@@ -495,6 +536,8 @@ export default function POSPage() {
         <div class="divider"></div>
         
         <div class="total-section">
+          <p><span>SUBTOTAL:</span><span>${formatCurrency(orderSubtotal)}</span></p>
+          ${orderDiscount > 0 ? `<p style="color: #dc2626;"><span>DESCONTO:</span><span>-${formatCurrency(orderDiscount)}</span></p>` : ''}
           <p class="grand-total"><span>TOTAL:</span><span>${formatCurrency(orderTotal)}</span></p>
         </div>
         
@@ -537,6 +580,55 @@ export default function POSPage() {
     receiptWindow.document.close();
   };
 
+  const handlePayLater = async () => {
+    if (cart.length === 0) {
+      toast({ title: "Carrinho vazio", variant: "destructive" });
+      return;
+    }
+
+    if (!selectedClientId) {
+      toast({ title: "Selecione um cliente", variant: "destructive" });
+      return;
+    }
+
+    setProcessing(true);
+    const cartSnapshot = [...cart];
+    
+    try {
+      const order = await apiPost("/api/checkout", {
+        items: cart.map((item) => ({
+          productId: item.product.id,
+          size: item.size,
+          quantity: item.quantity,
+        })),
+        discount: effectiveDiscount,
+        clientId: selectedClientId,
+        payLater: true,
+      });
+      
+      const selectedClient = clients.find(c => c.id === selectedClientId);
+      
+      toast({
+        title: "Venda fiado registrada!",
+        description: `Pedido #${order.id.slice(-6).toUpperCase()} - ${formatCurrency(order.totalAmount)} para ${selectedClient?.name}`,
+      });
+      clearCart();
+      setShowPaymentModal(false);
+      setSelectedClientId("");
+      setShowPayLater(false);
+      fetchProducts();
+      fetchClients();
+    } catch (error) {
+      toast({
+        title: "Erro ao processar venda",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleCheckout = async () => {
     if (cart.length === 0) {
       toast({ title: "Carrinho vazio", variant: "destructive" });
@@ -570,10 +662,11 @@ export default function POSPage() {
           quantity: item.quantity,
         })),
         payments: paymentsSnapshot,
+        discount: effectiveDiscount,
       });
       
       // Print receipt
-      printReceipt(order.id, order.totalAmount, paymentsSnapshot, cartSnapshot, change);
+      printReceipt(order.id, order.subtotal, order.discount, order.totalAmount, paymentsSnapshot, cartSnapshot, change);
       
       toast({
         title: "Venda realizada com sucesso!",
@@ -805,10 +898,38 @@ export default function POSPage() {
             <DialogTitle>Forma de Pagamento</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex justify-between items-center p-3 bg-gray-100 rounded-lg">
-              <span className="font-semibold">Total da Compra:</span>
-              <span className="text-xl font-bold text-green-600">{formatCurrency(total)}</span>
+            <div className="p-3 bg-gray-100 rounded-lg space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Subtotal:</span>
+                <span className="font-medium">{formatCurrency(subtotal)}</span>
+              </div>
+              {discount > 0 && (
+                <div className="flex justify-between items-center text-red-600">
+                  <span className="text-sm">Desconto:</span>
+                  <span className="font-medium">-{formatCurrency(discount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center pt-1 border-t">
+                <span className="font-semibold">Total:</span>
+                <span className="text-xl font-bold text-green-600">{formatCurrency(total)}</span>
+              </div>
             </div>
+
+            {canApplyDiscount && (
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Desconto (R$)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max={subtotal}
+                  value={discount || ""}
+                  onChange={(e) => setDiscount(Math.min(subtotal, parseFloat(e.target.value) || 0))}
+                  placeholder="0,00"
+                  className="text-right"
+                />
+              </div>
+            )}
 
             <div>
               <Label className="text-sm font-medium">Adicionar Forma de Pagamento:</Label>
@@ -904,21 +1025,67 @@ export default function POSPage() {
               </div>
             )}
 
-            {payments.length === 0 && (
+            {payments.length === 0 && !showPayLater && (
               <p className="text-center text-gray-500 py-4">Selecione uma forma de pagamento acima</p>
+            )}
+
+            {canUsePayLater && (
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <Label className="text-sm font-medium">Venda Fiado (Pagar Depois)</Label>
+                  <Button
+                    variant={showPayLater ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setShowPayLater(!showPayLater)}
+                  >
+                    {showPayLater ? "Cancelar Fiado" : "Vender Fiado"}
+                  </Button>
+                </div>
+                
+                {showPayLater && (
+                  <div className="space-y-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <p className="text-sm text-orange-700">Selecione o cliente que irá pagar depois:</p>
+                    <select
+                      className="w-full p-2 border rounded-md"
+                      value={selectedClientId}
+                      onChange={(e) => setSelectedClientId(e.target.value)}
+                    >
+                      <option value="">Selecione um cliente...</option>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.id}>
+                          {client.name} {client.balance > 0 ? `(Deve: ${formatCurrency(client.balance)})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    {clients.length === 0 && (
+                      <p className="text-xs text-orange-600">Nenhum cliente cadastrado. Cadastre clientes na página de Clientes.</p>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             <div className="flex gap-2 pt-2">
               <Button variant="outline" className="flex-1" onClick={() => setShowPaymentModal(false)}>
                 Cancelar
               </Button>
-              <Button
-                className="flex-1"
-                onClick={handleCheckout}
-                disabled={processing || remaining > 0.01 || payments.length === 0}
-              >
-                {processing ? "Processando..." : "Confirmar Venda"}
-              </Button>
+              {showPayLater ? (
+                <Button
+                  className="flex-1 bg-orange-600 hover:bg-orange-700"
+                  onClick={handlePayLater}
+                  disabled={processing || !selectedClientId}
+                >
+                  {processing ? "Processando..." : "Confirmar Fiado"}
+                </Button>
+              ) : (
+                <Button
+                  className="flex-1"
+                  onClick={handleCheckout}
+                  disabled={processing || remaining > 0.01 || payments.length === 0}
+                >
+                  {processing ? "Processando..." : "Confirmar Venda"}
+                </Button>
+              )}
             </div>
           </div>
         </DialogContent>
@@ -1112,6 +1279,13 @@ export default function POSPage() {
                     <span className="flex items-center gap-2"><Smartphone className="h-4 w-4" /> PIX:</span>
                     <span className="font-medium">{formatCurrency(closingReportData.register.totalPix)}</span>
                   </div>
+                  <Separator className="my-2" />
+                  <div className="flex justify-between text-sm">
+                    <span className="text-orange-600 font-medium">Fiado:</span>
+                    <span className="font-medium text-orange-600">
+                      {formatCurrency(closingReportData.orders.filter(o => o.isPaidLater).reduce((sum, o) => sum + o.totalAmount, 0))}
+                    </span>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -1146,15 +1320,18 @@ export default function POSPage() {
                   <CardContent>
                     <div className="max-h-48 overflow-y-auto space-y-2">
                       {closingReportData.orders.map((order, index) => (
-                        <div key={order.id} className="flex justify-between items-center p-2 bg-gray-50 rounded text-sm">
+                        <div key={order.id} className={`flex justify-between items-center p-2 rounded text-sm ${order.isPaidLater ? 'bg-orange-50' : 'bg-gray-50'}`}>
                           <div>
                             <span className="font-medium">#{index + 1}</span>
                             <span className="text-gray-500 ml-2">{new Date(order.createdAt).toLocaleTimeString("pt-BR")}</span>
+                            {order.clientName && (
+                              <span className="text-blue-600 ml-2 text-xs">({order.clientName})</span>
+                            )}
                           </div>
                           <div className="text-right">
                             <span className="font-medium">{formatCurrency(order.totalAmount)}</span>
-                            <span className="text-gray-500 ml-2 text-xs">
-                              {order.payments.map(p => p.method).join(", ")}
+                            <span className={`ml-2 text-xs ${order.isPaidLater ? 'text-orange-600 font-medium' : 'text-gray-500'}`}>
+                              {order.isPaidLater ? 'FIADO' : order.payments.map(p => p.method).join(", ")}
                             </span>
                           </div>
                         </div>

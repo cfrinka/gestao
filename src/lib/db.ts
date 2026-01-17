@@ -47,8 +47,14 @@ export interface PaymentMethod {
 
 export interface Order {
   id: string;
+  subtotal: number;
+  discount: number;
   totalAmount: number;
   payments: PaymentMethod[];
+  clientId?: string;
+  clientName?: string;
+  isPaidLater?: boolean;
+  paidAt?: Date;
   createdAt: Date;
   items?: OrderItem[];
 }
@@ -68,6 +74,17 @@ export interface UserRecord {
   name: string;
   role: "ADMIN" | "OWNER" | "CASHIER";
   ownerId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  balance: number; // Positive = client owes money, Negative = store owes client
   createdAt: Date;
   updatedAt: Date;
 }
@@ -245,7 +262,14 @@ interface CheckoutItem {
   quantity: number;
 }
 
-export async function processCheckout(items: CheckoutItem[], payments: PaymentMethod[] = []): Promise<Order> {
+export async function processCheckout(
+  items: CheckoutItem[], 
+  payments: PaymentMethod[] = [], 
+  discount: number = 0,
+  clientId?: string,
+  clientName?: string,
+  isPaidLater: boolean = false
+): Promise<Order> {
   const batch = adminDb.batch();
 
   const products: (Product & { requestedQty: number; requestedSize: string })[] = [];
@@ -265,7 +289,7 @@ export async function processCheckout(items: CheckoutItem[], payments: PaymentMe
     products.push({ ...product, requestedQty: item.quantity, requestedSize: item.size });
   }
 
-  let totalAmount = 0;
+  let subtotal = 0;
   const orderItems: Omit<OrderItem, "id">[] = [];
 
   for (const product of products) {
@@ -276,7 +300,7 @@ export async function processCheckout(items: CheckoutItem[], payments: PaymentMe
     const totalRevenue = unitPrice * quantity;
     const profit = totalRevenue - totalCost;
 
-    totalAmount += totalRevenue;
+    subtotal += totalRevenue;
 
     orderItems.push({
       orderId: "",
@@ -292,10 +316,17 @@ export async function processCheckout(items: CheckoutItem[], payments: PaymentMe
     });
   }
 
+  const totalAmount = Math.max(0, subtotal - discount);
+
   const orderRef = adminDb.collection("orders").doc();
   batch.set(orderRef, {
+    subtotal,
+    discount,
     totalAmount,
     payments,
+    ...(clientId && { clientId }),
+    ...(clientName && { clientName }),
+    ...(isPaidLater && { isPaidLater }),
     createdAt: Timestamp.fromDate(new Date()),
   });
 
@@ -346,6 +377,8 @@ export async function processCheckout(items: CheckoutItem[], payments: PaymentMe
 
   return {
     id: orderRef.id,
+    subtotal,
+    discount,
     totalAmount,
     payments,
     createdAt: new Date(),
@@ -510,6 +543,74 @@ const DEFAULT_SETTINGS: Omit<StoreSettings, 'id' | 'updatedAt'> = {
   cnpj: '',
   footerMessage: 'Obrigado pela preferência!\nVolte sempre!',
 };
+
+// Clients
+export async function getClients(): Promise<Client[]> {
+  const snapshot = await adminDb.collection("clients").orderBy("name").get();
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...convertTimestamp(doc.data()),
+  })) as Client[];
+}
+
+export async function getClient(id: string): Promise<Client | null> {
+  const doc = await adminDb.collection("clients").doc(id).get();
+  if (!doc.exists) return null;
+  return { id: doc.id, ...convertTimestamp(doc.data()!) } as Client;
+}
+
+export async function createClient(data: Omit<Client, "id" | "createdAt" | "updatedAt" | "balance">): Promise<Client> {
+  const now = new Date();
+  const docRef = await adminDb.collection("clients").add({
+    ...data,
+    balance: 0,
+    createdAt: Timestamp.fromDate(now),
+    updatedAt: Timestamp.fromDate(now),
+  });
+  return { id: docRef.id, ...data, balance: 0, createdAt: now, updatedAt: now };
+}
+
+export async function updateClient(
+  id: string,
+  data: Partial<Omit<Client, "id" | "createdAt" | "updatedAt">>
+): Promise<void> {
+  await adminDb.collection("clients").doc(id).update({
+    ...data,
+    updatedAt: Timestamp.fromDate(new Date()),
+  });
+}
+
+export async function updateClientBalance(id: string, amount: number): Promise<void> {
+  await adminDb.collection("clients").doc(id).update({
+    balance: FieldValue.increment(amount),
+    updatedAt: Timestamp.fromDate(new Date()),
+  });
+}
+
+export async function deleteClient(id: string): Promise<void> {
+  await adminDb.collection("clients").doc(id).delete();
+}
+
+export async function getClientPendingOrders(clientId: string): Promise<Order[]> {
+  const snapshot = await adminDb.collection("orders")
+    .where("clientId", "==", clientId)
+    .where("isPaidLater", "==", true)
+    .get();
+  
+  const orders = snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...convertTimestamp(doc.data()),
+  })) as Order[];
+  
+  // Filter out orders that have been paid
+  return orders.filter(order => !order.paidAt);
+}
+
+export async function markOrderAsPaid(orderId: string): Promise<void> {
+  await adminDb.collection("orders").doc(orderId).update({
+    paidAt: Timestamp.fromDate(new Date()),
+  });
+}
 
 export async function getStoreSettings(): Promise<StoreSettings> {
   const doc = await adminDb.collection("settings").doc("store").get();

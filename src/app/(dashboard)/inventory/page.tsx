@@ -41,6 +41,8 @@ interface InventorySummary {
   totalProducts: number;
   totalStock: number;
   inventoryValue: number;
+  projectedRevenue: number;
+  projectedProfit: number;
 }
 
 export default function InventoryPage() {
@@ -73,11 +75,15 @@ export default function InventoryPage() {
         totalProducts: 0,
         totalStock: 0,
         inventoryValue: 0,
+        projectedRevenue: 0,
+        projectedProfit: 0,
       };
     }
     acc[ownerId].totalProducts += 1;
     acc[ownerId].totalStock += product.stock;
     acc[ownerId].inventoryValue += product.stock * product.costPrice;
+    acc[ownerId].projectedRevenue += product.stock * product.salePrice;
+    acc[ownerId].projectedProfit += product.stock * (product.salePrice - product.costPrice);
     return acc;
   }, {} as Record<string, InventorySummary>);
 
@@ -144,6 +150,8 @@ export default function InventoryPage() {
                 <TableHead className="text-right">Produtos</TableHead>
                 <TableHead className="text-right">Unidades</TableHead>
                 <TableHead className="text-right">Valor do Estoque</TableHead>
+                <TableHead className="text-right">Receita Projetada</TableHead>
+                <TableHead className="text-right">Lucro Projetado</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -154,6 +162,12 @@ export default function InventoryPage() {
                   <TableCell className="text-right">{summary.totalStock}</TableCell>
                   <TableCell className="text-right font-bold text-green-600">
                     {formatCurrency(summary.inventoryValue)}
+                  </TableCell>
+                  <TableCell className="text-right font-medium text-blue-600">
+                    {formatCurrency(summary.projectedRevenue)}
+                  </TableCell>
+                  <TableCell className="text-right font-bold text-emerald-600">
+                    {formatCurrency(summary.projectedProfit)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -180,6 +194,8 @@ export default function InventoryPage() {
                   <TableHead className="text-right">Estoque Total</TableHead>
                   <TableHead>Estoque por Tamanho</TableHead>
                   <TableHead className="text-right">Valor Total</TableHead>
+                  <TableHead className="text-right">Receita Projetada</TableHead>
+                  <TableHead className="text-right">Lucro Projetado</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -228,6 +244,12 @@ export default function InventoryPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       {formatCurrency(product.stock * product.costPrice)}
+                    </TableCell>
+                    <TableCell className="text-right text-blue-600">
+                      {formatCurrency(product.stock * product.salePrice)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-emerald-600">
+                      {formatCurrency(product.stock * (product.salePrice - product.costPrice))}
                     </TableCell>
                   </TableRow>
                 ))}

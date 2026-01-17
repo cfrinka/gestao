@@ -63,3 +63,17 @@ export async function apiDelete(url: string) {
   }
   return res.json();
 }
+
+export async function apiPatch(url: string, data: unknown) {
+  const headers = await getAuthHeaders();
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(error.error || "Request failed");
+  }
+  return res.json();
+}

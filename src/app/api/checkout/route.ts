@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { processCheckout, PaymentMethod, getOpenCashRegister, updateCashRegisterSales } from "@/lib/db";
+import { processCheckout, PaymentMethod, getOpenCashRegister, updateCashRegisterSales, getClient, updateClientBalance } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +10,14 @@ interface CartItem {
   quantity: number;
 }
 
+interface CheckoutBody {
+  items: CartItem[];
+  payments?: PaymentMethod[];
+  discount?: number;
+  clientId?: string;
+  payLater?: boolean;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = await verifyAuth(request);
@@ -17,19 +25,50 @@ export async function POST(request: NextRequest) {
       return unauthorizedResponse();
     }
 
-    const body = await request.json();
-    const { items, payments }: { items: CartItem[]; payments?: PaymentMethod[] } = body;
+    const body: CheckoutBody = await request.json();
+    const { items, payments, discount, clientId, payLater } = body;
 
     if (!items || items.length === 0) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
     }
 
-    const order = await processCheckout(items, payments || []);
+    // Only ADMIN and OWNER can apply discounts or use pay later
+    const canUseAdvancedFeatures = user.role === "ADMIN" || user.role === "OWNER";
+    const allowedDiscount = canUseAdvancedFeatures ? (discount || 0) : 0;
+
+    // Validate pay later request
+    let clientName: string | undefined;
+    if (payLater && clientId) {
+      if (!canUseAdvancedFeatures) {
+        return NextResponse.json({ error: "You don't have permission to use pay later" }, { status: 403 });
+      }
+      const client = await getClient(clientId);
+      if (!client) {
+        return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      }
+      clientName = client.name;
+    }
+
+    const order = await processCheckout(
+      items, 
+      payLater ? [] : (payments || []), 
+      allowedDiscount,
+      payLater ? clientId : undefined,
+      payLater ? clientName : undefined,
+      payLater || false
+    );
+
+    // Update client balance if pay later
+    if (payLater && clientId) {
+      await updateClientBalance(clientId, order.totalAmount);
+    }
     
-    // Update cash register if open
-    const cashRegister = await getOpenCashRegister(user.uid);
-    if (cashRegister && payments && payments.length > 0) {
-      await updateCashRegisterSales(cashRegister.id, payments, order.totalAmount);
+    // Update cash register if open (only for immediate payments)
+    if (!payLater) {
+      const cashRegister = await getOpenCashRegister(user.uid);
+      if (cashRegister && payments && payments.length > 0) {
+        await updateCashRegisterSales(cashRegister.id, payments, order.totalAmount);
+      }
     }
     
     return NextResponse.json(order, { status: 201 });

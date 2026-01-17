@@ -61,6 +61,10 @@ interface Order {
   payments?: PaymentMethod[];
   items: OrderItem[];
   ledgers: OwnerLedger[];
+  clientId?: string;
+  clientName?: string;
+  isPaidLater?: boolean;
+  paidAt?: string;
 }
 
 export default function SalesPage() {
@@ -186,6 +190,7 @@ export default function SalesPage() {
                   <TableHead>Data</TableHead>
                   <TableHead>Itens</TableHead>
                   <TableHead>Pagamento</TableHead>
+                  <TableHead>Cliente</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -200,18 +205,33 @@ export default function SalesPage() {
                     <TableCell>{order.items.length}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        {order.payments?.map((p, i) => (
-                          <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
-                            {p.method === "DINHEIRO" && "Dinheiro"}
-                            {p.method === "DEBITO" && "Débito"}
-                            {p.method === "CREDITO" && "Crédito"}
-                            {p.method === "PIX" && "PIX"}
+                        {order.isPaidLater ? (
+                          <span className={`text-xs px-2 py-1 rounded ${order.paidAt ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                            {order.paidAt ? 'Fiado (Pago)' : 'Fiado'}
                           </span>
-                        ))}
-                        {(!order.payments || order.payments.length === 0) && (
-                          <span className="text-xs text-gray-400">-</span>
+                        ) : (
+                          <>
+                            {order.payments?.map((p, i) => (
+                              <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                                {p.method === "DINHEIRO" && "Dinheiro"}
+                                {p.method === "DEBITO" && "Débito"}
+                                {p.method === "CREDITO" && "Crédito"}
+                                {p.method === "PIX" && "PIX"}
+                              </span>
+                            ))}
+                            {(!order.payments || order.payments.length === 0) && (
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
+                          </>
                         )}
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      {order.clientName ? (
+                        <span className="text-sm text-blue-600">{order.clientName}</span>
+                      ) : (
+                        <span className="text-xs text-gray-400">-</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right font-bold">
                       {formatCurrency(order.totalAmount)}
@@ -248,6 +268,24 @@ export default function SalesPage() {
                   Total: {formatCurrency(selectedOrder.totalAmount)}
                 </span>
               </div>
+
+              {selectedOrder.isPaidLater && (
+                <div className={`p-3 rounded-lg ${selectedOrder.paidAt ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className={`font-medium ${selectedOrder.paidAt ? 'text-green-700' : 'text-orange-700'}`}>
+                        {selectedOrder.paidAt ? 'Venda Fiado (Pago)' : 'Venda Fiado (Pendente)'}
+                      </p>
+                      <p className="text-sm text-gray-600">Cliente: {selectedOrder.clientName}</p>
+                    </div>
+                    {selectedOrder.paidAt && (
+                      <p className="text-xs text-green-600">
+                        Pago em: {formatDate(new Date(selectedOrder.paidAt))}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {selectedOrder.payments && selectedOrder.payments.length > 0 && (
                 <div>
