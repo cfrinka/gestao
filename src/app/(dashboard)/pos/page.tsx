@@ -443,7 +443,7 @@ export default function POSPage() {
   const effectiveDiscount = canApplyDiscount ? discount : 0;
 
   const printReceipt = (orderId: string, orderSubtotal: number, orderDiscount: number, orderTotal: number, orderPayments: PaymentMethod[], orderItems: CartItem[], change: number) => {
-    const receiptWindow = window.open('', '_blank', 'width=300,height=600');
+    const receiptWindow = window.open('', '_blank', 'width=320,height=600');
     if (!receiptWindow) {
       toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
       return;
@@ -453,20 +453,40 @@ export default function POSPage() {
     const dateStr = now.toLocaleDateString('pt-BR');
     const timeStr = now.toLocaleTimeString('pt-BR');
 
-    const itemsHtml = orderItems.map(item => `
-      <tr>
-        <td style="text-align:left;">${item.product.name}${item.size ? ` (${item.size})` : ''}</td>
-        <td style="text-align:center;">${item.quantity}</td>
-        <td style="text-align:right;">${formatCurrency(item.product.salePrice * item.quantity)}</td>
-      </tr>
-    `).join('');
+    // Helper to truncate and pad strings for fixed-width columns
+    const truncate = (str: string, len: number) => str.length > len ? str.substring(0, len) : str;
+    const padRight = (str: string, len: number) => truncate(str, len).padEnd(len);
+    const padLeft = (str: string, len: number) => truncate(str, len).padStart(len);
 
-    const paymentsHtml = orderPayments.filter(p => p.amount > 0).map(p => `
-      <tr>
-        <td>${p.method}</td>
-        <td style="text-align:right;">${formatCurrency(p.amount)}</td>
-      </tr>
-    `).join('');
+    // Format currency without R$ prefix for compactness
+    const formatValue = (value: number) => {
+      return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    // 32 chars width for 58mm thermal printer
+    const LINE_WIDTH = 32;
+    const dividerLine = '-'.repeat(LINE_WIDTH);
+
+    // Build items text (Name 18 | Qty 3 | Value 9 = 30 + 2 spaces)
+    const itemsText = orderItems.map(item => {
+      const name = truncate(item.product.name + (item.size ? ` (${item.size})` : ''), 18);
+      const qty = item.quantity.toString();
+      const value = formatValue(item.product.salePrice * item.quantity);
+      return `${padRight(name, 18)} ${padLeft(qty, 3)} ${padLeft(value, 9)}`;
+    }).join('\n');
+
+    // Build payments text
+    const paymentsText = orderPayments.filter(p => p.amount > 0).map(p => {
+      const method = truncate(p.method, 20);
+      const value = formatValue(p.amount);
+      return `${padRight(method, 20)} ${padLeft(value, 10)}`;
+    }).join('\n');
+
+    // Build row helper for label: value format
+    const buildRow = (label: string, value: string) => {
+      const remaining = LINE_WIDTH - label.length - 1;
+      return `${label} ${padLeft(value, remaining)}`;
+    };
 
     receiptWindow.document.write(`
       <!DOCTYPE html>
@@ -476,96 +496,69 @@ export default function POSPage() {
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { 
-            font-family: 'Courier New', monospace; 
-            font-size: 10px; 
-            width: 48mm; 
+            font-family: 'Courier New', Courier, monospace; 
+            font-size: 12px;
+            line-height: 1.3;
+            width: 44mm; 
             padding: 2mm;
+            -webkit-print-color-adjust: exact;
           }
-          .header { text-align: center; margin-bottom: 6px; }
-          .header h1 { font-size: 12px; font-weight: bold; }
-          .header p { font-size: 8px; }
-          .divider { border-top: 1px dashed #000; margin: 4px 0; }
-          .info { margin-bottom: 4px; }
-          .info p { display: flex; justify-content: space-between; font-size: 9px; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { padding: 1px 0; font-size: 9px; }
-          th { text-align: left; border-bottom: 1px solid #000; }
-          .total-section { margin-top: 4px; }
-          .total-section p { display: flex; justify-content: space-between; font-size: 10px; }
-          .total-section .grand-total { font-size: 11px; font-weight: bold; }
-          .footer { text-align: center; margin-top: 8px; font-size: 8px; }
+          pre {
+            font-family: inherit;
+            font-size: inherit;
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin: 0;
+          }
+          .center { text-align: center; word-wrap: break-word; }
+          .bold { font-weight: bold; }
+          .divider { margin: 3px 0; }
+          .section { margin: 4px 0; }
           @media print {
-            body { width: 48mm; }
+            body { width: 44mm; }
             @page { margin: 0; size: 58mm auto; }
           }
         </style>
       </head>
       <body>
-        <div class="header">
-          <h1>${storeSettings.storeName.toUpperCase()}</h1>
-          ${storeSettings.address ? `<p>${storeSettings.address}</p>` : ''}
-          ${storeSettings.phone ? `<p>Tel: ${storeSettings.phone}</p>` : ''}
-          ${storeSettings.cnpj ? `<p>CNPJ: ${storeSettings.cnpj}</p>` : ''}
-          <p style="margin-top: 5px;">CUPOM NÃO FISCAL</p>
+        <div class="center">
+          <div class="bold">${storeSettings.storeName.toUpperCase()}</div>
+          ${storeSettings.address ? `<div>${storeSettings.address}</div>` : ''}
+          ${storeSettings.phone ? `<div>Tel: ${storeSettings.phone}</div>` : ''}
+          ${storeSettings.cnpj ? `<div>CNPJ: ${storeSettings.cnpj}</div>` : ''}
+          <div style="margin-top: 4px;">CUPOM NAO FISCAL</div>
         </div>
         
-        <div class="divider"></div>
+        <pre class="divider">${dividerLine}</pre>
         
-        <div class="info">
-          <p><span>Data:</span><span>${dateStr}</span></p>
-          <p><span>Hora:</span><span>${timeStr}</span></p>
-          <p><span>Pedido:</span><span>#${orderId.slice(-6).toUpperCase()}</span></p>
-          ${cashRegister ? `<p><span>Operador:</span><span>${cashRegister.userName}</span></p>` : ''}
-        </div>
+        <pre class="section">${buildRow('Data:', dateStr)}
+${buildRow('Hora:', timeStr)}
+${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\n' + buildRow('Operador:', truncate(cashRegister.userName, 18)) : ''}</pre>
         
-        <div class="divider"></div>
+        <pre class="divider">${dividerLine}</pre>
         
-        <table>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th style="text-align:center;">Qtd</th>
-              <th style="text-align:right;">Valor</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsHtml}
-          </tbody>
-        </table>
+        <pre class="section bold">${padRight('Item', 18)} ${padLeft('Qtd', 3)} ${padLeft('Valor', 9)}</pre>
+        <pre class="section">${itemsText}</pre>
         
-        <div class="divider"></div>
+        <pre class="divider">${dividerLine}</pre>
         
-        <div class="total-section">
-          <p><span>SUBTOTAL:</span><span>${formatCurrency(orderSubtotal)}</span></p>
-          ${orderDiscount > 0 ? `<p style="color: #dc2626;"><span>DESCONTO:</span><span>-${formatCurrency(orderDiscount)}</span></p>` : ''}
-          <p class="grand-total"><span>TOTAL:</span><span>${formatCurrency(orderTotal)}</span></p>
-        </div>
+        <pre class="section">${buildRow('SUBTOTAL:', formatValue(orderSubtotal))}${orderDiscount > 0 ? '\n' + buildRow('DESCONTO:', '-' + formatValue(orderDiscount)) : ''}</pre>
+        <pre class="section bold">${buildRow('TOTAL:', 'R$ ' + formatValue(orderTotal))}</pre>
         
-        <div class="divider"></div>
+        <pre class="divider">${dividerLine}</pre>
         
-        <table>
-          <thead>
-            <tr>
-              <th>Pagamento</th>
-              <th style="text-align:right;">Valor</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${paymentsHtml}
-          </tbody>
-        </table>
+        <pre class="section bold">${padRight('Pagamento', 20)} ${padLeft('Valor', 10)}</pre>
+        <pre class="section">${paymentsText}</pre>
         
         ${change > 0 ? `
-          <div class="divider"></div>
-          <div class="total-section">
-            <p><span>TROCO:</span><span>${formatCurrency(change)}</span></p>
-          </div>
+          <pre class="divider">${dividerLine}</pre>
+          <pre class="section bold">${buildRow('TROCO:', 'R$ ' + formatValue(change))}</pre>
         ` : ''}
         
-        <div class="divider"></div>
+        <pre class="divider">${dividerLine}</pre>
         
-        <div class="footer">
-          ${storeSettings.footerMessage.split('\n').map(line => `<p>${line}</p>`).join('')}
+        <div class="center section">
+          ${storeSettings.footerMessage.split('\n').map(line => `<div>${line}</div>`).join('')}
         </div>
         
         <script>
