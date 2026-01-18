@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Boxes,
   UserCheck,
+  Barcode,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ const navigation = [
   { name: "Estoque", href: "/inventory", icon: Boxes, roles: ["ADMIN", "OWNER"] },
   { name: "Clientes", href: "/clients", icon: UserCheck, roles: ["ADMIN", "OWNER"] },
   { name: "Relatórios", href: "/reports", icon: BarChart3, roles: ["ADMIN", "OWNER"] },
+  { name: "Códigos de Barras", href: "/barcodes", icon: Barcode, roles: ["ADMIN"] },
   { name: "Proprietários", href: "/owners", icon: Users, roles: ["ADMIN"] },
   { name: "Usuários", href: "/users", icon: Store, roles: ["ADMIN"] },
   { name: "Configurações", href: "/settings", icon: Settings, roles: ["ADMIN"] },
