@@ -463,29 +463,29 @@ export default function POSPage() {
       return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
-    // 32 chars width for 58mm thermal printer
-    const LINE_WIDTH = 32;
+    // 24 chars width for 58mm thermal printer (narrower to prevent wrapping)
+    const LINE_WIDTH = 24;
     const dividerLine = '-'.repeat(LINE_WIDTH);
 
-    // Build items text (Name 18 | Qty 3 | Value 9 = 30 + 2 spaces)
+    // Build items text (Name 12 | Qty 2 | Value 8 = 22 + 2 spaces)
     const itemsText = orderItems.map(item => {
-      const name = truncate(item.product.name + (item.size ? ` (${item.size})` : ''), 18);
+      const name = truncate(item.product.name + (item.size ? ` (${item.size})` : ''), 12);
       const qty = item.quantity.toString();
       const value = formatValue(item.product.salePrice * item.quantity);
-      return `${padRight(name, 18)} ${padLeft(qty, 3)} ${padLeft(value, 9)}`;
+      return `${padRight(name, 12)} ${padLeft(qty, 2)} ${padLeft(value, 8)}`;
     }).join('\n');
 
     // Build payments text
     const paymentsText = orderPayments.filter(p => p.amount > 0).map(p => {
-      const method = truncate(p.method, 20);
+      const method = truncate(p.method, 14);
       const value = formatValue(p.amount);
-      return `${padRight(method, 20)} ${padLeft(value, 10)}`;
+      return `${padRight(method, 14)} ${padLeft(value, 8)}`;
     }).join('\n');
 
     // Build row helper for label: value format
     const buildRow = (label: string, value: string) => {
       const remaining = LINE_WIDTH - label.length - 1;
-      return `${label} ${padLeft(value, remaining)}`;
+      return `${label} ${padLeft(truncate(value, remaining), remaining)}`;
     };
 
     receiptWindow.document.write(`
@@ -506,9 +506,9 @@ export default function POSPage() {
           pre {
             font-family: inherit;
             font-size: inherit;
-            white-space: pre-wrap;
-            word-break: break-word;
+            white-space: pre;
             margin: 0;
+            overflow: hidden;
           }
           .center { text-align: center; word-wrap: break-word; }
           .bold { font-weight: bold; }
@@ -537,7 +537,7 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
         
         <pre class="divider">${dividerLine}</pre>
         
-        <pre class="section bold">${padRight('Item', 18)} ${padLeft('Qtd', 3)} ${padLeft('Valor', 9)}</pre>
+        <pre class="section bold">${padRight('Item', 12)} ${padLeft('Qt', 2)} ${padLeft('Valor', 8)}</pre>
         <pre class="section">${itemsText}</pre>
         
         <pre class="divider">${dividerLine}</pre>
@@ -547,7 +547,7 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
         
         <pre class="divider">${dividerLine}</pre>
         
-        <pre class="section bold">${padRight('Pagamento', 20)} ${padLeft('Valor', 10)}</pre>
+        <pre class="section bold">${padRight('Pagamento', 14)} ${padLeft('Valor', 8)}</pre>
         <pre class="section">${paymentsText}</pre>
         
         ${change > 0 ? `
