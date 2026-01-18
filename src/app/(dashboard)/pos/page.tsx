@@ -477,26 +477,26 @@ export default function POSPage() {
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { 
             font-family: 'Courier New', monospace; 
-            font-size: 12px; 
-            width: 80mm; 
-            padding: 5mm;
+            font-size: 10px; 
+            width: 48mm; 
+            padding: 2mm;
           }
-          .header { text-align: center; margin-bottom: 10px; }
-          .header h1 { font-size: 16px; font-weight: bold; }
-          .header p { font-size: 10px; }
-          .divider { border-top: 1px dashed #000; margin: 8px 0; }
-          .info { margin-bottom: 8px; }
-          .info p { display: flex; justify-content: space-between; }
+          .header { text-align: center; margin-bottom: 6px; }
+          .header h1 { font-size: 12px; font-weight: bold; }
+          .header p { font-size: 8px; }
+          .divider { border-top: 1px dashed #000; margin: 4px 0; }
+          .info { margin-bottom: 4px; }
+          .info p { display: flex; justify-content: space-between; font-size: 9px; }
           table { width: 100%; border-collapse: collapse; }
-          th, td { padding: 2px 0; font-size: 11px; }
+          th, td { padding: 1px 0; font-size: 9px; }
           th { text-align: left; border-bottom: 1px solid #000; }
-          .total-section { margin-top: 8px; }
-          .total-section p { display: flex; justify-content: space-between; font-size: 12px; }
-          .total-section .grand-total { font-size: 14px; font-weight: bold; }
-          .footer { text-align: center; margin-top: 15px; font-size: 10px; }
+          .total-section { margin-top: 4px; }
+          .total-section p { display: flex; justify-content: space-between; font-size: 10px; }
+          .total-section .grand-total { font-size: 11px; font-weight: bold; }
+          .footer { text-align: center; margin-top: 8px; font-size: 8px; }
           @media print {
-            body { width: 80mm; }
-            @page { margin: 0; size: 80mm auto; }
+            body { width: 48mm; }
+            @page { margin: 0; size: 58mm auto; }
           }
         </style>
       </head>
