@@ -526,6 +526,17 @@ export async function getCashRegisterOrders(registerId: string): Promise<Order[]
 }
 
 // Store Settings
+export interface DiscountSettings {
+  pixDiscountEnabled: boolean;
+  pixDiscountPercent: number;
+  fixedDiscountEnabled: boolean;
+  fixedDiscountPercent: number;
+  progressiveDiscountEnabled: boolean;
+  progressiveDiscount1Item: number;
+  progressiveDiscount2Items: number;
+  progressiveDiscount3PlusItems: number;
+}
+
 export interface StoreSettings {
   id: string;
   storeName: string;
@@ -533,8 +544,20 @@ export interface StoreSettings {
   phone: string;
   cnpj: string;
   footerMessage: string;
+  discounts: DiscountSettings;
   updatedAt: Date;
 }
+
+const DEFAULT_DISCOUNT_SETTINGS: DiscountSettings = {
+  pixDiscountEnabled: false,
+  pixDiscountPercent: 5,
+  fixedDiscountEnabled: false,
+  fixedDiscountPercent: 0,
+  progressiveDiscountEnabled: false,
+  progressiveDiscount1Item: 0,
+  progressiveDiscount2Items: 0,
+  progressiveDiscount3PlusItems: 0,
+};
 
 const DEFAULT_SETTINGS: Omit<StoreSettings, 'id' | 'updatedAt'> = {
   storeName: 'Gestão Loja',
@@ -542,6 +565,7 @@ const DEFAULT_SETTINGS: Omit<StoreSettings, 'id' | 'updatedAt'> = {
   phone: '',
   cnpj: '',
   footerMessage: 'Obrigado pela preferência!\nVolte sempre!',
+  discounts: DEFAULT_DISCOUNT_SETTINGS,
 };
 
 // Clients

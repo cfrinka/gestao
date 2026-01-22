@@ -7,8 +7,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { Save, Store, Receipt } from "lucide-react";
+import { Save, Store, Receipt, Percent } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+
+interface DiscountSettings {
+  pixDiscountEnabled: boolean;
+  pixDiscountPercent: number;
+  fixedDiscountEnabled: boolean;
+  fixedDiscountPercent: number;
+  progressiveDiscountEnabled: boolean;
+  progressiveDiscount1Item: number;
+  progressiveDiscount2Items: number;
+  progressiveDiscount3PlusItems: number;
+}
 
 interface StoreSettings {
   storeName: string;
@@ -16,6 +28,7 @@ interface StoreSettings {
   phone: string;
   cnpj: string;
   footerMessage: string;
+  discounts: DiscountSettings;
 }
 
 export default function SettingsPage() {
@@ -28,6 +41,16 @@ export default function SettingsPage() {
     phone: "",
     cnpj: "",
     footerMessage: "",
+    discounts: {
+      pixDiscountEnabled: false,
+      pixDiscountPercent: 5,
+      fixedDiscountEnabled: false,
+      fixedDiscountPercent: 0,
+      progressiveDiscountEnabled: false,
+      progressiveDiscount1Item: 0,
+      progressiveDiscount2Items: 0,
+      progressiveDiscount3PlusItems: 0,
+    },
   });
 
   useEffect(() => {
@@ -43,6 +66,16 @@ export default function SettingsPage() {
         phone: data.phone || "",
         cnpj: data.cnpj || "",
         footerMessage: data.footerMessage || "",
+        discounts: {
+          pixDiscountEnabled: data.discounts?.pixDiscountEnabled ?? false,
+          pixDiscountPercent: data.discounts?.pixDiscountPercent ?? 5,
+          fixedDiscountEnabled: data.discounts?.fixedDiscountEnabled ?? false,
+          fixedDiscountPercent: data.discounts?.fixedDiscountPercent ?? 0,
+          progressiveDiscountEnabled: data.discounts?.progressiveDiscountEnabled ?? false,
+          progressiveDiscount1Item: data.discounts?.progressiveDiscount1Item ?? 0,
+          progressiveDiscount2Items: data.discounts?.progressiveDiscount2Items ?? 0,
+          progressiveDiscount3PlusItems: data.discounts?.progressiveDiscount3PlusItems ?? 0,
+        },
       });
     } catch (error) {
       toast({ title: "Erro ao carregar configurações", variant: "destructive" });
@@ -174,6 +207,173 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Percent className="h-5 w-5 text-[#355444]" />
+            Descontos Automáticos
+          </CardTitle>
+          <CardDescription>
+            Configure descontos que serão aplicados automaticamente nas vendas
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-4 p-4 border rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Desconto PIX</Label>
+                <p className="text-sm text-gray-500">Aplica desconto em pagamentos via PIX</p>
+              </div>
+              <Checkbox
+                checked={settings.discounts.pixDiscountEnabled}
+                onCheckedChange={(checked) =>
+                  setSettings({
+                    ...settings,
+                    discounts: { ...settings.discounts, pixDiscountEnabled: checked === true },
+                  })
+                }
+              />
+            </div>
+            {settings.discounts.pixDiscountEnabled && (
+              <div className="flex items-center gap-2 pl-4 border-l-2 border-[#355444]">
+                <Label htmlFor="pixPercent" className="whitespace-nowrap">Porcentagem:</Label>
+                <Input
+                  id="pixPercent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={settings.discounts.pixDiscountPercent}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      discounts: { ...settings.discounts, pixDiscountPercent: parseFloat(e.target.value) || 0 },
+                    })
+                  }
+                  className="w-24"
+                />
+                <span className="text-gray-500">%</span>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4 p-4 border rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Desconto Fixo</Label>
+                <p className="text-sm text-gray-500">Aplica um percentual fixo de desconto em todas as vendas</p>
+              </div>
+              <Checkbox
+                checked={settings.discounts.fixedDiscountEnabled}
+                onCheckedChange={(checked) =>
+                  setSettings({
+                    ...settings,
+                    discounts: { ...settings.discounts, fixedDiscountEnabled: checked === true },
+                  })
+                }
+              />
+            </div>
+            {settings.discounts.fixedDiscountEnabled && (
+              <div className="flex items-center gap-2 pl-4 border-l-2 border-[#355444]">
+                <Label htmlFor="fixedPercent" className="whitespace-nowrap">Porcentagem:</Label>
+                <Input
+                  id="fixedPercent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  value={settings.discounts.fixedDiscountPercent}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      discounts: { ...settings.discounts, fixedDiscountPercent: parseFloat(e.target.value) || 0 },
+                    })
+                  }
+                  className="w-24"
+                />
+                <span className="text-gray-500">%</span>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4 p-4 border rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Desconto Progressivo</Label>
+                <p className="text-sm text-gray-500">Desconto baseado na quantidade de itens</p>
+              </div>
+              <Checkbox
+                checked={settings.discounts.progressiveDiscountEnabled}
+                onCheckedChange={(checked) =>
+                  setSettings({
+                    ...settings,
+                    discounts: { ...settings.discounts, progressiveDiscountEnabled: checked === true },
+                  })
+                }
+              />
+            </div>
+            {settings.discounts.progressiveDiscountEnabled && (
+              <div className="space-y-3 pl-4 border-l-2 border-[#355444]">
+                <div className="flex items-center gap-2">
+                  <Label className="w-24 whitespace-nowrap">1 item:</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={settings.discounts.progressiveDiscount1Item}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        discounts: { ...settings.discounts, progressiveDiscount1Item: parseFloat(e.target.value) || 0 },
+                      })
+                    }
+                    className="w-20"
+                  />
+                  <span className="text-gray-500">%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="w-24 whitespace-nowrap">2 itens:</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={settings.discounts.progressiveDiscount2Items}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        discounts: { ...settings.discounts, progressiveDiscount2Items: parseFloat(e.target.value) || 0 },
+                      })
+                    }
+                    className="w-20"
+                  />
+                  <span className="text-gray-500">%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="w-24 whitespace-nowrap">3+ itens:</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={settings.discounts.progressiveDiscount3PlusItems}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        discounts: { ...settings.discounts, progressiveDiscount3PlusItems: parseFloat(e.target.value) || 0 },
+                      })
+                    }
+                    className="w-20"
+                  />
+                  <span className="text-gray-500">%</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={saving} className="bg-[#2A5473] hover:bg-[#2A5473]/90">

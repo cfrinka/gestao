@@ -75,12 +75,24 @@ interface Order {
   clientName?: string;
 }
 
+interface DiscountSettings {
+  pixDiscountEnabled: boolean;
+  pixDiscountPercent: number;
+  fixedDiscountEnabled: boolean;
+  fixedDiscountPercent: number;
+  progressiveDiscountEnabled: boolean;
+  progressiveDiscount1Item: number;
+  progressiveDiscount2Items: number;
+  progressiveDiscount3PlusItems: number;
+}
+
 interface StoreSettings {
   storeName: string;
   address: string;
   phone: string;
   cnpj: string;
   footerMessage: string;
+  discounts: DiscountSettings;
 }
 
 interface Client {
@@ -127,6 +139,16 @@ export default function POSPage() {
     phone: "",
     cnpj: "",
     footerMessage: "Obrigado pela preferência!\nVolte sempre!",
+    discounts: {
+      pixDiscountEnabled: false,
+      pixDiscountPercent: 5,
+      fixedDiscountEnabled: false,
+      fixedDiscountPercent: 0,
+      progressiveDiscountEnabled: false,
+      progressiveDiscount1Item: 0,
+      progressiveDiscount2Items: 0,
+      progressiveDiscount3PlusItems: 0,
+    },
   });
 
   useEffect(() => {
@@ -157,6 +179,16 @@ export default function POSPage() {
         phone: data.phone || "",
         cnpj: data.cnpj || "",
         footerMessage: data.footerMessage || "Obrigado pela preferência!\nVolte sempre!",
+        discounts: {
+          pixDiscountEnabled: data.discounts?.pixDiscountEnabled ?? false,
+          pixDiscountPercent: data.discounts?.pixDiscountPercent ?? 5,
+          fixedDiscountEnabled: data.discounts?.fixedDiscountEnabled ?? false,
+          fixedDiscountPercent: data.discounts?.fixedDiscountPercent ?? 0,
+          progressiveDiscountEnabled: data.discounts?.progressiveDiscountEnabled ?? false,
+          progressiveDiscount1Item: data.discounts?.progressiveDiscount1Item ?? 0,
+          progressiveDiscount2Items: data.discounts?.progressiveDiscount2Items ?? 0,
+          progressiveDiscount3PlusItems: data.discounts?.progressiveDiscount3PlusItems ?? 0,
+        },
       });
     } catch (error) {
       console.error("Error fetching store settings:", error);
@@ -404,7 +436,55 @@ export default function POSPage() {
     0
   );
 
-  const total = Math.max(0, subtotal - discount);
+  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Calculate automatic discounts
+  const calculateAutoDiscounts = () => {
+    let autoDiscount = 0;
+    const details: { label: string; value: number }[] = [];
+
+    // Fixed discount (percentage)
+    if (storeSettings.discounts.fixedDiscountEnabled && storeSettings.discounts.fixedDiscountPercent > 0) {
+      const fixedValue = (subtotal * storeSettings.discounts.fixedDiscountPercent) / 100;
+      autoDiscount += fixedValue;
+      details.push({ label: `Desconto fixo (${storeSettings.discounts.fixedDiscountPercent}%)`, value: fixedValue });
+    }
+
+    // Progressive discount based on item count
+    if (storeSettings.discounts.progressiveDiscountEnabled) {
+      let progressivePercent = 0;
+      if (totalItems >= 3) {
+        progressivePercent = storeSettings.discounts.progressiveDiscount3PlusItems;
+      } else if (totalItems === 2) {
+        progressivePercent = storeSettings.discounts.progressiveDiscount2Items;
+      } else if (totalItems === 1) {
+        progressivePercent = storeSettings.discounts.progressiveDiscount1Item;
+      }
+      if (progressivePercent > 0) {
+        const progressiveValue = (subtotal * progressivePercent) / 100;
+        autoDiscount += progressiveValue;
+        details.push({ label: `Desconto ${totalItems >= 3 ? "3+" : totalItems} ${totalItems === 1 ? "item" : "itens"} (${progressivePercent}%)`, value: progressiveValue });
+      }
+    }
+
+    return { autoDiscount, details };
+  };
+
+  // PIX discount is calculated separately as it depends on payment method
+  const calculatePixDiscount = () => {
+    if (!storeSettings.discounts.pixDiscountEnabled) return 0;
+    const pixPayment = payments.find(p => p.method === "PIX");
+    if (pixPayment && pixPayment.amount > 0) {
+      return (pixPayment.amount * storeSettings.discounts.pixDiscountPercent) / 100;
+    }
+    return 0;
+  };
+
+  const { autoDiscount, details: autoDiscountDetails } = calculateAutoDiscounts();
+  const pixDiscount = calculatePixDiscount();
+  const totalAutoDiscount = autoDiscount + pixDiscount;
+  const totalDiscount = totalAutoDiscount + discount; // manual discount added on top
+  const total = Math.max(0, subtotal - totalDiscount);
 
   const canApplyDiscount = userData?.role === "ADMIN" || userData?.role === "OWNER";
   const canUsePayLater = userData?.role === "ADMIN" || userData?.role === "OWNER";
@@ -424,7 +504,19 @@ export default function POSPage() {
   const addPaymentMethod = (method: PaymentMethod["method"]) => {
     const existing = payments.find(p => p.method === method);
     if (!existing) {
-      setPayments([...payments, { method, amount: 0 }]);
+      // Calculate remaining amount to pay (before any new PIX discount)
+      const currentPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+      const baseRemaining = Math.max(0, subtotal - autoDiscount - effectiveManualDiscount - currentPaid);
+      
+      let initialAmount = 0;
+      if (method === "PIX" && storeSettings.discounts.pixDiscountEnabled) {
+        // PIX discount creates circular dependency: total = base - PIX*rate, payment = PIX
+        // To have payment = total (no change): PIX = base - PIX*rate → PIX(1+rate) = base → PIX = base/(1+rate)
+        const discountRate = storeSettings.discounts.pixDiscountPercent / 100;
+        initialAmount = Math.round((baseRemaining / (1 + discountRate)) * 100) / 100;
+      }
+      
+      setPayments([...payments, { method, amount: initialAmount }]);
     }
   };
 
@@ -440,7 +532,8 @@ export default function POSPage() {
 
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remaining = total - totalPaid;
-  const effectiveDiscount = canApplyDiscount ? discount : 0;
+  const effectiveManualDiscount = canApplyDiscount ? discount : 0;
+  const effectiveDiscount = totalAutoDiscount + effectiveManualDiscount;
 
   const printReceipt = (orderId: string, orderSubtotal: number, orderDiscount: number, orderTotal: number, orderPayments: PaymentMethod[], orderItems: CartItem[], change: number) => {
     const receiptWindow = window.open('', '_blank', 'width=320,height=600');
@@ -861,9 +954,21 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
 
               <Separator className="my-4" />
 
-              <div className="flex justify-between items-center text-lg font-bold">
-                <span>Total:</span>
-                <span className="text-green-600">{formatCurrency(total)}</span>
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Subtotal:</span>
+                  <span>{formatCurrency(subtotal)}</span>
+                </div>
+                {totalAutoDiscount > 0 && (
+                  <div className="flex justify-between items-center text-green-600 text-sm">
+                    <span>Descontos ativos:</span>
+                    <span>-{formatCurrency(totalAutoDiscount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center text-lg font-bold pt-1 border-t">
+                  <span>Total:</span>
+                  <span className="text-green-600">{formatCurrency(total)}</span>
+                </div>
               </div>
 
               <div className="flex gap-2 mt-4">
@@ -896,9 +1001,21 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
                 <span className="text-sm text-gray-600">Subtotal:</span>
                 <span className="font-medium">{formatCurrency(subtotal)}</span>
               </div>
+              {autoDiscountDetails.map((d, i) => (
+                <div key={i} className="flex justify-between items-center text-green-600">
+                  <span className="text-sm">{d.label}:</span>
+                  <span className="font-medium">-{formatCurrency(d.value)}</span>
+                </div>
+              ))}
+              {pixDiscount > 0 && (
+                <div className="flex justify-between items-center text-green-600">
+                  <span className="text-sm">Desconto PIX ({storeSettings.discounts.pixDiscountPercent}%):</span>
+                  <span className="font-medium">-{formatCurrency(pixDiscount)}</span>
+                </div>
+              )}
               {discount > 0 && (
                 <div className="flex justify-between items-center text-red-600">
-                  <span className="text-sm">Desconto:</span>
+                  <span className="text-sm">Desconto manual:</span>
                   <span className="font-medium">-{formatCurrency(discount)}</span>
                 </div>
               )}
@@ -908,16 +1025,22 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
               </div>
             </div>
 
+            {storeSettings.discounts.pixDiscountEnabled && !payments.some(p => p.method === "PIX") && (
+              <div className="p-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+                💡 Adicione pagamento PIX para ganhar {storeSettings.discounts.pixDiscountPercent}% de desconto!
+              </div>
+            )}
+
             {canApplyDiscount && (
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Desconto (R$)</Label>
+                <Label className="text-sm font-medium">Desconto Adicional (R$)</Label>
                 <Input
                   type="number"
                   step="0.01"
                   min="0"
-                  max={subtotal}
+                  max={subtotal - totalAutoDiscount}
                   value={discount || ""}
-                  onChange={(e) => setDiscount(Math.min(subtotal, parseFloat(e.target.value) || 0))}
+                  onChange={(e) => setDiscount(Math.min(subtotal - totalAutoDiscount, parseFloat(e.target.value) || 0))}
                   placeholder="0,00"
                   className="text-right"
                 />
