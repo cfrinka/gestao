@@ -6,22 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import { Barcode, Printer, Search } from "lucide-react";
-import { Checkbox } from "@radix-ui/react-checkbox";
-
-interface Owner {
-  id: string;
-  name: string;
-}
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface ProductSize {
   size: string;
@@ -32,8 +20,6 @@ interface Product {
   id: string;
   name: string;
   sku: string;
-  ownerId: string;
-  owner: Owner;
   costPrice: number;
   salePrice: number;
   stock: number;
@@ -43,17 +29,13 @@ interface Product {
 export default function BarcodesPage() {
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
-  const [owners, setOwners] = useState<Owner[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
-  const [ownerFilter, setOwnerFilter] = useState<string>("all");
-  const [copiesPerProduct, setCopiesPerProduct] = useState<number>(1);
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchProducts();
-    fetchOwners();
     loadJsBarcode();
   }, []);
 
@@ -79,23 +61,9 @@ export default function BarcodesPage() {
     }
   };
 
-  const fetchOwners = async () => {
-    try {
-      const data = await apiGet("/api/owners");
-      if (Array.isArray(data)) {
-        setOwners(data);
-      }
-    } catch (error) {
-      console.error("Error fetching owners:", error);
-    }
-  };
-
   const filteredProducts = products.filter((product) => {
-    const matchesSearch =
-      product.name.toLowerCase().includes(search.toLowerCase()) ||
+    return product.name.toLowerCase().includes(search.toLowerCase()) ||
       product.sku.toLowerCase().includes(search.toLowerCase());
-    const matchesOwner = ownerFilter === "all" || product.ownerId === ownerFilter;
-    return matchesSearch && matchesOwner;
   });
 
   const toggleProduct = (productId: string) => {
@@ -132,7 +100,8 @@ export default function BarcodesPage() {
 
     const barcodesHtml = selectedProductsList
       .map((product) => {
-        const barcodeItems = Array(copiesPerProduct)
+        // Generate stock quantity copies of each barcode
+        const barcodeItems = Array(product.stock)
           .fill(null)
           .map(
             (_, i) => `
@@ -204,7 +173,7 @@ export default function BarcodesPage() {
           window.onload = function() {
             ${selectedProductsList
               .map((product) =>
-                Array(copiesPerProduct)
+                Array(product.stock)
                   .fill(null)
                   .map(
                     (_, i) => `
@@ -266,32 +235,6 @@ export default function BarcodesPage() {
                 />
               </div>
             </div>
-            <div className="w-48 space-y-2">
-              <Label>Proprietário</Label>
-              <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {owners.map((owner) => (
-                    <SelectItem key={owner.id} value={owner.id}>
-                      {owner.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-32 space-y-2">
-              <Label>Cópias</Label>
-              <Input
-                type="number"
-                min="1"
-                max="50"
-                value={copiesPerProduct}
-                onChange={(e) => setCopiesPerProduct(Math.max(1, parseInt(e.target.value) || 1))}
-              />
-            </div>
           </div>
 
           {loading ? (
@@ -311,7 +254,7 @@ export default function BarcodesPage() {
                     </th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Produto</th>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">SKU</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Proprietário</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Estoque</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Preço</th>
                   </tr>
                 </thead>
@@ -332,7 +275,7 @@ export default function BarcodesPage() {
                       </td>
                       <td className="px-4 py-3 font-medium">{product.name}</td>
                       <td className="px-4 py-3 text-gray-500 font-mono">{product.sku}</td>
-                      <td className="px-4 py-3 text-gray-500">{product.owner?.name}</td>
+                      <td className="px-4 py-3 text-right">{product.stock}</td>
                       <td className="px-4 py-3 text-right">{formatCurrency(product.salePrice)}</td>
                     </tr>
                   ))}
