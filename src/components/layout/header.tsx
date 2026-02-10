@@ -24,8 +24,6 @@ export function Header() {
           <p className="text-sm text-[#355444]">
             {userData?.role === "ADMIN"
               ? "Administrador"
-              : userData?.role === "OWNER"
-              ? "Proprietário"
               : "Caixa"}
           </p>
         </div>

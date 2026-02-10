@@ -1,13 +1,6 @@
 import { adminDb } from "./firebase-admin";
 import { Timestamp, FieldValue } from "firebase-admin/firestore";
 
-export interface Owner {
-  id: string;
-  name: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export interface ProductSize {
   size: string;
   stock: number;
@@ -17,7 +10,7 @@ export interface Product {
   id: string;
   name: string;
   sku: string;
-  ownerId: string;
+  ownerId?: string;
   costPrice: number;
   salePrice: number;
   stock: number;
@@ -30,7 +23,7 @@ export interface OrderItem {
   id: string;
   orderId: string;
   productId: string;
-  ownerId: string;
+  ownerId?: string;
   size: string;
   quantity: number;
   unitCost: number;
@@ -45,6 +38,13 @@ export interface PaymentMethod {
   amount: number;
 }
 
+export interface FiadoPayment {
+  id: string;
+  amount: number;
+  method: PaymentMethod["method"];
+  createdAt: Date;
+}
+
 export interface Order {
   id: string;
   subtotal: number;
@@ -54,26 +54,20 @@ export interface Order {
   clientId?: string;
   clientName?: string;
   isPaidLater?: boolean;
+  amountPaid?: number;
+  remainingAmount?: number;
+  paymentHistory?: FiadoPayment[];
   paidAt?: Date;
   createdAt: Date;
   items?: OrderItem[];
-}
-
-export interface OwnerLedger {
-  id: string;
-  ownerId: string;
-  orderId: string;
-  revenue: number;
-  cost: number;
-  profit: number;
 }
 
 export interface UserRecord {
   id: string;
   email: string;
   name: string;
-  role: "ADMIN" | "OWNER" | "CASHIER";
-  ownerId: string | null;
+  role: "ADMIN" | "CASHIER";
+  ownerId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -116,38 +110,9 @@ function convertTimestamp(data: FirebaseFirestore.DocumentData): FirebaseFiresto
   return result;
 }
 
-// Owners
-export async function getOwners(): Promise<Owner[]> {
-  const snapshot = await adminDb.collection("owners").orderBy("name").get();
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...convertTimestamp(doc.data()),
-  })) as Owner[];
-}
-
-export async function getOwner(id: string): Promise<Owner | null> {
-  const doc = await adminDb.collection("owners").doc(id).get();
-  if (!doc.exists) return null;
-  return { id: doc.id, ...convertTimestamp(doc.data()!) } as Owner;
-}
-
-export async function createOwner(name: string): Promise<Owner> {
-  const now = new Date();
-  const docRef = await adminDb.collection("owners").add({
-    name,
-    createdAt: Timestamp.fromDate(now),
-    updatedAt: Timestamp.fromDate(now),
-  });
-  return { id: docRef.id, name, createdAt: now, updatedAt: now };
-}
-
 // Products
-export async function getProducts(ownerId?: string): Promise<Product[]> {
-  let query: FirebaseFirestore.Query = adminDb.collection("products").orderBy("name");
-  if (ownerId) {
-    query = adminDb.collection("products").where("ownerId", "==", ownerId).orderBy("name");
-  }
-  const snapshot = await query.get();
+export async function getProducts(): Promise<Product[]> {
+  const snapshot = await adminDb.collection("products").orderBy("name").get();
   return snapshot.docs.map((doc) => ({
     id: doc.id,
     ...convertTimestamp(doc.data()),
@@ -194,8 +159,7 @@ export async function deleteProduct(id: string): Promise<void> {
 // Orders
 export async function getOrders(
   startDate?: Date,
-  endDate?: Date,
-  ownerId?: string
+  endDate?: Date
 ): Promise<Order[]> {
   let query: FirebaseFirestore.Query = adminDb.collection("orders").orderBy("createdAt", "desc");
 
@@ -220,10 +184,6 @@ export async function getOrders(
       id: itemDoc.id,
       ...itemDoc.data(),
     })) as OrderItem[];
-
-    if (ownerId && !items.some((item) => item.ownerId === ownerId)) {
-      continue;
-    }
 
     orders.push({
       id: orderDoc.id,
@@ -305,7 +265,7 @@ export async function processCheckout(
     orderItems.push({
       orderId: "",
       productId: product.id,
-      ownerId: product.ownerId,
+      ...(product.ownerId ? { ownerId: product.ownerId } : {}),
       size: product.requestedSize,
       quantity,
       unitCost,
@@ -326,31 +286,18 @@ export async function processCheckout(
     payments,
     ...(clientId && { clientId }),
     ...(clientName && { clientName }),
-    ...(isPaidLater && { isPaidLater }),
+    ...(isPaidLater && {
+      isPaidLater,
+      amountPaid: 0,
+      remainingAmount: totalAmount,
+      paymentHistory: [],
+    }),
     createdAt: Timestamp.fromDate(new Date()),
   });
-
-  const ownerLedgerMap = new Map<string, { revenue: number; cost: number; profit: number }>();
 
   for (const itemData of orderItems) {
     const itemRef = adminDb.collection("orderItems").doc();
     batch.set(itemRef, { ...itemData, orderId: orderRef.id });
-
-    const existing = ownerLedgerMap.get(itemData.ownerId) || { revenue: 0, cost: 0, profit: 0 };
-    ownerLedgerMap.set(itemData.ownerId, {
-      revenue: existing.revenue + itemData.totalRevenue,
-      cost: existing.cost + itemData.totalCost,
-      profit: existing.profit + itemData.profit,
-    });
-  }
-
-  for (const [ownerId, ledgerData] of Array.from(ownerLedgerMap)) {
-    const ledgerRef = adminDb.collection("ownerLedgers").doc();
-    batch.set(ledgerRef, {
-      ownerId,
-      orderId: orderRef.id,
-      ...ledgerData,
-    });
   }
 
   for (const product of products) {
@@ -384,33 +331,6 @@ export async function processCheckout(
     createdAt: new Date(),
     items: orderItems.map((item, index) => ({ ...item, id: `item-${index}`, orderId: orderRef.id })),
   };
-}
-
-// Owner Ledgers
-export async function getOwnerLedgers(ownerId?: string, startDate?: Date, endDate?: Date) {
-  let query: FirebaseFirestore.Query = adminDb.collection("ownerLedgers");
-
-  if (ownerId) {
-    query = query.where("ownerId", "==", ownerId);
-  }
-
-  const snapshot = await query.get();
-  let ledgers = snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  })) as OwnerLedger[];
-
-  if (startDate && endDate) {
-    const orderIds = new Set<string>();
-    const ordersSnapshot = await adminDb.collection("orders")
-      .where("createdAt", ">=", Timestamp.fromDate(startDate))
-      .where("createdAt", "<=", Timestamp.fromDate(endDate))
-      .get();
-    ordersSnapshot.docs.forEach((doc) => orderIds.add(doc.id));
-    ledgers = ledgers.filter((l) => orderIds.has(l.orderId));
-  }
-
-  return ledgers;
 }
 
 // Users
@@ -626,13 +546,75 @@ export async function getClientPendingOrders(clientId: string): Promise<Order[]>
     ...convertTimestamp(doc.data()),
   })) as Order[];
   
-  // Filter out orders that have been paid
-  return orders.filter(order => !order.paidAt);
+  // Prefer remainingAmount if present (supports partial payments). Fallback to paidAt for legacy orders.
+  return orders.filter(order => {
+    if (typeof order.remainingAmount === "number") return order.remainingAmount > 0;
+    return !order.paidAt;
+  });
 }
 
 export async function markOrderAsPaid(orderId: string): Promise<void> {
   await adminDb.collection("orders").doc(orderId).update({
     paidAt: Timestamp.fromDate(new Date()),
+  });
+}
+
+export async function applyFiadoPayment(
+  clientId: string,
+  orderId: string,
+  amount: number,
+  method: PaymentMethod["method"]
+): Promise<void> {
+  if (!amount || amount <= 0) {
+    throw new Error("Payment amount must be greater than zero");
+  }
+
+  const orderRef = adminDb.collection("orders").doc(orderId);
+  const clientRef = adminDb.collection("clients").doc(clientId);
+
+  await adminDb.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) {
+      throw new Error("Order not found");
+    }
+
+    const order = convertTimestamp(orderSnap.data()!) as Order;
+    if (!order.isPaidLater) {
+      throw new Error("Order is not a FIADO order");
+    }
+    if (order.clientId !== clientId) {
+      throw new Error("Order does not belong to this client");
+    }
+
+    const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : (order.paidAt ? order.totalAmount : 0);
+    const currentRemaining = typeof order.remainingAmount === "number" ? order.remainingAmount : (order.paidAt ? 0 : order.totalAmount);
+
+    if (currentRemaining <= 0) {
+      throw new Error("Order is already fully paid");
+    }
+
+    const appliedAmount = Math.min(amount, currentRemaining);
+    const nextPaid = currentPaid + appliedAmount;
+    const nextRemaining = Math.max(0, currentRemaining - appliedAmount);
+
+    const payment: Omit<FiadoPayment, "createdAt"> & { createdAt: FirebaseFirestore.Timestamp } = {
+      id: `pay_${Date.now()}`,
+      amount: appliedAmount,
+      method,
+      createdAt: Timestamp.fromDate(new Date()),
+    };
+
+    tx.update(orderRef, {
+      amountPaid: nextPaid,
+      remainingAmount: nextRemaining,
+      paymentHistory: FieldValue.arrayUnion(payment),
+      ...(nextRemaining === 0 ? { paidAt: Timestamp.fromDate(new Date()) } : {}),
+    });
+
+    tx.update(clientRef, {
+      balance: FieldValue.increment(-appliedAmount),
+      updatedAt: Timestamp.fromDate(new Date()),
+    });
   });
 }
 

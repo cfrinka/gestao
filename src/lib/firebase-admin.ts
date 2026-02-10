@@ -6,12 +6,23 @@ let app: App | undefined;
 let auth: Auth | undefined;
 let db: Firestore | undefined;
 
+function normalizePrivateKey(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  const unquoted = trimmed.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+  return unquoted.replace(/\\n/g, "\n").replace(/\r\n/g, "\n");
+}
+
 function getApp(): App {
   if (app) return app;
   
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const privateKeyBase64 = process.env.FIREBASE_PRIVATE_KEY_BASE64;
+  const privateKeyRaw = privateKeyBase64
+    ? Buffer.from(privateKeyBase64, "base64").toString("utf8")
+    : process.env.FIREBASE_PRIVATE_KEY;
+  const privateKey = normalizePrivateKey(privateKeyRaw);
 
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error("Firebase Admin SDK environment variables are not configured");

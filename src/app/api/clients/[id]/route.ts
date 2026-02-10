@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClient, updateClient, deleteClient, getClientPendingOrders, updateClientBalance, markOrderAsPaid } from "@/lib/db";
+import { getClient, updateClient, deleteClient, getClientPendingOrders, updateClientBalance, markOrderAsPaid, applyFiadoPayment } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function GET(
       return unauthorizedResponse();
     }
 
-    if (user.role !== "ADMIN" && user.role !== "OWNER") {
+    if (user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -41,7 +41,7 @@ export async function PUT(
       return unauthorizedResponse();
     }
 
-    if (user.role !== "ADMIN" && user.role !== "OWNER") {
+    if (user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -72,7 +72,7 @@ export async function DELETE(
       return unauthorizedResponse();
     }
 
-    if (user.role !== "ADMIN" && user.role !== "OWNER") {
+    if (user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -103,7 +103,7 @@ export async function PATCH(
       return unauthorizedResponse();
     }
 
-    if (user.role !== "ADMIN" && user.role !== "OWNER") {
+    if (user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -113,7 +113,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { action, orderId, amount } = body;
+    const { action, orderId, amount, method } = body;
 
     if (action === "pay_order" && orderId) {
       const pendingOrders = await getClientPendingOrders(params.id);
@@ -123,11 +123,23 @@ export async function PATCH(
         return NextResponse.json({ error: "Order not found or already paid" }, { status: 404 });
       }
 
-      await markOrderAsPaid(orderId);
-      await updateClientBalance(params.id, -order.totalAmount);
-      
+      const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
+      const paymentAmount = typeof amount === "number" ? amount : parseFloat(amount);
+      const finalAmount = Number.isFinite(paymentAmount) && paymentAmount > 0 ? paymentAmount : remaining;
+      const finalMethod = method || "DINHEIRO";
+
+      // Prefer partial-payment flow; fallback to legacy full pay if something goes wrong
+      try {
+        await applyFiadoPayment(params.id, orderId, finalAmount, finalMethod);
+      } catch (e) {
+        // Legacy fallback: mark paid and clear full amount
+        await markOrderAsPaid(orderId);
+        await updateClientBalance(params.id, -order.totalAmount);
+      }
+
       const updatedClient = await getClient(params.id);
-      return NextResponse.json(updatedClient);
+      const refreshedPending = await getClientPendingOrders(params.id);
+      return NextResponse.json({ ...updatedClient, pendingOrders: refreshedPending });
     }
 
     if (action === "adjust_balance" && amount !== undefined) {

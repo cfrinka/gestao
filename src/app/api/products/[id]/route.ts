@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProduct, getProductBySku, updateProduct, deleteProduct, getOwner } from "@/lib/db";
+import { getProduct, getProductBySku, updateProduct, deleteProduct } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +20,7 @@ export async function GET(
       return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
-    const owner = await getOwner(product.ownerId);
-    return NextResponse.json({ ...product, owner });
+    return NextResponse.json(product);
   } catch (error) {
     console.error("Error fetching product:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -68,8 +67,7 @@ export async function PUT(
     });
 
     const updatedProduct = await getProduct(params.id);
-    const owner = await getOwner(existingProduct.ownerId);
-    return NextResponse.json({ ...updatedProduct, owner });
+    return NextResponse.json(updatedProduct);
   } catch (error) {
     console.error("Error updating product:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

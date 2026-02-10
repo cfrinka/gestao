@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
       return unauthorizedResponse();
     }
 
-    // Only ADMIN and OWNER can view clients
-    if (user.role !== "ADMIN" && user.role !== "OWNER") {
+    // Only ADMIN can view clients
+    if (user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
       return unauthorizedResponse();
     }
 
-    // Only ADMIN and OWNER can create clients
-    if (user.role !== "ADMIN" && user.role !== "OWNER") {
+    // Only ADMIN can create clients
+    if (user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

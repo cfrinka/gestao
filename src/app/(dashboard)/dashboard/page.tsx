@@ -35,28 +35,18 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const ownerId = userData?.role === "OWNER" ? userData.ownerId : null;
-        
         // Fetch products
-        const products = await apiGet(`/api/products${ownerId ? `?ownerId=${ownerId}` : ""}`);
+        const products = await apiGet(`/api/products`);
         
         // Fetch orders
         const orders = await apiGet("/api/orders");
         
         // Fetch reports for revenue/profit
-        const reports = await apiGet("/api/reports").catch(() => []);
+        const report = await apiGet("/api/reports").catch(() => null);
         
         // Calculate totals
-        let totalRevenue = 0;
-        let totalProfit = 0;
-        if (Array.isArray(reports)) {
-          reports.forEach((r: { ownerId: string; revenue: number; profit: number }) => {
-            if (!ownerId || r.ownerId === ownerId) {
-              totalRevenue += r.revenue || 0;
-              totalProfit += r.profit || 0;
-            }
-          });
-        }
+        const totalRevenue = report?.revenue || 0;
+        const totalProfit = report?.profit || 0;
         
         setStats({
           totalProducts: Array.isArray(products) ? products.length : 0,

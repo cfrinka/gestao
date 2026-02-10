@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProducts, getProductBySku, createProduct, getOwner } from "@/lib/db";
+import { getProducts, getProductBySku, createProduct } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
 export const dynamic = "force-dynamic";
@@ -11,24 +11,8 @@ export async function GET(request: NextRequest) {
       return unauthorizedResponse();
     }
 
-    const { searchParams } = new URL(request.url);
-    let ownerId = searchParams.get("ownerId") || undefined;
-
-    // Non-admin users can only see their own products
-    if (user.role === "OWNER" && user.ownerId) {
-      ownerId = user.ownerId;
-    }
-
-    const products = await getProducts(ownerId);
-    
-    const productsWithOwner = await Promise.all(
-      products.map(async (product) => {
-        const owner = await getOwner(product.ownerId);
-        return { ...product, owner };
-      })
-    );
-
-    return NextResponse.json(productsWithOwner);
+    const products = await getProducts();
+    return NextResponse.json(products);
   } catch (error) {
     console.error("Error fetching products:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -48,9 +32,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, sku, ownerId, costPrice, salePrice, stock, sizes } = body;
+    const { name, sku, costPrice, salePrice, stock, sizes } = body;
 
-    if (!name || !sku || !ownerId || costPrice === undefined || salePrice === undefined) {
+    if (!name || !sku || costPrice === undefined || salePrice === undefined) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -62,15 +46,13 @@ export async function POST(request: NextRequest) {
     const product = await createProduct({
       name,
       sku,
-      ownerId,
       costPrice: parseFloat(costPrice),
       salePrice: parseFloat(salePrice),
       stock: parseInt(stock) || 0,
       sizes: sizes || [],
     });
 
-    const owner = await getOwner(ownerId);
-    return NextResponse.json({ ...product, owner }, { status: 201 });
+    return NextResponse.json(product, { status: 201 });
   } catch (error) {
     console.error("Error creating product:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

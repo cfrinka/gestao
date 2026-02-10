@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
     }
 
-    // Only ADMIN and OWNER can apply discounts or use pay later
-    const canUseAdvancedFeatures = user.role === "ADMIN" || user.role === "OWNER";
+    // Only ADMIN can apply discounts or use pay later
+    const canUseAdvancedFeatures = user.role === "ADMIN";
     const allowedDiscount = canUseAdvancedFeatures ? (discount || 0) : 0;
 
     // Validate pay later request

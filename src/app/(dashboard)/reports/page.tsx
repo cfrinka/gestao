@@ -20,22 +20,32 @@ import { BarChart3, Download, FileText } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-interface OwnerReport {
-  owner: {
-    id: string;
-    name: string;
-  };
+interface StoreReport {
+  grossRevenue: number;
+  discounts: number;
   revenue: number;
   cost: number;
   profit: number;
   profitMargin: number;
+  ordersCount: number;
+  itemsSold: number;
+  averageTicket: number;
+  payments: {
+    cash: number;
+    debit: number;
+    credit: number;
+    pix: number;
+    payLater: number;
+    payLaterOutstanding?: number;
+    payLaterReceived?: number;
+  };
   totalStock: number;
   inventoryValue: number;
 }
 
 export default function ReportsPage() {
   const { toast } = useToast();
-  const [reports, setReports] = useState<OwnerReport[]>([]);
+  const [report, setReport] = useState<StoreReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -50,7 +60,7 @@ export default function ReportsPage() {
       if (params.toString()) url += `?${params.toString()}`;
 
       const data = await apiGet(url);
-      setReports(Array.isArray(data) ? data : []);
+      setReport(data || null);
     } catch (error) {
       toast({ title: "Erro ao carregar relatórios", variant: "destructive" });
     } finally {
@@ -66,37 +76,79 @@ export default function ReportsPage() {
     fetchReports();
   };
 
-  const totals = reports.reduce(
-    (acc, r) => ({
-      revenue: acc.revenue + r.revenue,
-      cost: acc.cost + r.cost,
-      profit: acc.profit + r.profit,
-      inventoryValue: acc.inventoryValue + r.inventoryValue,
-    }),
-    { revenue: 0, cost: 0, profit: 0, inventoryValue: 0 }
-  );
+  const totals = {
+    grossRevenue: report?.grossRevenue || 0,
+    discounts: report?.discounts || 0,
+    revenue: report?.revenue || 0,
+    cost: report?.cost || 0,
+    profit: report?.profit || 0,
+    inventoryValue: report?.inventoryValue || 0,
+  };
 
   const exportCSV = () => {
     const headers = [
-      "Proprietário",
+      "Receita Bruta",
+      "Descontos",
       "Receita",
       "Custo",
       "Lucro",
       "Margem",
+      "Pedidos",
+      "Itens Vendidos",
+      "Ticket Médio",
+      "Dinheiro",
+      "Débito",
+      "Crédito",
+      "PIX",
+      "Fiado",
+      "Fiado (Recebido)",
+      "Fiado (Em aberto)",
       "Estoque (Un)",
       "Valor Estoque",
     ];
-    const rows = reports.map((r) => [
-      r.owner.name,
-      r.revenue.toFixed(2),
-      r.cost.toFixed(2),
-      r.profit.toFixed(2),
-      (r.profitMargin * 100).toFixed(1) + "%",
-      r.totalStock.toString(),
-      r.inventoryValue.toFixed(2),
-    ]);
+    const row = report
+      ? [
+          report.grossRevenue.toFixed(2),
+          report.discounts.toFixed(2),
+          report.revenue.toFixed(2),
+          report.cost.toFixed(2),
+          report.profit.toFixed(2),
+          (report.profitMargin * 100).toFixed(1) + "%",
+          report.ordersCount.toString(),
+          report.itemsSold.toString(),
+          report.averageTicket.toFixed(2),
+          report.payments.cash.toFixed(2),
+          report.payments.debit.toFixed(2),
+          report.payments.credit.toFixed(2),
+          report.payments.pix.toFixed(2),
+          report.payments.payLater.toFixed(2),
+          (report.payments.payLaterReceived ?? 0).toFixed(2),
+          (report.payments.payLaterOutstanding ?? 0).toFixed(2),
+          report.totalStock.toString(),
+          report.inventoryValue.toFixed(2),
+        ]
+      : [
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0%",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+          "0",
+        ];
 
-    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
+    const csv = [headers, row].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -121,33 +173,56 @@ export default function ReportsPage() {
       startY: 45,
       head: [
         [
-          "Proprietário",
+          "Receita Bruta",
+          "Descontos",
           "Receita",
           "Custo",
           "Lucro",
           "Margem",
-          "Estoque",
-          "Valor Est.",
+          "Pedidos",
         ],
       ],
-      body: reports.map((r) => [
-        r.owner.name,
-        formatCurrency(r.revenue),
-        formatCurrency(r.cost),
-        formatCurrency(r.profit),
-        formatPercentage(r.profitMargin),
-        r.totalStock.toString(),
-        formatCurrency(r.inventoryValue),
-      ]),
-      foot: [
+      body: [
         [
-          "TOTAL",
+          formatCurrency(totals.grossRevenue),
+          formatCurrency(totals.discounts),
           formatCurrency(totals.revenue),
           formatCurrency(totals.cost),
           formatCurrency(totals.profit),
           formatPercentage(totals.revenue > 0 ? totals.profit / totals.revenue : 0),
-          "",
-          formatCurrency(totals.inventoryValue),
+          report?.ordersCount?.toString() || "0",
+        ],
+      ],
+    });
+
+    autoTable(doc, {
+      startY: (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY
+        ? (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
+        : 80,
+      head: [
+        [
+          "Itens Vendidos",
+          "Ticket Médio",
+          "Dinheiro",
+          "Débito",
+          "Crédito",
+          "PIX",
+          "Fiado",
+          "Fiado (Recebido)",
+          "Fiado (Em aberto)",
+        ],
+      ],
+      body: [
+        [
+          report?.itemsSold?.toString() || "0",
+          formatCurrency(report?.averageTicket || 0),
+          formatCurrency(report?.payments?.cash || 0),
+          formatCurrency(report?.payments?.debit || 0),
+          formatCurrency(report?.payments?.credit || 0),
+          formatCurrency(report?.payments?.pix || 0),
+          formatCurrency(report?.payments?.payLater || 0),
+          formatCurrency(report?.payments?.payLaterReceived || 0),
+          formatCurrency(report?.payments?.payLaterOutstanding || 0),
         ],
       ],
     });
@@ -160,7 +235,7 @@ export default function ReportsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Relatórios</h1>
-          <p className="text-gray-500">Análise financeira por proprietário</p>
+          <p className="text-gray-500">Análise financeira</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={exportCSV}>
@@ -279,7 +354,7 @@ export default function ReportsPage() {
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Receita Total</CardTitle>
+            <CardTitle className="text-sm font-medium">Receita</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(totals.revenue)}</div>
@@ -317,17 +392,52 @@ export default function ReportsPage() {
         </Card>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Receita Bruta</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(totals.grossRevenue)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Descontos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">{formatCurrency(totals.discounts)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Pedidos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{report?.ordersCount || 0}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Ticket Médio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(report?.averageTicket || 0)}</div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
-            Relatório por Proprietário
+            Relatório
           </CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-center py-4">Carregando...</p>
-          ) : reports.length === 0 ? (
+          ) : !report ? (
             <p className="text-center py-4 text-gray-500">
               Nenhum dado encontrado
             </p>
@@ -335,39 +445,77 @@ export default function ReportsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Proprietário</TableHead>
+                  <TableHead className="text-right">Receita Bruta</TableHead>
+                  <TableHead className="text-right">Descontos</TableHead>
                   <TableHead className="text-right">Receita</TableHead>
                   <TableHead className="text-right">Custo</TableHead>
                   <TableHead className="text-right">Lucro</TableHead>
                   <TableHead className="text-right">Margem</TableHead>
+                  <TableHead className="text-right">Pedidos</TableHead>
+                  <TableHead className="text-right">Itens</TableHead>
                   <TableHead className="text-right">Estoque (Un)</TableHead>
                   <TableHead className="text-right">Valor Estoque</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reports.map((report) => (
-                  <TableRow key={report.owner.id}>
-                    <TableCell className="font-medium">
-                      {report.owner.name}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(report.revenue)}
-                    </TableCell>
-                    <TableCell className="text-right text-red-600">
-                      {formatCurrency(report.cost)}
-                    </TableCell>
-                    <TableCell className="text-right text-green-600 font-bold">
-                      {formatCurrency(report.profit)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatPercentage(report.profitMargin)}
-                    </TableCell>
-                    <TableCell className="text-right">{report.totalStock}</TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(report.inventoryValue)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                <TableRow>
+                  <TableCell className="text-right">{formatCurrency(report.grossRevenue)}</TableCell>
+                  <TableCell className="text-right text-red-600">{formatCurrency(report.discounts)}</TableCell>
+                  <TableCell className="text-right">
+                    {formatCurrency(report.revenue)}
+                  </TableCell>
+                  <TableCell className="text-right text-red-600">
+                    {formatCurrency(report.cost)}
+                  </TableCell>
+                  <TableCell className="text-right text-green-600 font-bold">
+                    {formatCurrency(report.profit)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {formatPercentage(report.profitMargin)}
+                  </TableCell>
+                  <TableCell className="text-right">{report.ordersCount}</TableCell>
+                  <TableCell className="text-right">{report.itemsSold}</TableCell>
+                  <TableCell className="text-right">{report.totalStock}</TableCell>
+                  <TableCell className="text-right">
+                    {formatCurrency(report.inventoryValue)}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pagamentos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!report ? (
+            <p className="text-gray-500 text-sm">Nenhum dado</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-right">Dinheiro</TableHead>
+                  <TableHead className="text-right">Débito</TableHead>
+                  <TableHead className="text-right">Crédito</TableHead>
+                  <TableHead className="text-right">PIX</TableHead>
+                  <TableHead className="text-right">Fiado</TableHead>
+                  <TableHead className="text-right">Fiado (Recebido)</TableHead>
+                  <TableHead className="text-right">Fiado (Em aberto)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="text-right">{formatCurrency(report.payments.cash)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.debit)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.credit)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.pix)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.payLater)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.payLaterReceived || 0)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.payLaterOutstanding || 0)}</TableCell>
+                </TableRow>
               </TableBody>
             </Table>
           )}

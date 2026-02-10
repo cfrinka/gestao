@@ -32,10 +32,6 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
-  owner: {
-    id: string;
-    name: string;
-  };
 }
 
 interface CartItem {
@@ -486,8 +482,8 @@ export default function POSPage() {
   const totalDiscount = totalAutoDiscount + discount; // manual discount added on top
   const total = Math.max(0, subtotal - totalDiscount);
 
-  const canApplyDiscount = userData?.role === "ADMIN" || userData?.role === "OWNER";
-  const canUsePayLater = userData?.role === "ADMIN" || userData?.role === "OWNER";
+  const canApplyDiscount = userData?.role === "ADMIN";
+  const canUsePayLater = userData?.role === "ADMIN";
 
   const openPaymentModal = () => {
     if (cart.length === 0) {
@@ -774,20 +770,6 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
     }
   };
 
-  const groupedByOwner = cart.reduce((acc, item) => {
-    const ownerId = item.product.owner.id;
-    if (!acc[ownerId]) {
-      acc[ownerId] = {
-        owner: item.product.owner,
-        items: [],
-        subtotal: 0,
-      };
-    }
-    acc[ownerId].items.push(item);
-    acc[ownerId].subtotal += item.product.salePrice * item.quantity;
-    return acc;
-  }, {} as Record<string, { owner: { id: string; name: string }; items: CartItem[]; subtotal: number }>);
-
   return (
     <div className="h-[calc(100vh-8rem)] flex gap-6">
       <div className="flex-1 flex flex-col">
@@ -866,9 +848,6 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
                           Est: {product.stock}
                         </span>
                       </div>
-                      <span className="text-xs text-blue-600 mt-1">
-                        {product.owner.name}
-                      </span>
                     </div>
                   </CardContent>
                 </Card>
@@ -943,24 +922,13 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
               <Separator className="my-4" />
 
               <div className="space-y-2 text-sm">
-                <p className="font-semibold text-gray-600">Divisão por Proprietário:</p>
-                {Object.values(groupedByOwner).map((group) => (
-                  <div key={group.owner.id} className="flex justify-between">
-                    <span className="text-gray-600">{group.owner.name}:</span>
-                    <span>{formatCurrency(group.subtotal)}</span>
-                  </div>
-                ))}
-              </div>
-
-              <Separator className="my-4" />
-
-              <div className="space-y-1">
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between">
                   <span className="text-gray-600">Subtotal:</span>
                   <span>{formatCurrency(subtotal)}</span>
                 </div>
                 {totalAutoDiscount > 0 && (
                   <div className="flex justify-between items-center text-green-600 text-sm">
+                    <span className="text-sm">Descontos ativos:</span>
                     <span>Descontos ativos:</span>
                     <span>-{formatCurrency(totalAutoDiscount)}</span>
                   </div>

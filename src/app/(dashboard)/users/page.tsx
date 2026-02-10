@@ -31,24 +31,17 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { Plus, Settings } from "lucide-react";
 
-interface Owner {
-  id: string;
-  name: string;
-}
-
 interface User {
   id: string;
   email: string;
   name: string;
   role: string;
-  owner?: Owner;
   createdAt: string;
 }
 
 export default function UsersPage() {
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
-  const [owners, setOwners] = useState<Owner[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -56,7 +49,6 @@ export default function UsersPage() {
     password: "",
     name: "",
     role: "CASHIER",
-    ownerId: "",
   });
 
   const fetchUsers = async () => {
@@ -70,18 +62,8 @@ export default function UsersPage() {
     }
   };
 
-  const fetchOwners = async () => {
-    try {
-      const data = await apiGet("/api/owners");
-      setOwners(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Error fetching owners:", error);
-    }
-  };
-
   useEffect(() => {
     fetchUsers();
-    fetchOwners();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -97,7 +79,6 @@ export default function UsersPage() {
         password: "",
         name: "",
         role: "CASHIER",
-        ownerId: "",
       });
       fetchUsers();
     } catch (error) {
@@ -113,8 +94,6 @@ export default function UsersPage() {
     switch (role) {
       case "ADMIN":
         return "Administrador";
-      case "OWNER":
-        return "Proprietário";
       case "CASHIER":
         return "Caixa";
       default:
@@ -189,33 +168,10 @@ export default function UsersPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="ADMIN">Administrador</SelectItem>
-                    <SelectItem value="OWNER">Proprietário</SelectItem>
                     <SelectItem value="CASHIER">Caixa</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {formData.role === "OWNER" && (
-                <div className="space-y-2">
-                  <Label htmlFor="owner">Vincular a Proprietário</Label>
-                  <Select
-                    value={formData.ownerId}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, ownerId: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o proprietário" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {owners.map((owner) => (
-                        <SelectItem key={owner.id} value={owner.id}>
-                          {owner.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
               <div className="flex justify-end gap-2">
                 <Button
                   type="button"
@@ -252,7 +208,6 @@ export default function UsersPage() {
                   <TableHead>Nome</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Função</TableHead>
-                  <TableHead>Proprietário</TableHead>
                   <TableHead>Cadastrado em</TableHead>
                 </TableRow>
               </TableHeader>
@@ -262,7 +217,6 @@ export default function UsersPage() {
                     <TableCell className="font-medium">{user.name}</TableCell>
                     <TableCell>{user.email}</TableCell>
                     <TableCell>{getRoleLabel(user.role)}</TableCell>
-                    <TableCell>{user.owner?.name || "-"}</TableCell>
                     <TableCell>
                       {new Date(user.createdAt).toLocaleDateString("pt-BR")}
                     </TableCell>

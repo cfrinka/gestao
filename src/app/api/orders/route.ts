@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, getOwner, getProduct, getOwnerLedgers } from "@/lib/db";
+import { getOrders, getProduct } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
 export const dynamic = "force-dynamic";
@@ -14,12 +14,10 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
-    const ownerId = searchParams.get("ownerId") || undefined;
 
     const orders = await getOrders(
       startDate ? new Date(startDate) : undefined,
-      endDate ? new Date(endDate) : undefined,
-      ownerId
+      endDate ? new Date(endDate) : undefined
     );
 
     const ordersWithDetails = await Promise.all(
@@ -27,21 +25,21 @@ export async function GET(request: NextRequest) {
         const itemsWithDetails = await Promise.all(
           (order.items || []).map(async (item) => {
             const product = await getProduct(item.productId);
-            const owner = await getOwner(item.ownerId);
-            return { ...item, product, owner };
+            return { ...item, product };
           })
         );
 
-        const ledgers = await getOwnerLedgers(undefined, undefined, undefined);
-        const orderLedgers = ledgers.filter((l) => l.orderId === order.id);
-        const ledgersWithOwner = await Promise.all(
-          orderLedgers.map(async (ledger) => {
-            const owner = await getOwner(ledger.ownerId);
-            return { ...ledger, owner };
-          })
-        );
+        const paymentHistory = Array.isArray((order as unknown as { paymentHistory?: unknown }).paymentHistory)
+          ? (order as unknown as { paymentHistory: Array<{ createdAt?: unknown }> }).paymentHistory.map((p) => ({
+              ...p,
+              createdAt:
+                p.createdAt && typeof p.createdAt === "object" && "toDate" in (p.createdAt as object)
+                  ? (p.createdAt as { toDate: () => Date }).toDate()
+                  : p.createdAt,
+            }))
+          : undefined;
 
-        return { ...order, items: itemsWithDetails, ledgers: ledgersWithOwner };
+        return { ...order, items: itemsWithDetails, ...(paymentHistory ? { paymentHistory } : {}) };
       })
     );
 

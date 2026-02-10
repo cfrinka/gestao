@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@/contexts/auth-context";
 import { apiGet } from "@/lib/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -29,24 +28,9 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
-  owner: {
-    id: string;
-    name: string;
-  };
-}
-
-interface InventorySummary {
-  ownerId: string;
-  ownerName: string;
-  totalProducts: number;
-  totalStock: number;
-  inventoryValue: number;
-  projectedRevenue: number;
-  projectedProfit: number;
 }
 
 export default function InventoryPage() {
-  const { userData } = useAuth();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,42 +50,14 @@ export default function InventoryPage() {
     }
   };
 
-  const summaryByOwner = products.reduce((acc, product) => {
-    const ownerId = product.owner.id;
-    if (!acc[ownerId]) {
-      acc[ownerId] = {
-        ownerId,
-        ownerName: product.owner.name,
-        totalProducts: 0,
-        totalStock: 0,
-        inventoryValue: 0,
-        projectedRevenue: 0,
-        projectedProfit: 0,
-      };
-    }
-    acc[ownerId].totalProducts += 1;
-    acc[ownerId].totalStock += product.stock;
-    acc[ownerId].inventoryValue += product.stock * product.costPrice;
-    acc[ownerId].projectedRevenue += product.stock * product.salePrice;
-    acc[ownerId].projectedProfit += product.stock * (product.salePrice - product.costPrice);
-    return acc;
-  }, {} as Record<string, InventorySummary>);
-
-  const totalInventoryValue = Object.values(summaryByOwner).reduce(
-    (sum, s) => sum + s.inventoryValue,
-    0
-  );
-
-  const totalStock = Object.values(summaryByOwner).reduce(
-    (sum, s) => sum + s.totalStock,
-    0
-  );
+  const totalInventoryValue = products.reduce((sum, p) => sum + p.stock * p.costPrice, 0);
+  const totalStock = products.reduce((sum, p) => sum + p.stock, 0);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Estoque</h1>
-        <p className="text-gray-500">Controle de inventário por proprietário</p>
+        <p className="text-gray-500">Controle de inventário</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -140,44 +96,6 @@ export default function InventoryPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Resumo por Proprietário</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Proprietário</TableHead>
-                <TableHead className="text-right">Produtos</TableHead>
-                <TableHead className="text-right">Unidades</TableHead>
-                <TableHead className="text-right">Valor do Estoque</TableHead>
-                <TableHead className="text-right">Receita Projetada</TableHead>
-                <TableHead className="text-right">Lucro Projetado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Object.values(summaryByOwner).map((summary) => (
-                <TableRow key={summary.ownerId}>
-                  <TableCell className="font-medium">{summary.ownerName}</TableCell>
-                  <TableCell className="text-right">{summary.totalProducts}</TableCell>
-                  <TableCell className="text-right">{summary.totalStock}</TableCell>
-                  <TableCell className="text-right font-bold text-green-600">
-                    {formatCurrency(summary.inventoryValue)}
-                  </TableCell>
-                  <TableCell className="text-right font-medium text-blue-600">
-                    {formatCurrency(summary.projectedRevenue)}
-                  </TableCell>
-                  <TableCell className="text-right font-bold text-emerald-600">
-                    {formatCurrency(summary.projectedProfit)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Detalhes do Estoque</CardTitle>
         </CardHeader>
         <CardContent>
@@ -189,7 +107,6 @@ export default function InventoryPage() {
                 <TableRow>
                   <TableHead>Produto</TableHead>
                   <TableHead>SKU</TableHead>
-                  <TableHead>Proprietário</TableHead>
                   <TableHead className="text-right">Custo Unit.</TableHead>
                   <TableHead className="text-right">Estoque Total</TableHead>
                   <TableHead>Estoque por Tamanho</TableHead>
@@ -203,7 +120,6 @@ export default function InventoryPage() {
                   <TableRow key={product.id}>
                     <TableCell className="font-medium">{product.name}</TableCell>
                     <TableCell>{product.sku}</TableCell>
-                    <TableCell>{product.owner.name}</TableCell>
                     <TableCell className="text-right">
                       {formatCurrency(product.costPrice)}
                     </TableCell>

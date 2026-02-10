@@ -25,12 +25,14 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Pencil, Trash2, Users, CreditCard, Eye } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, CreditCard, Eye, RefreshCw } from "lucide-react";
 
 interface Order {
   id: string;
   totalAmount: number;
   createdAt: string;
+  amountPaid?: number;
+  remainingAmount?: number;
 }
 
 interface Client {
@@ -48,10 +50,15 @@ export default function ClientsPage() {
   const { toast } = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [migratingFiado, setMigratingFiado] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<"DINHEIRO" | "DEBITO" | "CREDITO" | "PIX">("DINHEIRO");
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -135,16 +142,34 @@ export default function ClientsPage() {
     }
   };
 
-  const handlePayOrder = async (orderId: string) => {
-    if (!selectedClient) return;
+  const openPayDialog = (order: Order) => {
+    setPayingOrderId(order.id);
+    const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
+    setPaymentAmount(remaining.toFixed(2));
+    setPaymentMethod("DINHEIRO");
+    setPaymentDialogOpen(true);
+  };
+
+  const handleConfirmPayment = async () => {
+    if (!selectedClient || !payingOrderId) return;
+
+    const parsed = parseFloat(paymentAmount);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      toast({ title: "Informe um valor válido", variant: "destructive" });
+      return;
+    }
 
     try {
       const updated = await apiPatch(`/api/clients/${selectedClient.id}`, {
         action: "pay_order",
-        orderId,
+        orderId: payingOrderId,
+        amount: parsed,
+        method: paymentMethod,
       });
       setSelectedClient({ ...updated, pendingOrders: updated.pendingOrders || [] });
       toast({ title: "Pagamento registrado!" });
+      setPaymentDialogOpen(false);
+      setPayingOrderId(null);
       fetchClients();
     } catch (error) {
       toast({ title: "Erro ao registrar pagamento", variant: "destructive" });
@@ -166,7 +191,51 @@ export default function ClientsPage() {
     setDialogOpen(true);
   };
 
-  // Only ADMIN and OWNER can access this page
+  const handleMigrateFiado = async () => {
+    if (migratingFiado) return;
+
+    try {
+      setMigratingFiado(true);
+
+      const dryRun = await apiPost("/api/admin/migrate-fiado", { apply: false, limit: 200 });
+      const toUpdate = typeof dryRun?.toUpdate === "number" ? dryRun.toUpdate : 0;
+
+      if (toUpdate <= 0) {
+        toast({ title: "Migração FIADO", description: "Nenhum pedido para atualizar." });
+        return;
+      }
+
+      const ok = confirm(
+        `Migração FIADO: ${toUpdate} pedido(s) serão atualizados.\n\nDeseja aplicar agora?`
+      );
+      if (!ok) return;
+
+      const applied = await apiPost("/api/admin/migrate-fiado", { apply: true, limit: 200 });
+      const updated = typeof applied?.updated === "number" ? applied.updated : 0;
+      const errors = typeof applied?.errors === "number" ? applied.errors : 0;
+
+      toast({
+        title: "Migração FIADO concluída",
+        description: `Atualizados: ${updated}. Erros: ${errors}.`,
+      });
+
+      if (detailsOpen && selectedClient) {
+        const refreshed = await apiGet(`/api/clients/${selectedClient.id}`);
+        setSelectedClient(refreshed);
+      }
+      fetchClients();
+    } catch (error) {
+      toast({
+        title: "Erro na migração FIADO",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setMigratingFiado(false);
+    }
+  };
+
+  // Only ADMIN can access this page
   if (userData?.role === "CASHIER") {
     return (
       <div className="flex items-center justify-center h-96">
@@ -184,68 +253,74 @@ export default function ClientsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Clientes</h1>
           <p className="text-gray-500">Gerencie clientes e pagamentos pendentes</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openNewDialog}>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Cliente
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {editingClient ? "Editar Cliente" : "Novo Cliente"}
-              </DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nome *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleMigrateFiado} disabled={migratingFiado}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${migratingFiado ? "animate-spin" : ""}`} />
+            Migrar FIADO
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={openNewDialog}>
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Cliente
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {editingClient ? "Editar Cliente" : "Novo Cliente"}
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Telefone</Label>
+                  <Label htmlFor="name">Nome *</Label>
                   <Input
-                    id="phone"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Telefone</Label>
+                    <Input
+                      id="phone"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    />
+                  </div>
+                </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  <Label htmlFor="notes">Observações</Label>
+                  <Textarea
+                    id="notes"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    rows={3}
                   />
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">Observações</Label>
-                <Textarea
-                  id="notes"
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  rows={3}
-                />
-              </div>
-              <div className="flex gap-2 pt-4">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setDialogOpen(false)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" className="flex-1">
-                  {editingClient ? "Salvar" : "Criar"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <div className="flex gap-2 pt-4">
+                  <Button type="button" variant="outline" className="flex-1" onClick={() => setDialogOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" className="flex-1">
+                    {editingClient ? "Salvar" : "Criar"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -382,22 +457,29 @@ export default function ClientsPage() {
                 <p className="text-sm font-medium text-gray-700 mb-2">Pedidos Pendentes</p>
                 {selectedClient.pendingOrders && selectedClient.pendingOrders.length > 0 ? (
                   <div className="space-y-2">
-                    {selectedClient.pendingOrders.map((order) => (
+                    {selectedClient.pendingOrders.map((order) => {
+                      const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
+                      const paid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
+                      return (
                       <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                         <div>
                           <p className="text-sm font-medium">Pedido #{order.id.slice(-6).toUpperCase()}</p>
                           <p className="text-xs text-gray-500">
                             {new Date(order.createdAt).toLocaleDateString("pt-BR")}
                           </p>
+                          <p className="text-xs text-gray-600">
+                            Pago: {formatCurrency(paid)} | Restante: {formatCurrency(remaining)}
+                          </p>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="font-bold text-red-600">{formatCurrency(order.totalAmount)}</span>
-                          <Button size="sm" onClick={() => handlePayOrder(order.id)}>
+                          <span className="font-bold text-red-600">{formatCurrency(remaining)}</span>
+                          <Button size="sm" onClick={() => openPayDialog(order)}>
                             Receber
                           </Button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-gray-500 text-sm">Nenhum pedido pendente</p>
@@ -405,6 +487,46 @@ export default function ClientsPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Registrar Pagamento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="payAmount">Valor</Label>
+              <Input
+                id="payAmount"
+                type="number"
+                step="0.01"
+                min="0"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Forma</Label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
+              >
+                <option value="DINHEIRO">Dinheiro</option>
+                <option value="DEBITO">Débito</option>
+                <option value="CREDITO">Crédito</option>
+                <option value="PIX">PIX</option>
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleConfirmPayment}>Confirmar</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

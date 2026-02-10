@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Gestão Loja - Sistema de Gestão",
-  description: "Sistema de gestão para loja com dois proprietários",
+  description: "Sistema de gestão para loja",
 };
 
 export default function RootLayout({

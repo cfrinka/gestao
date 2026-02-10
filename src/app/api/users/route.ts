@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUsers, getOwner } from "@/lib/db";
+import { getUsers } from "@/lib/db";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
@@ -18,15 +18,8 @@ export async function GET(request: NextRequest) {
     }
 
     const users = await getUsers();
-    
-    const usersWithOwner = await Promise.all(
-      users.map(async (user) => {
-        const owner = user.ownerId ? await getOwner(user.ownerId) : null;
-        return { ...user, owner };
-      })
-    );
 
-    return NextResponse.json(usersWithOwner);
+    return NextResponse.json(users);
   } catch (error) {
     console.error("Error fetching users:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -45,7 +38,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { email, password, name, role, ownerId } = body;
+    const { email, password, name, role } = body;
 
     if (!email || !password || !name || !role) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -62,20 +55,15 @@ export async function POST(request: NextRequest) {
       email,
       name,
       role,
-      ownerId: ownerId || null,
       createdAt: Timestamp.fromDate(now),
       updatedAt: Timestamp.fromDate(now),
     });
-
-    const owner = ownerId ? await getOwner(ownerId) : null;
 
     return NextResponse.json({
       id: firebaseUser.uid,
       email,
       name,
       role,
-      ownerId,
-      owner,
       createdAt: now,
       updatedAt: now,
     }, { status: 201 });

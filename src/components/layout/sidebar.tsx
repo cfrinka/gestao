@@ -19,15 +19,14 @@ import {
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["ADMIN", "OWNER", "CASHIER"] },
-  { name: "PDV", href: "/pos", icon: ShoppingCart, roles: ["ADMIN", "OWNER", "CASHIER"] },
-  { name: "Produtos", href: "/products", icon: Package, roles: ["ADMIN", "OWNER"] },
-  { name: "Vendas", href: "/sales", icon: ClipboardList, roles: ["ADMIN", "OWNER", "CASHIER"] },
-  { name: "Estoque", href: "/inventory", icon: Boxes, roles: ["ADMIN", "OWNER"] },
-  { name: "Clientes", href: "/clients", icon: UserCheck, roles: ["ADMIN", "OWNER"] },
-  { name: "Relatórios", href: "/reports", icon: BarChart3, roles: ["ADMIN", "OWNER"] },
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["ADMIN", "CASHIER"] },
+  { name: "PDV", href: "/pos", icon: ShoppingCart, roles: ["ADMIN", "CASHIER"] },
+  { name: "Produtos", href: "/products", icon: Package, roles: ["ADMIN"] },
+  { name: "Vendas", href: "/sales", icon: ClipboardList, roles: ["ADMIN", "CASHIER"] },
+  { name: "Estoque", href: "/inventory", icon: Boxes, roles: ["ADMIN"] },
+  { name: "Clientes", href: "/clients", icon: UserCheck, roles: ["ADMIN"] },
+  { name: "Relatórios", href: "/reports", icon: BarChart3, roles: ["ADMIN"] },
   { name: "Códigos de Barras", href: "/barcodes", icon: Barcode, roles: ["ADMIN"] },
-  { name: "Proprietários", href: "/owners", icon: Users, roles: ["ADMIN"] },
   { name: "Usuários", href: "/users", icon: Store, roles: ["ADMIN"] },
   { name: "Configurações", href: "/settings", icon: Settings, roles: ["ADMIN"] },
 ];

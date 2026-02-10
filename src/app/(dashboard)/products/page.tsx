@@ -33,11 +33,6 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, generateSku } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Package } from "lucide-react";
 
-interface Owner {
-  id: string;
-  name: string;
-}
-
 interface ProductSize {
   size: string;
   stock: number;
@@ -47,8 +42,6 @@ interface Product {
   id: string;
   name: string;
   sku: string;
-  ownerId: string;
-  owner: Owner;
   costPrice: number;
   salePrice: number;
   stock: number;
@@ -61,14 +54,12 @@ export default function ProductsPage() {
   const { userData } = useAuth();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
-  const [owners, setOwners] = useState<Owner[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
-    ownerId: "",
     costPrice: "",
     salePrice: "",
     stock: "0",
@@ -92,24 +83,8 @@ export default function ProductsPage() {
     }
   };
 
-  const fetchOwners = async () => {
-    try {
-      const data = await apiGet("/api/owners");
-      if (Array.isArray(data)) {
-        setOwners(data);
-      } else {
-        console.error("Error fetching owners:", data);
-        setOwners([]);
-      }
-    } catch (error) {
-      console.error("Error fetching owners:", error);
-      setOwners([]);
-    }
-  };
-
   useEffect(() => {
     fetchProducts();
-    fetchOwners();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -154,7 +129,6 @@ export default function ProductsPage() {
     setFormData({
       name: product.name,
       sku: product.sku,
-      ownerId: product.ownerId,
       costPrice: product.costPrice.toString(),
       salePrice: product.salePrice.toString(),
       stock: product.stock.toString(),
@@ -170,7 +144,6 @@ export default function ProductsPage() {
     setFormData({
       name: "",
       sku: "",
-      ownerId: userData?.ownerId || "",
       costPrice: "",
       salePrice: "",
       stock: "0",
@@ -234,29 +207,6 @@ export default function ProductsPage() {
                   />
                 </div>
               </div>
-
-              {userData?.role === "ADMIN" && (
-                <div className="space-y-2">
-                  <Label htmlFor="owner">Proprietário</Label>
-                  <Select
-                    value={formData.ownerId}
-                    onValueChange={(value) =>
-                      setFormData({ ...formData, ownerId: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o proprietário" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {owners.map((owner) => (
-                        <SelectItem key={owner.id} value={owner.id}>
-                          {owner.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
@@ -351,7 +301,6 @@ export default function ProductsPage() {
                 <TableRow>
                   <TableHead>Nome</TableHead>
                   <TableHead>SKU</TableHead>
-                  <TableHead>Proprietário</TableHead>
                   <TableHead className="text-right">Custo</TableHead>
                   <TableHead className="text-right">Venda</TableHead>
                   <TableHead className="text-right">Estoque</TableHead>
@@ -363,7 +312,6 @@ export default function ProductsPage() {
                   <TableRow key={product.id}>
                     <TableCell className="font-medium">{product.name}</TableCell>
                     <TableCell>{product.sku}</TableCell>
-                    <TableCell>{product.owner.name}</TableCell>
                     <TableCell className="text-right">
                       {formatCurrency(product.costPrice)}
                     </TableCell>

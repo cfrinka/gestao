@@ -34,24 +34,18 @@ interface OrderItem {
     name: string;
     sku: string;
   };
-  owner: {
-    name: string;
-  };
-}
-
-interface OwnerLedger {
-  id: string;
-  revenue: number;
-  cost: number;
-  profit: number;
-  owner: {
-    name: string;
-  };
 }
 
 interface PaymentMethod {
   method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX";
   amount: number;
+}
+
+interface FiadoPayment {
+  id: string;
+  amount: number;
+  method: PaymentMethod["method"];
+  createdAt: string;
 }
 
 interface Order {
@@ -60,10 +54,12 @@ interface Order {
   totalAmount: number;
   payments?: PaymentMethod[];
   items: OrderItem[];
-  ledgers: OwnerLedger[];
   clientId?: string;
   clientName?: string;
   isPaidLater?: boolean;
+  amountPaid?: number;
+  remainingAmount?: number;
+  paymentHistory?: FiadoPayment[];
   paidAt?: string;
 }
 
@@ -75,13 +71,16 @@ export default function SalesPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (override?: { startDate?: string; endDate?: string }) => {
     setLoading(true);
     try {
+      const effectiveStartDate = override?.startDate ?? startDate;
+      const effectiveEndDate = override?.endDate ?? endDate;
+
       let url = "/api/orders";
       const params = new URLSearchParams();
-      if (startDate) params.append("startDate", startDate);
-      if (endDate) params.append("endDate", endDate);
+      if (effectiveStartDate) params.append("startDate", effectiveStartDate);
+      if (effectiveEndDate) params.append("endDate", effectiveEndDate);
       if (params.toString()) url += `?${params.toString()}`;
 
       const data = await apiGet(url);
@@ -104,7 +103,70 @@ export default function SalesPage() {
   const handleClearFilter = () => {
     setStartDate("");
     setEndDate("");
-    fetchOrders();
+    fetchOrders({ startDate: "", endDate: "" });
+  };
+
+  const applyPreset = (preset: "today" | "yesterday" | "this_week" | "this_month" | "last_30" | "last_90" | "all") => {
+    const today = new Date();
+    const toISO = (d: Date) => d.toISOString().split("T")[0];
+
+    if (preset === "all") {
+      setStartDate("");
+      setEndDate("");
+      fetchOrders({ startDate: "", endDate: "" });
+      return;
+    }
+
+    if (preset === "today") {
+      const t = toISO(today);
+      setStartDate(t);
+      setEndDate(t);
+      fetchOrders({ startDate: t, endDate: t });
+      return;
+    }
+
+    if (preset === "yesterday") {
+      const y = new Date(today);
+      y.setDate(today.getDate() - 1);
+      const d = toISO(y);
+      setStartDate(d);
+      setEndDate(d);
+      fetchOrders({ startDate: d, endDate: d });
+      return;
+    }
+
+    if (preset === "this_week") {
+      const dayOfWeek = today.getDay();
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+      const start = toISO(monday);
+      const end = toISO(today);
+      setStartDate(start);
+      setEndDate(end);
+      fetchOrders({ startDate: start, endDate: end });
+      return;
+    }
+
+    if (preset === "this_month") {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      const start = toISO(firstDay);
+      const end = toISO(today);
+      setStartDate(start);
+      setEndDate(end);
+      fetchOrders({ startDate: start, endDate: end });
+      return;
+    }
+
+    if (preset === "last_30" || preset === "last_90") {
+      const days = preset === "last_30" ? 30 : 90;
+      const start = new Date(today);
+      start.setDate(today.getDate() - days);
+      const startIso = toISO(start);
+      const endIso = toISO(today);
+      setStartDate(startIso);
+      setEndDate(endIso);
+      fetchOrders({ startDate: startIso, endDate: endIso });
+    }
   };
 
   const exportCSV = () => {
@@ -143,6 +205,16 @@ export default function SalesPage() {
           <CardTitle>Filtros</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <Button variant="outline" size="sm" onClick={() => applyPreset("today")}>Hoje</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("yesterday")}>Ontem</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("this_week")}>Esta Semana</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("this_month")}>Este Mês</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("last_30")}>Últimos 30 dias</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("last_90")}>Últimos 90 dias</Button>
+            <Button variant="outline" size="sm" onClick={() => applyPreset("all")}>Todo Período</Button>
+          </div>
+
           <div className="flex gap-4 items-end">
             <div className="space-y-2">
               <Label>Data Inicial</Label>
@@ -207,7 +279,9 @@ export default function SalesPage() {
                       <div className="flex gap-1">
                         {order.isPaidLater ? (
                           <span className={`text-xs px-2 py-1 rounded ${order.paidAt ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                            {order.paidAt ? 'Fiado (Pago)' : 'Fiado'}
+                            {order.paidAt
+                              ? 'Fiado (Pago)'
+                              : `Fiado (${formatCurrency(order.remainingAmount ?? order.totalAmount)})`}
                           </span>
                         ) : (
                           <>
@@ -277,6 +351,9 @@ export default function SalesPage() {
                         {selectedOrder.paidAt ? 'Venda Fiado (Pago)' : 'Venda Fiado (Pendente)'}
                       </p>
                       <p className="text-sm text-gray-600">Cliente: {selectedOrder.clientName}</p>
+                      <p className="text-xs text-gray-600">
+                        Pago: {formatCurrency(selectedOrder.amountPaid || 0)} | Restante: {formatCurrency(selectedOrder.remainingAmount ?? selectedOrder.totalAmount)}
+                      </p>
                     </div>
                     {selectedOrder.paidAt && (
                       <p className="text-xs text-green-600">
@@ -284,6 +361,35 @@ export default function SalesPage() {
                       </p>
                     )}
                   </div>
+                </div>
+              )}
+
+              {selectedOrder.isPaidLater && selectedOrder.paymentHistory && selectedOrder.paymentHistory.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-2">Histórico de Pagamentos</h4>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Data</TableHead>
+                        <TableHead>Forma</TableHead>
+                        <TableHead className="text-right">Valor</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedOrder.paymentHistory.map((p) => (
+                        <TableRow key={p.id}>
+                          <TableCell>{formatDate(new Date(p.createdAt))}</TableCell>
+                          <TableCell>
+                            {p.method === "DINHEIRO" && "Dinheiro"}
+                            {p.method === "DEBITO" && "Débito"}
+                            {p.method === "CREDITO" && "Crédito"}
+                            {p.method === "PIX" && "PIX"}
+                          </TableCell>
+                          <TableCell className="text-right">{formatCurrency(p.amount)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
 
@@ -316,7 +422,6 @@ export default function SalesPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Produto</TableHead>
-                      <TableHead>Proprietário</TableHead>
                       <TableHead className="text-right">Qtd</TableHead>
                       <TableHead className="text-right">Preço</TableHead>
                       <TableHead className="text-right">Total</TableHead>
@@ -326,7 +431,6 @@ export default function SalesPage() {
                     {selectedOrder.items.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell>{item.product.name}</TableCell>
-                        <TableCell>{item.owner.name}</TableCell>
                         <TableCell className="text-right">
                           {item.quantity}
                         </TableCell>
@@ -335,36 +439,6 @@ export default function SalesPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(item.totalRevenue)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div>
-                <h4 className="font-semibold mb-2">Divisão por Proprietário</h4>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Proprietário</TableHead>
-                      <TableHead className="text-right">Receita</TableHead>
-                      <TableHead className="text-right">Custo</TableHead>
-                      <TableHead className="text-right">Lucro</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedOrder.ledgers.map((ledger) => (
-                      <TableRow key={ledger.id}>
-                        <TableCell>{ledger.owner.name}</TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(ledger.revenue)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(ledger.cost)}
-                        </TableCell>
-                        <TableCell className="text-right text-green-600 font-bold">
-                          {formatCurrency(ledger.profit)}
                         </TableCell>
                       </TableRow>
                     ))}

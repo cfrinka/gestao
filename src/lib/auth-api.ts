@@ -5,7 +5,6 @@ export interface AuthUser {
   uid: string;
   email: string;
   role: string;
-  ownerId: string | null;
 }
 
 export async function verifyAuth(request: NextRequest): Promise<AuthUser | null> {
@@ -21,12 +20,14 @@ export async function verifyAuth(request: NextRequest): Promise<AuthUser | null>
     // Fetch user data from Firestore to get role and ownerId
     const userDoc = await adminDb.collection("users").doc(decodedToken.uid).get();
     const userData = userDoc.data();
+
+    const rawRole = userData?.role || "CASHIER";
+    const normalizedRole = rawRole === "OWNER" ? "ADMIN" : rawRole;
     
     return {
       uid: decodedToken.uid,
       email: decodedToken.email || "",
-      role: userData?.role || "CASHIER",
-      ownerId: userData?.ownerId || null,
+      role: normalizedRole,
     };
   } catch (error) {
     console.error("Auth verification failed:", error);
