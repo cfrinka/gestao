@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { apiGet, apiPut } from "@/lib/api-client";
+import { apiGet, apiPut, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +35,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [billSaving, setBillSaving] = useState(false);
   const [settings, setSettings] = useState<StoreSettings>({
     storeName: "",
     address: "",
@@ -52,6 +53,15 @@ export default function SettingsPage() {
       progressiveDiscount3PlusItems: 0,
     },
   });
+
+  const [billKind, setBillKind] = useState<"ONE_TIME" | "FIXED" | "INSTALLMENTS">("ONE_TIME");
+  const [billName, setBillName] = useState("");
+  const [billAmount, setBillAmount] = useState<string>("");
+  const [billDueDate, setBillDueDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [billDayOfMonth, setBillDayOfMonth] = useState<string>("5");
+  const [billMonthsAhead, setBillMonthsAhead] = useState<string>("12");
+  const [billFirstDueDate, setBillFirstDueDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [billInstallmentsCount, setBillInstallmentsCount] = useState<string>("3");
 
   useEffect(() => {
     fetchSettings();
@@ -81,6 +91,64 @@ export default function SettingsPage() {
       toast({ title: "Erro ao carregar configurações", variant: "destructive" });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateBill = async () => {
+    const parsed = parseFloat(billAmount);
+    if (!billName.trim()) {
+      toast({ title: "Informe o nome da conta", variant: "destructive" });
+      return;
+    }
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      toast({ title: "Informe um valor válido", variant: "destructive" });
+      return;
+    }
+
+    setBillSaving(true);
+    try {
+      if (billKind === "ONE_TIME") {
+        await apiPost("/api/bills", {
+          kind: "ONE_TIME",
+          name: billName.trim(),
+          amount: parsed,
+          dueDate: billDueDate,
+        });
+      }
+
+      if (billKind === "FIXED") {
+        await apiPost("/api/bills", {
+          kind: "FIXED",
+          name: billName.trim(),
+          amount: parsed,
+          dayOfMonth: parseInt(billDayOfMonth, 10),
+          monthsAhead: parseInt(billMonthsAhead, 10),
+          startMonth: new Date().toISOString().slice(0, 7),
+        });
+      }
+
+      if (billKind === "INSTALLMENTS") {
+        await apiPost("/api/bills", {
+          kind: "INSTALLMENTS",
+          name: billName.trim(),
+          amount: parsed,
+          firstDueDate: billFirstDueDate,
+          installmentsCount: parseInt(billInstallmentsCount, 10),
+          intervalMonths: 1,
+        });
+      }
+
+      toast({ title: "Conta(s) criada(s)" });
+      setBillName("");
+      setBillAmount("");
+    } catch (error) {
+      toast({
+        title: "Erro ao criar conta",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setBillSaving(false);
     }
   };
 
@@ -371,6 +439,103 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Receipt className="h-5 w-5 text-[#355444]" />
+            Contas da Loja
+          </CardTitle>
+          <CardDescription>
+            Cadastre contas fixas, avulsas e parceladas
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="space-y-2 md:col-span-2">
+              <Label>Nome</Label>
+              <Input value={billName} onChange={(e) => setBillName(e.target.value)} placeholder="Ex: Aluguel" />
+            </div>
+            <div className="space-y-2">
+              <Label>Valor</Label>
+              <Input value={billAmount} onChange={(e) => setBillAmount(e.target.value)} type="number" step="0.01" />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={billKind}
+                onChange={(e) => setBillKind(e.target.value as typeof billKind)}
+              >
+                <option value="ONE_TIME">Avulsa</option>
+                <option value="FIXED">Fixa</option>
+                <option value="INSTALLMENTS">Parcelada</option>
+              </select>
+            </div>
+          </div>
+
+          {billKind === "ONE_TIME" && (
+            <div className="space-y-2">
+              <Label>Vencimento</Label>
+              <Input type="date" value={billDueDate} onChange={(e) => setBillDueDate(e.target.value)} />
+            </div>
+          )}
+
+          {billKind === "FIXED" && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Dia do vencimento</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={billDayOfMonth}
+                  onChange={(e) => setBillDayOfMonth(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Meses à frente</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="36"
+                  value={billMonthsAhead}
+                  onChange={(e) => setBillMonthsAhead(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {billKind === "INSTALLMENTS" && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>1º vencimento</Label>
+                <Input
+                  type="date"
+                  value={billFirstDueDate}
+                  onChange={(e) => setBillFirstDueDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Nº parcelas</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={billInstallmentsCount}
+                  onChange={(e) => setBillInstallmentsCount(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <Button onClick={handleCreateBill} disabled={billSaving}>
+              {billSaving ? "Salvando..." : "Adicionar Conta"}
+            </Button>
           </div>
         </CardContent>
       </Card>
