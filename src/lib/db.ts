@@ -566,20 +566,26 @@ export async function createSupplier(
   data: Omit<Supplier, "id" | "createdAt" | "updatedAt">
 ): Promise<Supplier> {
   const now = new Date();
+  const sanitizedData = Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  ) as Omit<Supplier, "id" | "createdAt" | "updatedAt">;
   const docRef = await adminDb.collection("suppliers").add({
-    ...data,
+    ...sanitizedData,
     createdAt: Timestamp.fromDate(now),
     updatedAt: Timestamp.fromDate(now),
   });
-  return { id: docRef.id, ...data, createdAt: now, updatedAt: now };
+  return { id: docRef.id, ...sanitizedData, createdAt: now, updatedAt: now };
 }
 
 export async function updateSupplier(
   id: string,
   data: Partial<Omit<Supplier, "id" | "createdAt" | "updatedAt">>
 ): Promise<void> {
+  const sanitizedData = Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  ) as Partial<Omit<Supplier, "id" | "createdAt" | "updatedAt">>;
   await adminDb.collection("suppliers").doc(id).update({
-    ...data,
+    ...sanitizedData,
     updatedAt: Timestamp.fromDate(new Date()),
   });
 }

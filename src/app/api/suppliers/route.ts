@@ -55,10 +55,10 @@ export async function POST(request: NextRequest) {
 
     const supplier = await createSupplier({
       name,
-      instagram: instagram || undefined,
-      whatsapp: whatsapp || undefined,
-      website: website || undefined,
-      observations: observations || undefined,
+      instagram,
+      whatsapp,
+      website,
+      observations,
       acceptedPaymentMethods,
     });
 

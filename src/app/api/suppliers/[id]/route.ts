@@ -65,10 +65,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     await updateSupplier(params.id, {
       ...(name !== undefined ? { name } : {}),
-      ...(instagram !== undefined ? { instagram: instagram || undefined } : {}),
-      ...(whatsapp !== undefined ? { whatsapp: whatsapp || undefined } : {}),
-      ...(website !== undefined ? { website: website || undefined } : {}),
-      ...(observations !== undefined ? { observations: observations || undefined } : {}),
+      ...(instagram !== undefined ? { instagram } : {}),
+      ...(whatsapp !== undefined ? { whatsapp } : {}),
+      ...(website !== undefined ? { website } : {}),
+      ...(observations !== undefined ? { observations } : {}),
       ...(acceptedPaymentMethods !== undefined ? { acceptedPaymentMethods } : {}),
     });
 
