@@ -83,6 +83,18 @@ export interface Client {
   updatedAt: Date;
 }
 
+export interface Supplier {
+  id: string;
+  name: string;
+  instagram?: string;
+  whatsapp?: string;
+  website?: string;
+  observations?: string;
+  acceptedPaymentMethods: ("DINHEIRO" | "DEBITO" | "CREDITO" | "PIX" | "FIADO")[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface CashRegister {
   id: string;
   userId: string;
@@ -533,6 +545,47 @@ export async function updateClientBalance(id: string, amount: number): Promise<v
 
 export async function deleteClient(id: string): Promise<void> {
   await adminDb.collection("clients").doc(id).delete();
+}
+
+// Suppliers
+export async function getSuppliers(): Promise<Supplier[]> {
+  const snapshot = await adminDb.collection("suppliers").orderBy("name").get();
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...convertTimestamp(doc.data()),
+  })) as Supplier[];
+}
+
+export async function getSupplier(id: string): Promise<Supplier | null> {
+  const doc = await adminDb.collection("suppliers").doc(id).get();
+  if (!doc.exists) return null;
+  return { id: doc.id, ...convertTimestamp(doc.data()!) } as Supplier;
+}
+
+export async function createSupplier(
+  data: Omit<Supplier, "id" | "createdAt" | "updatedAt">
+): Promise<Supplier> {
+  const now = new Date();
+  const docRef = await adminDb.collection("suppliers").add({
+    ...data,
+    createdAt: Timestamp.fromDate(now),
+    updatedAt: Timestamp.fromDate(now),
+  });
+  return { id: docRef.id, ...data, createdAt: now, updatedAt: now };
+}
+
+export async function updateSupplier(
+  id: string,
+  data: Partial<Omit<Supplier, "id" | "createdAt" | "updatedAt">>
+): Promise<void> {
+  await adminDb.collection("suppliers").doc(id).update({
+    ...data,
+    updatedAt: Timestamp.fromDate(new Date()),
+  });
+}
+
+export async function deleteSupplier(id: string): Promise<void> {
+  await adminDb.collection("suppliers").doc(id).delete();
 }
 
 export async function getClientPendingOrders(clientId: string): Promise<Order[]> {
