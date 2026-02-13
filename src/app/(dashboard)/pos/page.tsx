@@ -29,6 +29,7 @@ interface Product {
   id: string;
   name: string;
   sku: string;
+  plusSized?: boolean;
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
@@ -834,7 +835,14 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
                   }`}
                   onClick={() => handleProductClick(product)}
                 >
-                  <CardContent className="p-4">
+                  <CardContent className="p-4 relative">
+                    {product.plusSized === true && (
+                      <div className="absolute right-3 top-3">
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#355444] text-white">
+                          PLUS
+                        </span>
+                      </div>
+                    )}
                     <div className="flex flex-col">
                       <span className="font-medium text-sm truncate">
                         {product.name}

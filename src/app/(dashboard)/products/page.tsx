@@ -42,6 +42,7 @@ interface Product {
   id: string;
   name: string;
   sku: string;
+  plusSized?: boolean;
   costPrice: number;
   salePrice: number;
   stock: number;
@@ -49,22 +50,41 @@ interface Product {
 }
 
 const DEFAULT_SIZES = ["PP", "P", "M", "G", "GG", "XG"];
+const PLUS_SIZES = ["GG", "XG", "G1", "G2", "G3"];
 
 export default function ProductsPage() {
   const { userData } = useAuth();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
+    plusSized: false,
     costPrice: "",
     salePrice: "",
     stock: "0",
     sizes: DEFAULT_SIZES.map(size => ({ size, stock: 0 })),
   });
+
+  useEffect(() => {
+    if (editingProduct) return;
+    const expected = formData.plusSized ? PLUS_SIZES : DEFAULT_SIZES;
+    const sameShape =
+      Array.isArray(formData.sizes) &&
+      formData.sizes.length === expected.length &&
+      formData.sizes.every((s, i) => s.size === expected[i]);
+    if (sameShape) return;
+
+    setFormData((prev) => ({
+      ...prev,
+      sizes: expected.map((size) => ({ size, stock: 0 })),
+      stock: "0",
+    }));
+  }, [formData.plusSized, editingProduct]);
 
   const fetchProducts = async () => {
     try {
@@ -80,6 +100,25 @@ export default function ProductsPage() {
       setProducts([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const migratePlusSizeSizes = async () => {
+    if (!confirm('Isso vai ajustar os tamanhos para produtos Plus Size (P→G1, M→G2, G→G3). Continuar?')) return;
+
+    try {
+      const result = await apiPost("/api/admin/migrate-plus-size-sizes", { apply: true, limit: 500 });
+      toast({
+        title: "Ajuste concluído",
+        description: `Atualizados: ${result?.updated ?? 0} | Escaneados: ${result?.scanned ?? 0}`,
+      });
+      fetchProducts();
+    } catch (error) {
+      toast({
+        title: "Erro ao ajustar tamanhos Plus Size",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
     }
   };
 
@@ -129,12 +168,13 @@ export default function ProductsPage() {
     setFormData({
       name: product.name,
       sku: product.sku,
+      plusSized: product.plusSized === true,
       costPrice: product.costPrice.toString(),
       salePrice: product.salePrice.toString(),
       stock: product.stock.toString(),
       sizes: product.sizes?.length > 0 
         ? product.sizes 
-        : DEFAULT_SIZES.map(size => ({ size, stock: 0 })),
+        : (product.plusSized === true ? PLUS_SIZES : DEFAULT_SIZES).map(size => ({ size, stock: 0 })),
     });
     setDialogOpen(true);
   };
@@ -144,6 +184,7 @@ export default function ProductsPage() {
     setFormData({
       name: "",
       sku: "",
+      plusSized: false,
       costPrice: "",
       salePrice: "",
       stock: "0",
@@ -164,6 +205,34 @@ export default function ProductsPage() {
     setDialogOpen(true);
   };
 
+  const migratePlusSized = async () => {
+    if (!confirm('Isso vai marcar como "Plus Size" todos os produtos cujo nome contém "Plus". Continuar?')) return;
+
+    try {
+      const result = await apiPost("/api/admin/migrate-plus-sized", { apply: true, limit: 500 });
+      toast({
+        title: "Migração concluída",
+        description: `Atualizados: ${result?.updated ?? 0} | Escaneados: ${result?.scanned ?? 0}`,
+      });
+      fetchProducts();
+    } catch (error) {
+      toast({
+        title: "Erro ao migrar Plus Size",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredProducts = normalizedSearch
+    ? products.filter((p) => {
+        const name = (p.name || "").toLowerCase();
+        const sku = (p.sku || "").toLowerCase();
+        return name.includes(normalizedSearch) || sku.includes(normalizedSearch);
+      })
+    : products;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -171,20 +240,31 @@ export default function ProductsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Produtos</h1>
           <p className="text-gray-500">Gerencie os produtos da loja</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openNewDialog}>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Produto
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>
-                {editingProduct ? "Editar Produto" : "Novo Produto"}
-              </DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="flex items-center gap-2">
+          {userData?.role === "ADMIN" && (
+            <>
+              <Button variant="outline" onClick={migratePlusSized}>
+                Migrar Plus Size
+              </Button>
+              <Button variant="outline" onClick={migratePlusSizeSizes}>
+                Ajustar tamanhos Plus
+              </Button>
+            </>
+          )}
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={openNewDialog}>
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Produto
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>
+                  {editingProduct ? "Editar Produto" : "Novo Produto"}
+                </DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Nome</Label>
@@ -207,6 +287,15 @@ export default function ProductsPage() {
                   />
                 </div>
               </div>
+
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={formData.plusSized}
+                  onChange={(e) => setFormData({ ...formData, plusSized: e.target.checked })}
+                />
+                Plus Size
+              </label>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
@@ -248,7 +337,7 @@ export default function ProductsPage() {
 
               <div className="space-y-2">
                 <Label>Estoque por Tamanho</Label>
-                <div className="grid grid-cols-6 gap-2">
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                   {formData.sizes.map((sizeData, index) => (
                     <div key={sizeData.size} className="space-y-1">
                       <Label className="text-xs text-center block">{sizeData.size}</Label>
@@ -277,21 +366,30 @@ export default function ProductsPage() {
                 </Button>
               </div>
             </form>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="h-5 w-5" />
-            Lista de Produtos
-          </CardTitle>
+          <div className="flex items-start justify-between gap-4 flex-col sm:flex-row">
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Lista de Produtos
+            </CardTitle>
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome ou SKU..."
+              className="w-full sm:max-w-xs"
+            />
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-center py-4">Carregando...</p>
-          ) : products.length === 0 ? (
+          ) : filteredProducts.length === 0 ? (
             <p className="text-center py-4 text-gray-500">
               Nenhum produto cadastrado
             </p>
@@ -301,6 +399,7 @@ export default function ProductsPage() {
                 <TableRow>
                   <TableHead>Nome</TableHead>
                   <TableHead>SKU</TableHead>
+                  <TableHead>Plus</TableHead>
                   <TableHead className="text-right">Custo</TableHead>
                   <TableHead className="text-right">Venda</TableHead>
                   <TableHead className="text-right">Estoque</TableHead>
@@ -308,10 +407,19 @@ export default function ProductsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {products.map((product) => (
+                {filteredProducts.map((product) => (
                   <TableRow key={product.id}>
                     <TableCell className="font-medium">{product.name}</TableCell>
                     <TableCell>{product.sku}</TableCell>
+                    <TableCell>
+                      {product.plusSized ? (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#355444] text-white">
+                          PLUS
+                        </span>
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       {formatCurrency(product.costPrice)}
                     </TableCell>

@@ -11,6 +11,7 @@ export interface Product {
   name: string;
   sku: string;
   ownerId?: string;
+  plusSized?: boolean;
   costPrice: number;
   salePrice: number;
   stock: number;
@@ -127,6 +128,7 @@ export async function getProducts(): Promise<Product[]> {
   const snapshot = await adminDb.collection("products").orderBy("name").get();
   return snapshot.docs.map((doc) => ({
     id: doc.id,
+    plusSized: doc.data()?.plusSized === true,
     ...convertTimestamp(doc.data()),
   })) as Product[];
 }
@@ -134,14 +136,22 @@ export async function getProducts(): Promise<Product[]> {
 export async function getProduct(id: string): Promise<Product | null> {
   const doc = await adminDb.collection("products").doc(id).get();
   if (!doc.exists) return null;
-  return { id: doc.id, ...convertTimestamp(doc.data()!) } as Product;
+  return {
+    id: doc.id,
+    plusSized: doc.data()?.plusSized === true,
+    ...convertTimestamp(doc.data()!),
+  } as Product;
 }
 
 export async function getProductBySku(sku: string): Promise<Product | null> {
   const snapshot = await adminDb.collection("products").where("sku", "==", sku).get();
   if (snapshot.empty) return null;
   const doc = snapshot.docs[0];
-  return { id: doc.id, ...convertTimestamp(doc.data()) } as Product;
+  return {
+    id: doc.id,
+    plusSized: doc.data()?.plusSized === true,
+    ...convertTimestamp(doc.data()),
+  } as Product;
 }
 
 export async function createProduct(data: Omit<Product, "id" | "createdAt" | "updatedAt">): Promise<Product> {
