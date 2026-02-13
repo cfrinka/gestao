@@ -71,6 +71,24 @@ export default function SalesPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
+  const periodTotalSold = orders.reduce(
+    (sum, o) => sum + (typeof o.totalAmount === "number" ? o.totalAmount : 0),
+    0
+  );
+
+  const periodFiadoOutstanding = orders.reduce((sum, o) => {
+    if (!o.isPaidLater) return sum;
+    if (typeof o.remainingAmount === "number") return sum + o.remainingAmount;
+    return sum + (o.paidAt ? 0 : (typeof o.totalAmount === "number" ? o.totalAmount : 0));
+  }, 0);
+
+  const periodReceived = orders.reduce((sum, o) => {
+    const total = typeof o.totalAmount === "number" ? o.totalAmount : 0;
+    if (!o.isPaidLater) return sum + total;
+    if (typeof o.amountPaid === "number") return sum + o.amountPaid;
+    return sum + (o.paidAt ? total : 0);
+  }, 0);
+
   const fetchOrders = async (override?: { startDate?: string; endDate?: string }) => {
     setLoading(true);
     try {
@@ -242,10 +260,23 @@ export default function SalesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5" />
-            Lista de Vendas
-          </CardTitle>
+          <div className="flex items-start justify-between gap-4 flex-col sm:flex-row">
+            <CardTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              Lista de Vendas
+            </CardTitle>
+            <div className="text-sm text-gray-600 grid grid-cols-1 gap-1 text-right">
+              <div>
+                <span className="font-medium">Total vendido:</span> {formatCurrency(periodTotalSold)}
+              </div>
+              <div>
+                <span className="font-medium">Total fiado (pendente):</span> {formatCurrency(periodFiadoOutstanding)}
+              </div>
+              <div>
+                <span className="font-medium">Total recebido:</span> {formatCurrency(periodReceived)}
+              </div>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (

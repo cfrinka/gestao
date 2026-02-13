@@ -41,6 +41,104 @@ interface StoreReport {
   };
   totalStock: number;
   inventoryValue: number;
+  period?: {
+    start: string;
+    end: string;
+    days: number;
+  };
+  dre?: {
+    grossRevenue: number;
+    discounts: number;
+    netRevenue: number;
+    cogs: number;
+    grossProfit: number;
+    grossMargin: number;
+    operatingExpenses: number;
+    netProfit: number;
+    netMargin: number;
+  };
+  cashFlow?: {
+    inflowsActual: number;
+    outflowsActual: number;
+    netCashFlowActual: number;
+    projectedInflows30: number;
+    projectedOutflows30: number;
+    projectedNetCashFlow30: number;
+  };
+  sales?: {
+    ordersCount: number;
+    itemsSold: number;
+    averageTicket: number;
+    bestSalesDay?: { day: string; revenue: number; orders: number } | null;
+    payLaterOutstanding: number;
+    payLaterReceived: number;
+  };
+  inventory?: {
+    totalStock: number;
+    inventoryValueCost: number;
+    inventoryValueSale: number;
+    stockCoverageDays: number;
+    turnover: number;
+    lowStockCount: number;
+    outOfStockCount: number;
+    deadStockCount: number;
+  };
+  profitability?: {
+    topProfitProducts: Array<{
+      productId: string;
+      productName: string;
+      sku: string;
+      qtySold: number;
+      revenue: number;
+      cost: number;
+      profit: number;
+      margin: number;
+    }>;
+    lowMarginProducts: Array<{
+      productId: string;
+      productName: string;
+      sku: string;
+      qtySold: number;
+      revenue: number;
+      cost: number;
+      profit: number;
+      margin: number;
+    }>;
+  };
+  goals?: {
+    targetRevenue: number;
+    targetAverageTicket: number;
+    targetMargin: number;
+    achievementRevenue: number;
+    achievementAverageTicket: number;
+    achievementMargin: number;
+  };
+  promotions?: {
+    totalDiscounts: number;
+    discountRate: number;
+    ordersWithDiscount: number;
+    discountedOrdersRate: number;
+    avgDiscountPerDiscountedOrder: number;
+    discountedRevenue: number;
+  };
+  alerts?: {
+    dre: string[];
+    cashFlow: string[];
+    sales: string[];
+    inventory: string[];
+    profitability: string[];
+    goals: string[];
+    promotions: string[];
+  };
+  insights?: {
+    dre: string;
+    cashFlow: string;
+    sales: string;
+    inventory: string;
+    profitability: string;
+    goals: string;
+    promotions: string;
+  };
 }
 
 export default function ReportsPage() {
@@ -99,11 +197,11 @@ export default function ReportsPage() {
       "Dinheiro",
       "Débito",
       "Crédito",
-      "PIX",
+      "Pix",
       "Fiado",
       "Fiado (Recebido)",
       "Fiado (Em aberto)",
-      "Estoque (Un)",
+      "Estoque (unidades)",
       "Valor Estoque",
     ];
     const row = report
@@ -206,7 +304,7 @@ export default function ReportsPage() {
           "Dinheiro",
           "Débito",
           "Crédito",
-          "PIX",
+          "Pix",
           "Fiado",
           "Fiado (Recebido)",
           "Fiado (Em aberto)",
@@ -453,7 +551,7 @@ export default function ReportsPage() {
                   <TableHead className="text-right">Margem</TableHead>
                   <TableHead className="text-right">Pedidos</TableHead>
                   <TableHead className="text-right">Itens</TableHead>
-                  <TableHead className="text-right">Estoque (Un)</TableHead>
+                  <TableHead className="text-right">Estoque (unidades)</TableHead>
                   <TableHead className="text-right">Valor Estoque</TableHead>
                 </TableRow>
               </TableHeader>
@@ -500,7 +598,7 @@ export default function ReportsPage() {
                   <TableHead className="text-right">Dinheiro</TableHead>
                   <TableHead className="text-right">Débito</TableHead>
                   <TableHead className="text-right">Crédito</TableHead>
-                  <TableHead className="text-right">PIX</TableHead>
+                  <TableHead className="text-right">Pix</TableHead>
                   <TableHead className="text-right">Fiado</TableHead>
                   <TableHead className="text-right">Fiado (Recebido)</TableHead>
                   <TableHead className="text-right">Fiado (Em aberto)</TableHead>
@@ -519,6 +617,120 @@ export default function ReportsPage() {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Demonstrativo de Resultado Gerencial</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Table>
+            <TableBody>
+              <TableRow><TableCell>Receita Bruta</TableCell><TableCell className="text-right">{formatCurrency(report?.dre?.grossRevenue ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Descontos</TableCell><TableCell className="text-right text-red-600">{formatCurrency(report?.dre?.discounts ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Receita Líquida</TableCell><TableCell className="text-right">{formatCurrency(report?.dre?.netRevenue ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Custo das mercadorias vendidas</TableCell><TableCell className="text-right text-red-600">{formatCurrency(report?.dre?.cogs ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Lucro Bruto</TableCell><TableCell className="text-right font-semibold text-green-600">{formatCurrency(report?.dre?.grossProfit ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Despesas Operacionais</TableCell><TableCell className="text-right text-red-600">{formatCurrency(report?.dre?.operatingExpenses ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Lucro Líquido</TableCell><TableCell className="text-right font-bold">{formatCurrency(report?.dre?.netProfit ?? 0)}</TableCell></TableRow>
+            </TableBody>
+          </Table>
+          <p className="text-sm text-gray-600">{report?.insights?.dre}</p>
+          {(report?.alerts?.dre?.length || 0) > 0 && <p className="text-sm text-red-600">⚠ {report?.alerts?.dre.join(" | ")}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Fluxo de Caixa (Real e Projetado)</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-1 text-sm">
+            <p><span className="font-medium">Entradas (real):</span> {formatCurrency(report?.cashFlow?.inflowsActual ?? 0)}</p>
+            <p><span className="font-medium">Saídas (real):</span> {formatCurrency(report?.cashFlow?.outflowsActual ?? 0)}</p>
+            <p><span className="font-medium">Fluxo líquido (real):</span> {formatCurrency(report?.cashFlow?.netCashFlowActual ?? 0)}</p>
+          </div>
+          <div className="space-y-1 text-sm">
+            <p><span className="font-medium">Entradas projetadas (30 dias):</span> {formatCurrency(report?.cashFlow?.projectedInflows30 ?? 0)}</p>
+            <p><span className="font-medium">Saídas projetadas (30 dias):</span> {formatCurrency(report?.cashFlow?.projectedOutflows30 ?? 0)}</p>
+            <p><span className="font-medium">Fluxo líquido projetado (30 dias):</span> {formatCurrency(report?.cashFlow?.projectedNetCashFlow30 ?? 0)}</p>
+          </div>
+          <p className="text-sm text-gray-600 md:col-span-2">{report?.insights?.cashFlow}</p>
+          {(report?.alerts?.cashFlow?.length || 0) > 0 && <p className="text-sm text-red-600 md:col-span-2">⚠ {report?.alerts?.cashFlow.join(" | ")}</p>}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle>Estoque e Giro</CardTitle></CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            <p><span className="font-medium">Cobertura de estoque (dias):</span> {(report?.inventory?.stockCoverageDays ?? 0).toFixed(1)}</p>
+            <p><span className="font-medium">Giro:</span> {(report?.inventory?.turnover ?? 0).toFixed(2)}x</p>
+            <p><span className="font-medium">Produtos sem estoque:</span> {report?.inventory?.outOfStockCount ?? 0}</p>
+            <p><span className="font-medium">Produtos com baixo estoque:</span> {report?.inventory?.lowStockCount ?? 0}</p>
+            <p><span className="font-medium">Produtos sem giro:</span> {report?.inventory?.deadStockCount ?? 0}</p>
+            <p className="text-gray-600">{report?.insights?.inventory}</p>
+            {(report?.alerts?.inventory?.length || 0) > 0 && <p className="text-red-600">⚠ {report?.alerts?.inventory.join(" | ")}</p>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Metas e Performance</CardTitle></CardHeader>
+          <CardContent className="space-y-1 text-sm">
+            <p><span className="font-medium">Meta Receita:</span> {formatCurrency(report?.goals?.targetRevenue ?? 0)}</p>
+            <p><span className="font-medium">Atingimento Receita:</span> {formatPercentage(report?.goals?.achievementRevenue ?? 0)}</p>
+            <p><span className="font-medium">Meta Ticket Médio:</span> {formatCurrency(report?.goals?.targetAverageTicket ?? 0)}</p>
+            <p><span className="font-medium">Atingimento Ticket:</span> {formatPercentage(report?.goals?.achievementAverageTicket ?? 0)}</p>
+            <p><span className="font-medium">Atingimento Margem:</span> {formatPercentage(report?.goals?.achievementMargin ?? 0)}</p>
+            <p className="text-gray-600">{report?.insights?.goals}</p>
+            {(report?.alerts?.goals?.length || 0) > 0 && <p className="text-red-600">⚠ {report?.alerts?.goals.join(" | ")}</p>}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle>Rentabilidade por Produto (Top 10)</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produto</TableHead>
+                <TableHead>Código do produto</TableHead>
+                <TableHead className="text-right">Quantidade</TableHead>
+                <TableHead className="text-right">Receita</TableHead>
+                <TableHead className="text-right">Lucro</TableHead>
+                <TableHead className="text-right">Margem</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(report?.profitability?.topProfitProducts || []).map((p) => (
+                <TableRow key={p.productId}>
+                  <TableCell>{p.productName}</TableCell>
+                  <TableCell>{p.sku}</TableCell>
+                  <TableCell className="text-right">{p.qtySold}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(p.revenue)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(p.profit)}</TableCell>
+                  <TableCell className="text-right">{formatPercentage(p.margin)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <p className="text-sm text-gray-600 mt-3">{report?.insights?.profitability}</p>
+          {(report?.alerts?.profitability?.length || 0) > 0 && <p className="text-sm text-red-600">⚠ {report?.alerts?.profitability.join(" | ")}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Promoções e Descontos</CardTitle></CardHeader>
+        <CardContent className="space-y-1 text-sm">
+          <p><span className="font-medium">Descontos totais:</span> {formatCurrency(report?.promotions?.totalDiscounts ?? 0)}</p>
+          <p><span className="font-medium">Taxa de desconto:</span> {formatPercentage(report?.promotions?.discountRate ?? 0)}</p>
+          <p><span className="font-medium">Pedidos com desconto:</span> {report?.promotions?.ordersWithDiscount ?? 0}</p>
+          <p><span className="font-medium">% pedidos com desconto:</span> {formatPercentage(report?.promotions?.discountedOrdersRate ?? 0)}</p>
+          <p><span className="font-medium">Desconto médio por pedido com desconto:</span> {formatCurrency(report?.promotions?.avgDiscountPerDiscountedOrder ?? 0)}</p>
+          <p className="text-gray-600">{report?.insights?.promotions}</p>
+          {(report?.alerts?.promotions?.length || 0) > 0 && <p className="text-red-600">⚠ {report?.alerts?.promotions.join(" | ")}</p>}
         </CardContent>
       </Card>
     </div>
