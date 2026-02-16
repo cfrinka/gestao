@@ -25,6 +25,7 @@ const navigation = [
   { name: "PDV", href: "/pos", icon: ShoppingCart, roles: ["ADMIN", "CASHIER"] },
   { name: "Produtos", href: "/products", icon: Package, roles: ["ADMIN"] },
   { name: "Vendas", href: "/sales", icon: ClipboardList, roles: ["ADMIN", "CASHIER"] },
+  { name: "Trocas", href: "/exchanges", icon: ClipboardList, roles: ["ADMIN", "CASHIER"] },
   { name: "Estoque", href: "/inventory", icon: Boxes, roles: ["ADMIN"] },
   { name: "Clientes", href: "/clients", icon: UserCheck, roles: ["ADMIN"] },
   { name: "Fornecedores", href: "/suppliers", icon: Truck, roles: ["ADMIN"] },
