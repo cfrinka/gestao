@@ -89,6 +89,7 @@ interface StoreSettings {
   phone: string;
   cnpj: string;
   footerMessage: string;
+  exchangeDays: number;
   discounts: DiscountSettings;
 }
 
@@ -136,6 +137,7 @@ export default function POSPage() {
     phone: "",
     cnpj: "",
     footerMessage: "Obrigado pela preferência!\nVolte sempre!",
+    exchangeDays: 10,
     discounts: {
       pixDiscountEnabled: false,
       pixDiscountPercent: 5,
@@ -176,6 +178,7 @@ export default function POSPage() {
         phone: data.phone || "",
         cnpj: data.cnpj || "",
         footerMessage: data.footerMessage || "Obrigado pela preferência!\nVolte sempre!",
+        exchangeDays: Number.isFinite(data.exchangeDays) ? data.exchangeDays : 10,
         discounts: {
           pixDiscountEnabled: data.discounts?.pixDiscountEnabled ?? false,
           pixDiscountPercent: data.discounts?.pixDiscountPercent ?? 5,
@@ -532,7 +535,7 @@ export default function POSPage() {
   const effectiveManualDiscount = canApplyDiscount ? discount : 0;
   const effectiveDiscount = totalAutoDiscount + effectiveManualDiscount;
 
-  const printReceipt = (orderId: string, orderSubtotal: number, orderDiscount: number, orderTotal: number, orderPayments: PaymentMethod[], orderItems: CartItem[], change: number) => {
+  const printReceipt = (orderId: string) => {
     const receiptWindow = window.open('', '_blank', 'width=320,height=600');
     if (!receiptWindow) {
       toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
@@ -542,70 +545,33 @@ export default function POSPage() {
     const now = new Date();
     const dateStr = now.toLocaleDateString('pt-BR');
     const timeStr = now.toLocaleTimeString('pt-BR');
-
-    // Helper to truncate and pad strings for fixed-width columns
-    const truncate = (str: string, len: number) => str.length > len ? str.substring(0, len) : str;
-    const padRight = (str: string, len: number) => truncate(str, len).padEnd(len);
-    const padLeft = (str: string, len: number) => truncate(str, len).padStart(len);
-
-    // Format currency without R$ prefix for compactness
-    const formatValue = (value: number) => {
-      return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    };
-
-    // 24 chars width for 58mm thermal printer (narrower to prevent wrapping)
-    const LINE_WIDTH = 24;
-    const dividerLine = '-'.repeat(LINE_WIDTH);
-
-    // Build items text (Name 12 | Qty 2 | Value 8 = 22 + 2 spaces)
-    const itemsText = orderItems.map(item => {
-      const name = truncate(item.product.name + (item.size ? ` (${item.size})` : ''), 12);
-      const qty = item.quantity.toString();
-      const value = formatValue(item.product.salePrice * item.quantity);
-      return `${padRight(name, 12)} ${padLeft(qty, 2)} ${padLeft(value, 8)}`;
-    }).join('\n');
-
-    // Build payments text
-    const paymentsText = orderPayments.filter(p => p.amount > 0).map(p => {
-      const method = truncate(p.method, 14);
-      const value = formatValue(p.amount);
-      return `${padRight(method, 14)} ${padLeft(value, 8)}`;
-    }).join('\n');
-
-    // Build row helper for label: value format
-    const buildRow = (label: string, value: string) => {
-      const remaining = LINE_WIDTH - label.length - 1;
-      return `${label} ${padLeft(truncate(value, remaining), remaining)}`;
-    };
+    const exchangeDays = Number.isFinite(storeSettings.exchangeDays) ? Math.max(0, Math.floor(storeSettings.exchangeDays)) : 10;
+    const exchangeDeadline = new Date(now);
+    exchangeDeadline.setDate(exchangeDeadline.getDate() + exchangeDays);
+    const exchangeDeadlineStr = exchangeDeadline.toLocaleDateString('pt-BR');
 
     receiptWindow.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Cupom</title>
+        <title>Comprovante para troca</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { 
             font-family: 'Courier New', Courier, monospace; 
             font-size: 12px;
             line-height: 1.3;
-            width: 44mm; 
+            width: 58mm;
             padding: 2mm;
             -webkit-print-color-adjust: exact;
           }
-          pre {
-            font-family: inherit;
-            font-size: inherit;
-            white-space: pre;
-            margin: 0;
-            overflow: hidden;
-          }
           .center { text-align: center; word-wrap: break-word; }
           .bold { font-weight: bold; }
-          .divider { margin: 3px 0; }
-          .section { margin: 4px 0; }
+          .divider { margin: 8px 0; border-top: 1px dashed #000; }
+          .section { margin: 6px 0; }
+          .muted { font-size: 11px; }
           @media print {
-            body { width: 44mm; }
+            body { width: 58mm; }
             @page { margin: 0; size: 58mm auto; }
           }
         </style>
@@ -616,40 +582,35 @@ export default function POSPage() {
           ${storeSettings.address ? `<div>${storeSettings.address}</div>` : ''}
           ${storeSettings.phone ? `<div>Tel: ${storeSettings.phone}</div>` : ''}
           ${storeSettings.cnpj ? `<div>CNPJ: ${storeSettings.cnpj}</div>` : ''}
-          <div style="margin-top: 4px;">CUPOM NAO FISCAL</div>
         </div>
-        
-        <pre class="divider">${dividerLine}</pre>
-        
-        <pre class="section">${buildRow('Data:', dateStr)}
-${buildRow('Hora:', timeStr)}
-${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\n' + buildRow('Operador:', truncate(cashRegister.userName, 18)) : ''}</pre>
-        
-        <pre class="divider">${dividerLine}</pre>
-        
-        <pre class="section bold">${padRight('Item', 12)} ${padLeft('Qt', 2)} ${padLeft('Valor', 8)}</pre>
-        <pre class="section">${itemsText}</pre>
-        
-        <pre class="divider">${dividerLine}</pre>
-        
-        <pre class="section">${buildRow('SUBTOTAL:', formatValue(orderSubtotal))}${orderDiscount > 0 ? '\n' + buildRow('DESCONTO:', '-' + formatValue(orderDiscount)) : ''}</pre>
-        <pre class="section bold">${buildRow('TOTAL:', 'R$ ' + formatValue(orderTotal))}</pre>
-        
-        <pre class="divider">${dividerLine}</pre>
-        
-        <pre class="section bold">${padRight('Pagamento', 14)} ${padLeft('Valor', 8)}</pre>
-        <pre class="section">${paymentsText}</pre>
-        
-        ${change > 0 ? `
-          <pre class="divider">${dividerLine}</pre>
-          <pre class="section bold">${buildRow('TROCO:', 'R$ ' + formatValue(change))}</pre>
-        ` : ''}
-        
-        <pre class="divider">${dividerLine}</pre>
-        
+
+        <div class="divider"></div>
+
+        <div class="section muted">
+          <div><strong>Data:</strong> ${dateStr}</div>
+          <div><strong>Hora:</strong> ${timeStr}</div>
+          <div><strong>Documento:</strong> #${orderId.slice(-6).toUpperCase()}</div>
+          ${cashRegister ? `<div><strong>Operador:</strong> ${cashRegister.userName}</div>` : ''}
+        </div>
+
+        <div class="divider"></div>
+
         <div class="center section">
-          ${storeSettings.footerMessage.split('\n').map(line => `<div>${line}</div>`).join('')}
+          <div class="bold">COMPROVANTE PARA TROCA</div>
+          <div class="section">
+            Trocas em ate ${exchangeDays} dias corridos<br />
+            mediante apresentacao deste documento.
+          </div>
+          <div><strong>Valido ate:</strong> ${exchangeDeadlineStr}</div>
+          <div class="muted">Produto deve estar sem uso e com etiqueta.</div>
         </div>
+
+        ${storeSettings.footerMessage
+          ? `<div class="divider"></div>
+             <div class="center section muted">
+               ${storeSettings.footerMessage.split('\n').map(line => `<div>${line}</div>`).join('')}
+             </div>`
+          : ''}
         
         <script>
           window.onload = function() {
@@ -733,9 +694,7 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
     }
 
     setProcessing(true);
-    const cartSnapshot = [...cart]; // Save cart before clearing
     const paymentsSnapshot = payments.filter(p => p.amount > 0);
-    const change = totalPaid > total ? totalPaid - total : 0;
     
     try {
       const order = await apiPost("/api/checkout", {
@@ -748,8 +707,8 @@ ${buildRow('Pedido:', '#' + orderId.slice(-6).toUpperCase())}${cashRegister ? '\
         discount: effectiveDiscount,
       });
       
-      // Print receipt
-      printReceipt(order.id, order.subtotal, order.discount, order.totalAmount, paymentsSnapshot, cartSnapshot, change);
+      // Print simplified exchange document
+      printReceipt(order.id);
       
       toast({
         title: "Venda realizada com sucesso!",

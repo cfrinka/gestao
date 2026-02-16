@@ -28,6 +28,7 @@ interface StoreSettings {
   phone: string;
   cnpj: string;
   footerMessage: string;
+  exchangeDays: number;
   discounts: DiscountSettings;
 }
 
@@ -42,6 +43,7 @@ export default function SettingsPage() {
     phone: "",
     cnpj: "",
     footerMessage: "",
+    exchangeDays: 10,
     discounts: {
       pixDiscountEnabled: false,
       pixDiscountPercent: 5,
@@ -76,6 +78,7 @@ export default function SettingsPage() {
         phone: data.phone || "",
         cnpj: data.cnpj || "",
         footerMessage: data.footerMessage || "",
+        exchangeDays: Number.isFinite(data.exchangeDays) ? data.exchangeDays : 10,
         discounts: {
           pixDiscountEnabled: data.discounts?.pixDiscountEnabled ?? false,
           pixDiscountPercent: data.discounts?.pixDiscountPercent ?? 5,
@@ -93,6 +96,10 @@ export default function SettingsPage() {
       setLoading(false);
     }
   };
+
+  const previewExchangeDeadline = new Date();
+  previewExchangeDeadline.setDate(previewExchangeDeadline.getDate() + Math.max(0, Math.floor(settings.exchangeDays || 0)));
+  const previewExchangeDeadlineStr = previewExchangeDeadline.toLocaleDateString("pt-BR");
 
   const handleCreateBill = async () => {
     const parsed = parseFloat(billAmount);
@@ -255,6 +262,26 @@ export default function SettingsPage() {
               </p>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="exchangeDays">Prazo de troca (dias corridos)</Label>
+              <Input
+                id="exchangeDays"
+                type="number"
+                min="0"
+                max="365"
+                value={settings.exchangeDays}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    exchangeDays: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                  })
+                }
+              />
+              <p className="text-xs text-gray-500">
+                Esse prazo sera usado no comprovante para troca impresso no PDV.
+              </p>
+            </div>
+
             <div className="p-4 bg-gray-100 rounded-lg">
               <p className="text-xs text-gray-500 mb-2">Prévia do Cupom:</p>
               <div className="font-mono text-xs bg-white p-3 rounded border">
@@ -265,6 +292,11 @@ export default function SettingsPage() {
                   {settings.cnpj && <p>CNPJ: {settings.cnpj}</p>}
                 </div>
                 <p className="text-center text-gray-500">... itens da venda ...</p>
+                <div className="text-center border-t border-dashed pt-2 mt-2">
+                  <p className="font-semibold">Comprovante para troca</p>
+                  <p>Trocas em ate {Math.max(0, Math.floor(settings.exchangeDays || 0))} dias corridos</p>
+                  <p>Valido ate: {previewExchangeDeadlineStr}</p>
+                </div>
                 <div className="text-center border-t border-dashed pt-2 mt-2">
                   {settings.footerMessage.split('\n').map((line, i) => (
                     <p key={i}>{line}</p>

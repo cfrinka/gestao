@@ -486,6 +486,7 @@ export interface StoreSettings {
   phone: string;
   cnpj: string;
   footerMessage: string;
+  exchangeDays: number;
   discounts: DiscountSettings;
   updatedAt: Date;
 }
@@ -507,6 +508,7 @@ const DEFAULT_SETTINGS: Omit<StoreSettings, 'id' | 'updatedAt'> = {
   phone: '',
   cnpj: '',
   footerMessage: 'Obrigado pela preferência!\nVolte sempre!',
+  exchangeDays: 10,
   discounts: DEFAULT_DISCOUNT_SETTINGS,
 };
 

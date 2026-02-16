@@ -32,7 +32,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { storeName, address, phone, cnpj, footerMessage, discounts } = body;
+    const { storeName, address, phone, cnpj, footerMessage, exchangeDays, discounts } = body;
 
     const settings = await updateStoreSettings({
       storeName,
@@ -40,6 +40,7 @@ export async function PUT(request: NextRequest) {
       phone,
       cnpj,
       footerMessage,
+      exchangeDays,
       discounts,
     });
 
