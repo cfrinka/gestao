@@ -536,7 +536,7 @@ export default function POSPage() {
   const effectiveDiscount = totalAutoDiscount + effectiveManualDiscount;
 
   const printReceipt = (orderId: string) => {
-    const receiptWindow = window.open('', '_blank', 'width=320,height=600');
+    const receiptWindow = window.open('', '_blank', 'width=300,height=600');
     if (!receiptWindow) {
       toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
       return;
@@ -557,31 +557,41 @@ export default function POSPage() {
         <title>Comprovante para troca</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
+          html, body {
+            width: 58mm;
+            max-width: 58mm;
+          }
           body { 
             font-family: 'Courier New', Courier, monospace; 
-            font-size: 12px;
-            line-height: 1.3;
-            width: 58mm;
-            padding: 2mm;
+            font-size: 10px;
+            line-height: 1.25;
+            padding: 1.5mm 1.5mm 2mm;
             -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            overflow-wrap: anywhere;
+            word-break: break-word;
           }
-          .center { text-align: center; word-wrap: break-word; }
+          .center { text-align: center; overflow-wrap: anywhere; word-break: break-word; }
           .bold { font-weight: bold; }
-          .divider { margin: 8px 0; border-top: 1px dashed #000; }
-          .section { margin: 6px 0; }
-          .muted { font-size: 11px; }
+          .divider { margin: 6px 0; border-top: 1px dashed #000; }
+          .section { margin: 4px 0; }
+          .muted { font-size: 9px; }
+          .store-name { font-size: 11px; line-height: 1.2; }
+          .line { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+          .policy { margin: 4px 0; text-align: center; }
+          .policy-line { display: block; line-height: 1.2; }
           @media print {
-            body { width: 58mm; }
+            html, body { width: 58mm !important; max-width: 58mm !important; }
             @page { margin: 0; size: 58mm auto; }
           }
         </style>
       </head>
       <body>
         <div class="center">
-          <div class="bold">${storeSettings.storeName.toUpperCase()}</div>
-          ${storeSettings.address ? `<div>${storeSettings.address}</div>` : ''}
-          ${storeSettings.phone ? `<div>Tel: ${storeSettings.phone}</div>` : ''}
-          ${storeSettings.cnpj ? `<div>CNPJ: ${storeSettings.cnpj}</div>` : ''}
+          <div class="bold store-name line">${storeSettings.storeName.toUpperCase()}</div>
+          ${storeSettings.address ? `<div class="line">${storeSettings.address}</div>` : ''}
+          ${storeSettings.phone ? `<div class="line">Tel: ${storeSettings.phone}</div>` : ''}
+          ${storeSettings.cnpj ? `<div class="line">CNPJ: ${storeSettings.cnpj}</div>` : ''}
         </div>
 
         <div class="divider"></div>
@@ -597,9 +607,10 @@ export default function POSPage() {
 
         <div class="center section">
           <div class="bold">COMPROVANTE PARA TROCA</div>
-          <div class="section">
-            Trocas em ate ${exchangeDays} dias corridos<br />
-            mediante apresentacao deste documento.
+          <div class="section policy">
+            <span class="policy-line">Trocas em ate ${exchangeDays} dias</span>
+            <span class="policy-line">corridos mediante apresentacao</span>
+            <span class="policy-line">deste documento.</span>
           </div>
           <div><strong>Valido ate:</strong> ${exchangeDeadlineStr}</div>
           <div class="muted">Produto deve estar sem uso e com etiqueta.</div>
@@ -608,7 +619,7 @@ export default function POSPage() {
         ${storeSettings.footerMessage
           ? `<div class="divider"></div>
              <div class="center section muted">
-               ${storeSettings.footerMessage.split('\n').map(line => `<div>${line}</div>`).join('')}
+               ${storeSettings.footerMessage.split('\n').map(line => `<div class="line">${line}</div>`).join('')}
              </div>`
           : ''}
         
