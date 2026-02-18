@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, Scan } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, Scan, Printer } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Label } from "@/components/ui/label";
@@ -535,8 +535,8 @@ export default function POSPage() {
   const effectiveManualDiscount = canApplyDiscount ? discount : 0;
   const effectiveDiscount = totalAutoDiscount + effectiveManualDiscount;
 
-  const printReceipt = (orderId: string) => {
-    const receiptWindow = window.open('', '_blank', 'width=300,height=600');
+  const printReceipt = (orderId: string, isTest: boolean = false) => {
+    const receiptWindow = window.open('', '_blank', 'width=420,height=700');
     if (!receiptWindow) {
       toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
       return;
@@ -558,14 +558,16 @@ export default function POSPage() {
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           html, body {
-            width: 58mm;
-            max-width: 58mm;
+            width: 80mm;
+            max-width: 80mm;
           }
           body { 
             font-family: 'Courier New', Courier, monospace; 
-            font-size: 10px;
-            line-height: 1.25;
-            padding: 1.5mm 1.5mm 2mm;
+            font-size: 12px;
+            line-height: 1.35;
+            font-weight: 600;
+            color: #000;
+            padding: 2.5mm 2.5mm 3mm;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
             overflow-wrap: anywhere;
@@ -573,16 +575,20 @@ export default function POSPage() {
           }
           .center { text-align: center; overflow-wrap: anywhere; word-break: break-word; }
           .bold { font-weight: bold; }
-          .divider { margin: 6px 0; border-top: 1px dashed #000; }
-          .section { margin: 4px 0; }
-          .muted { font-size: 9px; }
-          .store-name { font-size: 11px; line-height: 1.2; }
+          .divider { margin: 8px 0; border-top: 1px dashed #000; }
+          .section { margin: 6px 0; }
+          .muted { font-size: 11px; }
+          .store-name { font-size: 15px; line-height: 1.2; letter-spacing: 0.3px; }
           .line { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
-          .policy { margin: 4px 0; text-align: center; }
-          .policy-line { display: block; line-height: 1.2; }
+          .meta { margin: 2px 0; }
+          .meta strong { display: inline-block; min-width: 78px; }
+          .policy { margin: 6px 0; text-align: left; }
+          .policy-line { display: block; line-height: 1.3; }
+          .validity { text-align: center; margin-top: 6px; }
+          .footer-note { text-align: center; }
           @media print {
-            html, body { width: 58mm !important; max-width: 58mm !important; }
-            @page { margin: 0; size: 58mm auto; }
+            html, body { width: 80mm !important; max-width: 80mm !important; }
+            @page { margin: 0; size: 80mm auto; }
           }
         </style>
       </head>
@@ -597,10 +603,10 @@ export default function POSPage() {
         <div class="divider"></div>
 
         <div class="section muted">
-          <div><strong>Data:</strong> ${dateStr}</div>
-          <div><strong>Hora:</strong> ${timeStr}</div>
-          <div><strong>Documento:</strong> #${orderId.slice(-6).toUpperCase()}</div>
-          ${cashRegister ? `<div><strong>Operador:</strong> ${cashRegister.userName}</div>` : ''}
+          <div class="meta"><strong>Data:</strong> ${dateStr}</div>
+          <div class="meta"><strong>Hora:</strong> ${timeStr}</div>
+          <div class="meta"><strong>Documento:</strong> ${isTest ? "TESTE-80MM" : `#${orderId.slice(-6).toUpperCase()}`}</div>
+          ${cashRegister ? `<div class="meta"><strong>Operador:</strong> ${cashRegister.userName}</div>` : ''}
         </div>
 
         <div class="divider"></div>
@@ -609,11 +615,11 @@ export default function POSPage() {
           <div class="bold">COMPROVANTE PARA TROCA</div>
           <div class="section policy">
             <span class="policy-line">Trocas em ate ${exchangeDays} dias</span>
-            <span class="policy-line">corridos mediante apresentacao</span>
-            <span class="policy-line">deste documento.</span>
+            <span class="policy-line">corridos, mediante apresentacao</span>
+            <span class="policy-line">deste comprovante.</span>
           </div>
-          <div><strong>Valido ate:</strong> ${exchangeDeadlineStr}</div>
-          <div class="muted">Produto deve estar sem uso e com etiqueta.</div>
+          <div class="validity"><strong>Valido ate:</strong> ${exchangeDeadlineStr}</div>
+          <div class="muted footer-note">Produto deve estar sem uso e com etiqueta.</div>
         </div>
 
         ${storeSettings.footerMessage
@@ -622,6 +628,8 @@ export default function POSPage() {
                ${storeSettings.footerMessage.split('\n').map(line => `<div class="line">${line}</div>`).join('')}
              </div>`
           : ''}
+
+        ${isTest ? `<div class="divider"></div><div class="center muted"><strong>IMPRESSAO DE TESTE</strong></div>` : ''}
         
         <script>
           window.onload = function() {
@@ -633,6 +641,10 @@ export default function POSPage() {
       </html>
     `);
     receiptWindow.document.close();
+  };
+
+  const handlePrintTest = () => {
+    printReceipt("TESTE-80MM", true);
   };
 
   const handlePayLater = async () => {
@@ -750,6 +762,10 @@ export default function POSPage() {
             <p className="text-gray-500">Ponto de Venda</p>
           </div>
           <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={handlePrintTest}>
+              <Printer className="h-4 w-4 mr-2" />
+              Print test
+            </Button>
             {cashRegister ? (
               <>
                 <div className="text-right text-sm">
