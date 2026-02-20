@@ -535,7 +535,17 @@ export default function POSPage() {
   const effectiveManualDiscount = canApplyDiscount ? discount : 0;
   const effectiveDiscount = totalAutoDiscount + effectiveManualDiscount;
 
-  const printReceipt = (orderId: string, isTest: boolean = false) => {
+  const printReceipt = (
+    orderId: string,
+    options: {
+      isTest?: boolean;
+      items: CartItem[];
+      payments: PaymentMethod[];
+      totalAmount: number;
+      discount: number;
+    }
+  ) => {
+    const { isTest = false, items, payments, totalAmount, discount } = options;
     const receiptWindow = window.open('', '_blank', 'width=420,height=700');
     if (!receiptWindow) {
       toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
@@ -549,12 +559,32 @@ export default function POSPage() {
     const exchangeDeadline = new Date(now);
     exchangeDeadline.setDate(exchangeDeadline.getDate() + exchangeDays);
     const exchangeDeadlineStr = exchangeDeadline.toLocaleDateString('pt-BR');
+    const subtotal = items.reduce((sum, item) => sum + item.product.salePrice * item.quantity, 0);
+
+    const paymentLabel: Record<PaymentMethod["method"], string> = {
+      DINHEIRO: "Dinheiro",
+      DEBITO: "Debito",
+      CREDITO: "Credito",
+      PIX: "PIX",
+    };
+
+    const itemsRows = items
+      .map((item) => {
+        const itemName = `${item.product.name}${item.size ? ` (${item.size})` : ""}`;
+        const itemTotal = item.product.salePrice * item.quantity;
+        return `<tr><td>${item.quantity}x ${itemName}</td><td class="right">${formatCurrency(itemTotal)}</td></tr>`;
+      })
+      .join("");
+
+    const paymentsRows = payments
+      .map((payment) => `<tr><td>${paymentLabel[payment.method] || payment.method}</td><td class="right">${formatCurrency(payment.amount)}</td></tr>`)
+      .join("");
 
     receiptWindow.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Comprovante para troca</title>
+        <title>Comprovantes</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           html, body {
@@ -563,15 +593,26 @@ export default function POSPage() {
           }
           body { 
             font-family: 'Courier New', Courier, monospace; 
-            font-size: 12px;
-            line-height: 1.35;
+            font-size: 11px;
+            line-height: 1.3;
             font-weight: 600;
             color: #000;
-            padding: 2.5mm 2.5mm 3mm;
+            padding: 0;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
             overflow-wrap: anywhere;
             word-break: break-word;
+          }
+          .receipt {
+            width: 80mm;
+            max-width: 80mm;
+            padding: 2.5mm 2.5mm 3mm;
+            break-after: page;
+            page-break-after: always;
+          }
+          .receipt:last-child {
+            break-after: auto;
+            page-break-after: auto;
           }
           .center { text-align: center; overflow-wrap: anywhere; word-break: break-word; }
           .bold { font-weight: bold; }
@@ -586,50 +627,101 @@ export default function POSPage() {
           .policy-line { display: block; line-height: 1.3; }
           .validity { text-align: center; margin-top: 6px; }
           .footer-note { text-align: center; }
+          .title { font-size: 14px; margin-bottom: 4px; }
+          table { width: 100%; border-collapse: collapse; }
+          td { vertical-align: top; padding: 1px 0; }
+          td.right { text-align: right; white-space: nowrap; padding-left: 8px; }
+          .totals td { padding-top: 2px; }
           @media print {
             html, body { width: 80mm !important; max-width: 80mm !important; }
             @page { margin: 0; size: 80mm auto; }
+            .receipt { break-after: page; page-break-after: always; }
+            .receipt:last-child { break-after: auto; page-break-after: auto; }
           }
         </style>
       </head>
       <body>
-        <div class="center">
-          <div class="bold store-name line">${storeSettings.storeName.toUpperCase()}</div>
-          ${storeSettings.address ? `<div class="line">${storeSettings.address}</div>` : ''}
-          ${storeSettings.phone ? `<div class="line">Tel: ${storeSettings.phone}</div>` : ''}
-          ${storeSettings.cnpj ? `<div class="line">CNPJ: ${storeSettings.cnpj}</div>` : ''}
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="section muted">
-          <div class="meta"><strong>Data:</strong> ${dateStr}</div>
-          <div class="meta"><strong>Hora:</strong> ${timeStr}</div>
-          <div class="meta"><strong>Documento:</strong> ${isTest ? "TESTE-80MM" : `#${orderId.slice(-6).toUpperCase()}`}</div>
-          ${cashRegister ? `<div class="meta"><strong>Operador:</strong> ${cashRegister.userName}</div>` : ''}
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="center section">
-          <div class="bold">COMPROVANTE PARA TROCA</div>
-          <div class="section policy">
-            <span class="policy-line">Trocas em ate ${exchangeDays} dias</span>
-            <span class="policy-line">corridos, mediante apresentacao</span>
-            <span class="policy-line">deste comprovante.</span>
+        <div class="receipt">
+          <div class="center">
+            <div class="bold store-name line">${storeSettings.storeName.toUpperCase()}</div>
+            ${storeSettings.address ? `<div class="line">${storeSettings.address}</div>` : ''}
+            ${storeSettings.phone ? `<div class="line">Tel: ${storeSettings.phone}</div>` : ''}
+            ${storeSettings.cnpj ? `<div class="line">CNPJ: ${storeSettings.cnpj}</div>` : ''}
           </div>
-          <div class="validity"><strong>Valido ate:</strong> ${exchangeDeadlineStr}</div>
-          <div class="muted footer-note">Produto deve estar sem uso e com etiqueta.</div>
+
+          <div class="divider"></div>
+
+          <div class="center title bold">CUPOM NAO FISCAL</div>
+
+          <div class="section muted">
+            <div class="meta"><strong>Data:</strong> ${dateStr}</div>
+            <div class="meta"><strong>Hora:</strong> ${timeStr}</div>
+            <div class="meta"><strong>Documento:</strong> ${isTest ? "TESTE-80MM" : `#${orderId.slice(-6).toUpperCase()}`}</div>
+            ${cashRegister ? `<div class="meta"><strong>Operador:</strong> ${cashRegister.userName}</div>` : ''}
+          </div>
+
+          <div class="divider"></div>
+
+          <table>
+            <tbody>
+              ${itemsRows}
+            </tbody>
+          </table>
+
+          <div class="divider"></div>
+
+          <table class="totals">
+            <tbody>
+              <tr><td>Subtotal</td><td class="right">${formatCurrency(subtotal)}</td></tr>
+              ${discount > 0 ? `<tr><td>Desconto</td><td class="right">-${formatCurrency(discount)}</td></tr>` : ""}
+              <tr><td><strong>Total</strong></td><td class="right"><strong>${formatCurrency(totalAmount)}</strong></td></tr>
+            </tbody>
+          </table>
+
+          ${payments.length > 0 ? `<div class="divider"></div><table><tbody>${paymentsRows}</tbody></table>` : ""}
+
+          <div class="divider"></div>
+          <div class="center muted">Documento sem valor fiscal</div>
         </div>
 
-        ${storeSettings.footerMessage
-          ? `<div class="divider"></div>
-             <div class="center section muted">
-               ${storeSettings.footerMessage.split('\n').map(line => `<div class="line">${line}</div>`).join('')}
-             </div>`
-          : ''}
+        <div class="receipt">
+          <div class="center">
+            <div class="bold store-name line">${storeSettings.storeName.toUpperCase()}</div>
+            ${storeSettings.address ? `<div class="line">${storeSettings.address}</div>` : ''}
+            ${storeSettings.phone ? `<div class="line">Tel: ${storeSettings.phone}</div>` : ''}
+          </div>
 
-        ${isTest ? `<div class="divider"></div><div class="center muted"><strong>IMPRESSAO DE TESTE</strong></div>` : ''}
+          <div class="divider"></div>
+
+          <div class="section muted">
+            <div class="meta"><strong>Data:</strong> ${dateStr}</div>
+            <div class="meta"><strong>Hora:</strong> ${timeStr}</div>
+            <div class="meta"><strong>Documento:</strong> ${isTest ? "TESTE-80MM" : `#${orderId.slice(-6).toUpperCase()}`}</div>
+            ${cashRegister ? `<div class="meta"><strong>Operador:</strong> ${cashRegister.userName}</div>` : ''}
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="center section">
+            <div class="bold title">COMPROVANTE PARA TROCA</div>
+            <div class="section policy">
+              <span class="policy-line">Trocas em ate ${exchangeDays} dias</span>
+              <span class="policy-line">corridos, mediante apresentacao</span>
+              <span class="policy-line">deste comprovante.</span>
+            </div>
+            <div class="validity"><strong>Valido ate:</strong> ${exchangeDeadlineStr}</div>
+            <div class="muted footer-note">Produto deve estar sem uso e com etiqueta.</div>
+          </div>
+
+          ${storeSettings.footerMessage
+            ? `<div class="divider"></div>
+               <div class="center section muted">
+                 ${storeSettings.footerMessage.split('\n').map(line => `<div class="line">${line}</div>`).join('')}
+               </div>`
+            : ''}
+
+          ${isTest ? `<div class="divider"></div><div class="center muted"><strong>IMPRESSAO DE TESTE</strong></div>` : ''}
+        </div>
         
         <script>
           window.onload = function() {
@@ -644,7 +736,43 @@ export default function POSPage() {
   };
 
   const handlePrintTest = () => {
-    printReceipt("TESTE-80MM", true);
+    const testItems: CartItem[] = [
+      {
+        product: {
+          id: "test-item-1",
+          name: "Blusa teste",
+          sku: "TESTE-001",
+          salePrice: 49.9,
+          stock: 0,
+          sizes: [],
+        },
+        size: "M",
+        quantity: 1,
+      },
+      {
+        product: {
+          id: "test-item-2",
+          name: "Calca jeans teste",
+          sku: "TESTE-002",
+          salePrice: 89.9,
+          stock: 0,
+          sizes: [],
+        },
+        size: "42",
+        quantity: 1,
+      },
+    ];
+    const testTotal = testItems.reduce((sum, item) => sum + item.product.salePrice * item.quantity, 0);
+    const testDiscount = 10;
+    const testFinalTotal = Math.max(0, testTotal - testDiscount);
+
+    printReceipt("TESTE-80MM", {
+      isTest: true,
+      items: testItems,
+      payments: [{ method: "PIX", amount: testFinalTotal }],
+      totalAmount: testFinalTotal,
+      discount: testDiscount,
+    });
   };
 
   const handlePayLater = async () => {
@@ -717,6 +845,7 @@ export default function POSPage() {
     }
 
     setProcessing(true);
+    const cartSnapshot = [...cart];
     const paymentsSnapshot = payments.filter(p => p.amount > 0);
     
     try {
@@ -730,8 +859,12 @@ export default function POSPage() {
         discount: effectiveDiscount,
       });
       
-      // Print simplified exchange document
-      printReceipt(order.id);
+      printReceipt(order.id, {
+        items: cartSnapshot,
+        payments: paymentsSnapshot,
+        totalAmount: order.totalAmount,
+        discount: effectiveDiscount,
+      });
       
       toast({
         title: "Venda realizada com sucesso!",
