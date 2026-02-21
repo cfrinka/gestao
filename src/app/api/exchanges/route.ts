@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createExchange, getExchanges } from "@/lib/db";
+import { createExchange, getExchanges, getOpenCashRegister } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
 export const dynamic = "force-dynamic";
@@ -65,11 +65,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Adicione ao menos um item na troca" }, { status: 400 });
     }
 
+    const openRegister = await getOpenCashRegister(user.uid);
+
     const exchange = await createExchange({
       documentNumber: body.documentNumber,
       customerName: body.customerName,
       notes: body.notes,
       items: body.items,
+      cashRegisterId: openRegister?.id,
       createdById: user.uid,
       createdByName: user.email || user.uid,
     });

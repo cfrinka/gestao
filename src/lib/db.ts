@@ -20,6 +20,20 @@ export interface Product {
   updatedAt: Date;
 }
 
+export interface StockPurchaseEntry {
+  id: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+  source: "PRODUCT_CREATE" | "STOCK_REPLENISHMENT";
+  createdById: string;
+  createdByName: string;
+  createdAt: Date;
+}
+
 export interface OrderItem {
   id: string;
   orderId: string;
@@ -90,6 +104,7 @@ export interface ExchangeRecord {
   totalInValue: number;
   totalOutValue: number;
   difference: number;
+  cashInAmount?: number;
   createdById: string;
   createdByName: string;
   createdAt: Date;
@@ -143,6 +158,8 @@ export interface CashRegister {
   totalCredit: number;
   totalPix: number;
   salesCount: number;
+  totalExchangeDifferenceIn: number;
+  exchangeDifferenceCount: number;
 }
 
 function convertTimestamp(data: FirebaseFirestore.DocumentData): FirebaseFirestore.DocumentData {
@@ -204,6 +221,49 @@ export async function updateProduct(
     ...data,
     updatedAt: Timestamp.fromDate(new Date()),
   });
+}
+
+export async function createStockPurchaseEntry(input: {
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitCost: number;
+  source: "PRODUCT_CREATE" | "STOCK_REPLENISHMENT";
+  createdById: string;
+  createdByName: string;
+}): Promise<StockPurchaseEntry> {
+  const now = new Date();
+  const quantity = Math.max(0, Math.floor(Number(input.quantity)));
+  const unitCost = Number(input.unitCost || 0);
+  const totalCost = quantity * unitCost;
+
+  const docRef = await adminDb.collection("stockPurchases").add({
+    productId: input.productId,
+    productName: input.productName,
+    sku: input.sku,
+    quantity,
+    unitCost,
+    totalCost,
+    source: input.source,
+    createdById: input.createdById,
+    createdByName: input.createdByName,
+    createdAt: Timestamp.fromDate(now),
+  });
+
+  return {
+    id: docRef.id,
+    productId: input.productId,
+    productName: input.productName,
+    sku: input.sku,
+    quantity,
+    unitCost,
+    totalCost,
+    source: input.source,
+    createdById: input.createdById,
+    createdByName: input.createdByName,
+    createdAt: now,
+  };
 }
 
 export async function deleteProduct(id: string): Promise<void> {
@@ -392,6 +452,7 @@ export async function createExchange(input: {
   customerName?: string;
   notes?: string;
   items: ExchangeItemInput[];
+  cashRegisterId?: string;
   createdById: string;
   createdByName: string;
 }): Promise<ExchangeRecord> {
@@ -405,6 +466,9 @@ export async function createExchange(input: {
 
   const now = new Date();
   const exchangeRef = adminDb.collection("exchanges").doc();
+  const registerRef = input.cashRegisterId
+    ? adminDb.collection("cashRegisters").doc(input.cashRegisterId)
+    : null;
 
   const result = await adminDb.runTransaction(async (tx) => {
     const normalizedItems: ExchangeItem[] = [];
@@ -414,6 +478,16 @@ export async function createExchange(input: {
     const productIds = Array.from(new Set(input.items.map((item) => item.productId)));
     const productRefs = productIds.map((productId) => adminDb.collection("products").doc(productId));
     const productSnapshots = await Promise.all(productRefs.map((productRef) => tx.get(productRef)));
+
+    const registerSnap = registerRef ? await tx.get(registerRef) : null;
+    if (registerRef && (!registerSnap || !registerSnap.exists)) {
+      throw new Error("Caixa informado não foi encontrado");
+    }
+
+    const registerStatus = registerSnap?.data()?.status;
+    if (registerRef && registerStatus !== "OPEN") {
+      throw new Error("O caixa precisa estar aberto para registrar diferença de troca");
+    }
 
     const productsById = new Map<string, Product>();
     for (const productSnap of productSnapshots) {
@@ -508,6 +582,9 @@ export async function createExchange(input: {
       });
     }
 
+    const difference = totalOutValue - totalInValue;
+    const cashInAmount = Math.max(0, difference);
+
     tx.set(exchangeRef, {
       documentNumber,
       customerName: (input.customerName || "").trim(),
@@ -515,11 +592,20 @@ export async function createExchange(input: {
       items: normalizedItems,
       totalInValue,
       totalOutValue,
-      difference: totalOutValue - totalInValue,
+      difference,
+      cashInAmount,
       createdById: input.createdById,
       createdByName: input.createdByName,
       createdAt: Timestamp.fromDate(now),
     });
+
+    if (registerRef && cashInAmount > 0) {
+      tx.update(registerRef, {
+        totalCash: FieldValue.increment(cashInAmount),
+        totalExchangeDifferenceIn: FieldValue.increment(cashInAmount),
+        exchangeDifferenceCount: FieldValue.increment(1),
+      });
+    }
 
     return {
       id: exchangeRef.id,
@@ -529,7 +615,8 @@ export async function createExchange(input: {
       items: normalizedItems,
       totalInValue,
       totalOutValue,
-      difference: totalOutValue - totalInValue,
+      difference,
+      cashInAmount,
       createdById: input.createdById,
       createdByName: input.createdByName,
       createdAt: now,
@@ -607,6 +694,8 @@ export async function openCashRegister(userId: string, userName: string, opening
     totalCredit: 0,
     totalPix: 0,
     salesCount: 0,
+    totalExchangeDifferenceIn: 0,
+    exchangeDifferenceCount: 0,
   });
   
   return {
@@ -624,6 +713,8 @@ export async function openCashRegister(userId: string, userName: string, opening
     totalCredit: 0,
     totalPix: 0,
     salesCount: 0,
+    totalExchangeDifferenceIn: 0,
+    exchangeDifferenceCount: 0,
   };
 }
 

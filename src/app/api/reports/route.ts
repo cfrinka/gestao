@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrders, getProducts } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 import { adminDb } from "@/lib/firebase-admin";
+import { Timestamp } from "firebase-admin/firestore";
 
 export const dynamic = "force-dynamic";
 
@@ -60,11 +61,23 @@ export async function GET(request: NextRequest) {
     const prevEnd = new Date(start.getTime() - DAY_MS);
     const prevStart = new Date(prevEnd.getTime() - (periodDays - 1) * DAY_MS);
 
-    const [orders, previousOrders, products, billsSnapshot] = await Promise.all([
+    const exchangesQuery = adminDb
+      .collection("exchanges")
+      .where("createdAt", ">=", Timestamp.fromDate(start))
+      .where("createdAt", "<=", Timestamp.fromDate(end));
+
+    const stockPurchasesQuery = adminDb
+      .collection("stockPurchases")
+      .where("createdAt", ">=", Timestamp.fromDate(start))
+      .where("createdAt", "<=", Timestamp.fromDate(end));
+
+    const [orders, previousOrders, products, billsSnapshot, exchangesSnapshot, stockPurchasesSnapshot] = await Promise.all([
       getOrders(start, end),
       getOrders(prevStart, prevEnd),
       getProducts(),
       adminDb.collection("bills").get(),
+      exchangesQuery.get(),
+      stockPurchasesQuery.get(),
     ]);
 
     const grossRevenue = orders.reduce((sum, o) => sum + (o.subtotal || 0), 0);
@@ -96,7 +109,38 @@ export async function GET(request: NextRequest) {
       payLater: 0,
       payLaterOutstanding: 0,
       payLaterReceived: 0,
+      exchangeDifferenceIn: 0,
     };
+
+    for (const exchangeDoc of exchangesSnapshot.docs) {
+      const exchangeData = exchangeDoc.data() as {
+        difference?: number;
+        cashInAmount?: number;
+      };
+
+      const cashInAmount =
+        typeof exchangeData.cashInAmount === "number"
+          ? exchangeData.cashInAmount
+          : Math.max(0, typeof exchangeData.difference === "number" ? exchangeData.difference : 0);
+
+      payments.exchangeDifferenceIn += cashInAmount;
+    }
+
+    const stockPurchasesCost = stockPurchasesSnapshot.docs.reduce((sum, doc) => {
+      const data = doc.data() as {
+        totalCost?: number;
+        quantity?: number;
+        unitCost?: number;
+      };
+
+      if (typeof data.totalCost === "number") {
+        return sum + data.totalCost;
+      }
+
+      const quantity = typeof data.quantity === "number" ? data.quantity : 0;
+      const unitCost = typeof data.unitCost === "number" ? data.unitCost : 0;
+      return sum + quantity * unitCost;
+    }, 0);
 
     let nonFiadoReceived = 0;
     let ordersWithDiscount = 0;
@@ -203,7 +247,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const cashInActual = nonFiadoReceived + payments.payLaterReceived;
+    const cashInActual = nonFiadoReceived + payments.payLaterReceived + payments.exchangeDifferenceIn;
     const netCashFlowActual = cashInActual - outflowsActual;
     const projectedInflowsNext30 = periodDays > 0 ? (cashInActual / periodDays) * 30 : 0;
     const projectedNetCashFlow30 = projectedInflowsNext30 - pendingBillsNext30;
@@ -321,6 +365,7 @@ export async function GET(request: NextRequest) {
       ordersCount,
       itemsSold,
       averageTicket,
+      stockPurchasesCost,
       payments,
       totalStock,
       inventoryValue,

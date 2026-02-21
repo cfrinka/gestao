@@ -30,8 +30,10 @@ interface StoreReport {
   ordersCount: number;
   itemsSold: number;
   averageTicket: number;
+  stockPurchasesCost?: number;
   payments: {
     cash: number;
+    exchangeDifferenceIn?: number;
     debit: number;
     credit: number;
     pix: number;
@@ -181,6 +183,7 @@ export default function ReportsPage() {
     cost: report?.cost || 0,
     profit: report?.profit || 0,
     inventoryValue: report?.inventoryValue || 0,
+    stockPurchasesCost: report?.stockPurchasesCost || 0,
   };
 
   const exportCSV = () => {
@@ -195,6 +198,7 @@ export default function ReportsPage() {
       "Itens Vendidos",
       "Ticket Médio",
       "Dinheiro",
+      "Diferença de Troca (Entrada)",
       "Débito",
       "Crédito",
       "Pix",
@@ -216,6 +220,7 @@ export default function ReportsPage() {
           report.itemsSold.toString(),
           report.averageTicket.toFixed(2),
           report.payments.cash.toFixed(2),
+          (report.payments.exchangeDifferenceIn ?? 0).toFixed(2),
           report.payments.debit.toFixed(2),
           report.payments.credit.toFixed(2),
           report.payments.pix.toFixed(2),
@@ -232,6 +237,7 @@ export default function ReportsPage() {
           "0",
           "0",
           "0%",
+          "0",
           "0",
           "0",
           "0",
@@ -302,6 +308,7 @@ export default function ReportsPage() {
           "Itens Vendidos",
           "Ticket Médio",
           "Dinheiro",
+          "Dif. Troca",
           "Débito",
           "Crédito",
           "Pix",
@@ -315,6 +322,7 @@ export default function ReportsPage() {
           report?.itemsSold?.toString() || "0",
           formatCurrency(report?.averageTicket || 0),
           formatCurrency(report?.payments?.cash || 0),
+          formatCurrency(report?.payments?.exchangeDifferenceIn || 0),
           formatCurrency(report?.payments?.debit || 0),
           formatCurrency(report?.payments?.credit || 0),
           formatCurrency(report?.payments?.pix || 0),
@@ -460,11 +468,11 @@ export default function ReportsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Custo Total</CardTitle>
+            <CardTitle className="text-sm font-medium">Compras p/ Estoque</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">
-              {formatCurrency(totals.cost)}
+              {formatCurrency(totals.stockPurchasesCost)}
             </div>
           </CardContent>
         </Card>
@@ -596,6 +604,7 @@ export default function ReportsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-right">Dinheiro</TableHead>
+                  <TableHead className="text-right">Diferença Troca</TableHead>
                   <TableHead className="text-right">Débito</TableHead>
                   <TableHead className="text-right">Crédito</TableHead>
                   <TableHead className="text-right">Pix</TableHead>
@@ -607,6 +616,7 @@ export default function ReportsPage() {
               <TableBody>
                 <TableRow>
                   <TableCell className="text-right">{formatCurrency(report.payments.cash)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.exchangeDifferenceIn || 0)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(report.payments.debit)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(report.payments.credit)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(report.payments.pix)}</TableCell>
@@ -648,6 +658,7 @@ export default function ReportsPage() {
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1 text-sm">
             <p><span className="font-medium">Entradas (real):</span> {formatCurrency(report?.cashFlow?.inflowsActual ?? 0)}</p>
+            <p><span className="font-medium">Entradas por diferença de troca:</span> {formatCurrency(report?.payments?.exchangeDifferenceIn ?? 0)}</p>
             <p><span className="font-medium">Saídas (real):</span> {formatCurrency(report?.cashFlow?.outflowsActual ?? 0)}</p>
             <p><span className="font-medium">Fluxo líquido (real):</span> {formatCurrency(report?.cashFlow?.netCashFlowActual ?? 0)}</p>
           </div>

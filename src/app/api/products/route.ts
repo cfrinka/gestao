@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProducts, getProductBySku, createProduct } from "@/lib/db";
+import { getProducts, getProductBySku, createProduct, createStockPurchaseEntry } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +52,19 @@ export async function POST(request: NextRequest) {
       stock: parseInt(stock) || 0,
       sizes: sizes || [],
     });
+
+    if ((product.stock || 0) > 0) {
+      await createStockPurchaseEntry({
+        productId: product.id,
+        productName: product.name,
+        sku: product.sku,
+        quantity: product.stock,
+        unitCost: product.costPrice,
+        source: "PRODUCT_CREATE",
+        createdById: user.uid,
+        createdByName: user.email || user.uid,
+      });
+    }
 
     return NextResponse.json(product, { status: 201 });
   } catch (error) {

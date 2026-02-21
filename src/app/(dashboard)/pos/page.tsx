@@ -61,6 +61,8 @@ interface CashRegister {
   totalCredit: number;
   totalPix: number;
   salesCount: number;
+  totalExchangeDifferenceIn?: number;
+  exchangeDifferenceCount?: number;
 }
 
 interface Order {
@@ -318,12 +320,14 @@ export default function POSPage() {
       body: [
         ["Saldo Inicial", formatCurrency(register.openingBalance)],
         ["Total em Vendas", formatCurrency(register.totalSales)],
+        ["Diferença de Troca (Entrada)", formatCurrency(register.totalExchangeDifferenceIn || 0)],
         ["Dinheiro", formatCurrency(register.totalCash)],
         ["Débito", formatCurrency(register.totalDebit)],
         ["Crédito", formatCurrency(register.totalCredit)],
         ["PIX", formatCurrency(register.totalPix)],
         ["Fiado", formatCurrency(totalFiado)],
         ["Quantidade de Vendas", register.salesCount.toString()],
+        ["Trocas com Diferença", (register.exchangeDifferenceCount || 0).toString()],
         ["Saldo Final Informado", formatCurrency(register.closingBalance || 0)],
         ["Saldo Esperado (Inicial + Dinheiro)", formatCurrency(register.openingBalance + register.totalCash)],
       ],
@@ -1385,6 +1389,10 @@ export default function POSPage() {
                   <span className="font-medium">{formatCurrency(cashRegister.totalSales)}</span>
                 </div>
                 <div className="flex justify-between">
+                  <span>Diferença Troca (Entrada):</span>
+                  <span className="font-medium">{formatCurrency(cashRegister.totalExchangeDifferenceIn || 0)}</span>
+                </div>
+                <div className="flex justify-between">
                   <span>Dinheiro Recebido:</span>
                   <span className="font-medium">{formatCurrency(cashRegister.totalCash)}</span>
                 </div>
@@ -1453,6 +1461,12 @@ export default function POSPage() {
                   <CardContent className="p-3">
                     <p className="text-xs text-gray-500">Qtd. Vendas</p>
                     <p className="text-lg font-bold">{closingReportData.register.salesCount}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3">
+                    <p className="text-xs text-gray-500">Dif. Troca (Entrada)</p>
+                    <p className="text-lg font-bold text-green-600">{formatCurrency(closingReportData.register.totalExchangeDifferenceIn || 0)}</p>
                   </CardContent>
                 </Card>
                 <Card>
