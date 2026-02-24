@@ -13,6 +13,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { ClipboardList, Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
 
 type ExchangeDirection = "IN" | "OUT";
+type ExchangePaymentMethod = "cash" | "pix" | "credit" | "debit";
 
 interface ProductSize {
   size: string;
@@ -41,6 +42,7 @@ interface ExchangeRecord {
   documentNumber?: string;
   customerName?: string;
   notes?: string;
+  paymentMethod?: ExchangePaymentMethod;
   totalInValue: number;
   totalOutValue: number;
   difference: number;
@@ -62,6 +64,7 @@ export default function ExchangesPage() {
 
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
+  const [differencePaymentMethod, setDifferencePaymentMethod] = useState<ExchangePaymentMethod | "">("");
 
   useEffect(() => {
     fetchAll();
@@ -183,11 +186,24 @@ export default function ExchangesPage() {
       return;
     }
 
+    if (totalDifference > 0 && !differencePaymentMethod) {
+      toast({
+        title: "Selecione a forma de pagamento",
+        description: "Informe como o cliente pagou a diferença da troca",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setProcessing(true);
     try {
+      const idempotencyKey = crypto.randomUUID();
+
       await apiPost("/api/exchanges", {
         customerName,
         notes,
+        paymentMethod: totalDifference > 0 ? differencePaymentMethod : undefined,
+        idempotencyKey,
         items: cart.map((item) => ({
           productId: item.product.id,
           size: item.size,
@@ -199,6 +215,7 @@ export default function ExchangesPage() {
       toast({ title: "Troca registrada com sucesso" });
       setCustomerName("");
       setNotes("");
+      setDifferencePaymentMethod("");
       clearCart();
       await fetchAll();
     } catch (error) {
@@ -437,6 +454,23 @@ export default function ExchangesPage() {
                   </div>
                 </div>
 
+                {totalDifference > 0 && (
+                  <div className="space-y-2 mt-3">
+                    <Label>Forma de pagamento da diferença</Label>
+                    <select
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                      value={differencePaymentMethod}
+                      onChange={(e) => setDifferencePaymentMethod(e.target.value as ExchangePaymentMethod | "")}
+                    >
+                      <option value="">Selecione</option>
+                      <option value="cash">Dinheiro</option>
+                      <option value="pix">Pix</option>
+                      <option value="debit">Débito</option>
+                      <option value="credit">Crédito</option>
+                    </select>
+                  </div>
+                )}
+
                 <div className="flex gap-2 mt-4">
                   <Button variant="outline" className="flex-1" onClick={clearCart}>
                     Limpar
@@ -469,6 +503,7 @@ export default function ExchangesPage() {
                 <TableRow>
                   <TableHead>Data</TableHead>
                   <TableHead>Cliente</TableHead>
+                  <TableHead>Pagamento Diferença</TableHead>
                   <TableHead className="text-right">Entradas</TableHead>
                   <TableHead className="text-right">Saídas</TableHead>
                   <TableHead className="text-right">Diferença</TableHead>
@@ -480,6 +515,13 @@ export default function ExchangesPage() {
                   <TableRow key={exchange.id}>
                     <TableCell>{formatDate(new Date(exchange.createdAt))}</TableCell>
                     <TableCell>{exchange.customerName || "-"}</TableCell>
+                    <TableCell>
+                      {exchange.paymentMethod === "cash" && "Dinheiro"}
+                      {exchange.paymentMethod === "pix" && "Pix"}
+                      {exchange.paymentMethod === "debit" && "Débito"}
+                      {exchange.paymentMethod === "credit" && "Crédito"}
+                      {!exchange.paymentMethod && "-"}
+                    </TableCell>
                     <TableCell className="text-right text-green-600">{formatCurrency(exchange.totalInValue || 0)}</TableCell>
                     <TableCell className="text-right text-red-600">{formatCurrency(exchange.totalOutValue || 0)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(exchange.difference || 0)}</TableCell>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processCheckout, PaymentMethod, getOpenCashRegister, updateCashRegisterSales, getClient, updateClientBalance } from "@/lib/db";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
+import { adminDb } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ interface CheckoutBody {
   discount?: number;
   clientId?: string;
   payLater?: boolean;
+  idempotencyKey?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -26,7 +28,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body: CheckoutBody = await request.json();
-    const { items, payments, discount, clientId, payLater } = body;
+    const { items, payments, discount, clientId, payLater, idempotencyKey } = body;
+
+    const safeIdempotencyKey = (idempotencyKey || "").trim();
+    if (!safeIdempotencyKey) {
+      return NextResponse.json({ error: "idempotencyKey is required" }, { status: 400 });
+    }
 
     if (!items || items.length === 0) {
       return NextResponse.json({ error: "No items in cart" }, { status: 400 });
@@ -49,13 +56,59 @@ export async function POST(request: NextRequest) {
       clientName = client.name;
     }
 
+    const idempotencyRef = adminDb
+      .collection("idempotencyKeys")
+      .doc(`checkout:${user.uid}:${safeIdempotencyKey}`);
+
+    const requestHash = JSON.stringify({
+      items,
+      payments: payLater ? [] : (payments || []),
+      discount: allowedDiscount,
+      clientId: payLater ? clientId : undefined,
+      payLater: Boolean(payLater),
+      userId: user.uid,
+    });
+
+    const idempotencyCheck = await adminDb.runTransaction(async (tx: FirebaseFirestore.Transaction) => {
+      const snap = await tx.get(idempotencyRef);
+      if (snap.exists) {
+        return { exists: true, data: snap.data() as Record<string, unknown> };
+      }
+
+      tx.create(idempotencyRef, {
+        scope: "checkout",
+        ownerId: user.uid,
+        key: safeIdempotencyKey,
+        requestHash,
+        status: "PROCESSING",
+        createdAt: new Date(),
+      });
+      return { exists: false, data: null };
+    });
+
+    if (idempotencyCheck.exists) {
+      const existingHash = String(idempotencyCheck.data?.requestHash || "");
+      if (existingHash !== requestHash) {
+        return NextResponse.json({ error: "Idempotency key reuse with different payload" }, { status: 409 });
+      }
+
+      const status = String(idempotencyCheck.data?.status || "");
+      if (status === "COMPLETED" && idempotencyCheck.data?.response) {
+        return NextResponse.json(idempotencyCheck.data.response as unknown, { status: 200 });
+      }
+
+      return NextResponse.json({ error: "Request already being processed" }, { status: 409 });
+    }
+
     const order = await processCheckout(
-      items, 
-      payLater ? [] : (payments || []), 
+      items,
+      payLater ? [] : (payments || []),
       allowedDiscount,
       payLater ? clientId : undefined,
       payLater ? clientName : undefined,
-      payLater || false
+      payLater || false,
+      user.uid,
+      user.role
     );
 
     // Update client balance if pay later
@@ -71,6 +124,15 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    await idempotencyRef.set(
+      {
+        status: "COMPLETED",
+        completedAt: new Date(),
+        response: JSON.parse(JSON.stringify(order)),
+      },
+      { merge: true }
+    );
+
     return NextResponse.json(order, { status: 201 });
   } catch (error) {
     console.error("Checkout error:", error);

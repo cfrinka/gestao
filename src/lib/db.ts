@@ -34,6 +34,105 @@ export interface StockPurchaseEntry {
   createdAt: Date;
 }
 
+export type FinancialMovementType =
+  | "SALE_REVENUE"
+  | "COGS"
+  | "STOCK_PURCHASE"
+  | "OPERATING_EXPENSE"
+  | "FIADO_PAYMENT"
+  | "EXCHANGE_DIFFERENCE"
+  | "REFUND"
+  | "ADJUSTMENT";
+
+export type FinancialMovementDirection = "IN" | "OUT";
+
+export type FinancialMovementPaymentMethod = "cash" | "pix" | "credit" | "debit";
+
+export type FinancialMovementRelatedEntity =
+  | { kind: "order"; id: string }
+  | { kind: "bill"; id: string }
+  | { kind: "exchange"; id: string }
+  | { kind: "stockPurchase"; id: string };
+
+export type FinancialMovement = {
+  id: string;
+  type: FinancialMovementType;
+  direction: FinancialMovementDirection;
+  amount: number;
+  paymentMethod?: FinancialMovementPaymentMethod;
+  relatedEntity: FinancialMovementRelatedEntity;
+  occurredAt: Timestamp;
+  competencyMonth: string;
+  createdBy: string;
+  metadata?: Record<string, unknown>;
+};
+
+export async function createFinancialAuditLog(input: {
+  action: FinancialAuditAction;
+  actorId: string;
+  actorRole: string;
+  occurredAt?: Date;
+  competencyMonth?: string;
+  relatedEntity?: { kind: string; id: string };
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  const occurredDate =
+    input.occurredAt instanceof Date && !Number.isNaN(input.occurredAt.getTime())
+      ? input.occurredAt
+      : new Date();
+
+  await adminDb.collection("financialAuditLogs").add({
+    action: input.action,
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    occurredAt: Timestamp.fromDate(occurredDate),
+    ...(input.competencyMonth ? { competencyMonth: input.competencyMonth } : {}),
+    ...(input.relatedEntity ? { relatedEntity: input.relatedEntity } : {}),
+    ...(input.payload ? { payload: input.payload } : {}),
+  });
+}
+
+export interface FinancialClosureSnapshot {
+  id: string;
+  month: string;
+  revenue: number;
+  cogs: number;
+  grossProfit: number;
+  expenses: number;
+  netResult: number;
+  cashIn: number;
+  cashOut: number;
+  inventoryValue: number;
+  fiadoOutstanding: number;
+  lockedAt: Date;
+  lockedBy: string;
+}
+
+export type FinancialAuditAction = "FINANCIAL_CLOSE" | "MANUAL_ADJUSTMENT" | "REFUND";
+
+export interface FinancialAuditLog {
+  id: string;
+  action: FinancialAuditAction;
+  actorId: string;
+  actorRole: string;
+  occurredAt: Timestamp;
+  competencyMonth?: string;
+  relatedEntity?: { kind: string; id: string };
+  payload?: Record<string, unknown>;
+}
+
+export type CreateFinancialMovementInput = {
+  type: FinancialMovementType;
+  direction: FinancialMovementDirection;
+  amount: number;
+  paymentMethod?: FinancialMovementPaymentMethod;
+  relatedEntity: FinancialMovementRelatedEntity;
+  occurredAt?: Date;
+  createdBy: string;
+  createdByRole: string;
+  metadata?: Record<string, unknown>;
+};
+
 export interface OrderItem {
   id: string;
   orderId: string;
@@ -41,6 +140,7 @@ export interface OrderItem {
   ownerId?: string;
   size: string;
   quantity: number;
+  unitCostAtSale?: number;
   unitCost: number;
   unitPrice: number;
   totalCost: number;
@@ -51,6 +151,15 @@ export interface OrderItem {
 export interface PaymentMethod {
   method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX";
   amount: number;
+}
+
+function mapOrderPaymentMethodToFinancial(
+  method: PaymentMethod["method"]
+): FinancialMovementPaymentMethod {
+  if (method === "DINHEIRO") return "cash";
+  if (method === "PIX") return "pix";
+  if (method === "CREDITO") return "credit";
+  return "debit";
 }
 
 export interface FiadoPayment {
@@ -65,6 +174,7 @@ export interface Order {
   subtotal: number;
   discount: number;
   totalAmount: number;
+  cogsTotal?: number;
   payments: PaymentMethod[];
   clientId?: string;
   clientName?: string;
@@ -100,6 +210,7 @@ export interface ExchangeRecord {
   documentNumber: string;
   customerName?: string;
   notes?: string;
+  paymentMethod?: FinancialMovementPaymentMethod;
   items: ExchangeItem[];
   totalInValue: number;
   totalOutValue: number;
@@ -172,6 +283,88 @@ function convertTimestamp(data: FirebaseFirestore.DocumentData): FirebaseFiresto
   return result;
 }
 
+function toCompetencyMonth(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+export async function isFinancialMonthClosed(month: string): Promise<boolean> {
+  const closure = await adminDb.collection("financialClosures").doc(month).get();
+  return closure.exists;
+}
+
+export async function assertFinancialMonthOpen(date: Date): Promise<void> {
+  const month = toCompetencyMonth(date);
+  const closed = await isFinancialMonthClosed(month);
+  if (closed) {
+    throw new Error(`Financial month ${month} is closed`);
+  }
+}
+
+export async function createFinancialMovement(
+  input: CreateFinancialMovementInput
+): Promise<FinancialMovement> {
+  if (input.createdByRole !== "ADMIN") {
+    throw new Error("Only ADMIN can create financial movements");
+  }
+
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Invalid financial movement amount");
+  }
+
+  if (!input.relatedEntity?.kind || !input.relatedEntity?.id) {
+    throw new Error("Invalid related entity");
+  }
+
+  const occurredDate =
+    input.occurredAt instanceof Date && !Number.isNaN(input.occurredAt.getTime())
+      ? input.occurredAt
+      : new Date();
+  await assertFinancialMonthOpen(occurredDate);
+  const occurredAt = Timestamp.fromDate(occurredDate);
+  const competencyMonth = toCompetencyMonth(occurredDate);
+
+  const payload: Omit<FinancialMovement, "id"> = {
+    type: input.type,
+    direction: input.direction,
+    amount,
+    relatedEntity: input.relatedEntity,
+    occurredAt,
+    competencyMonth,
+    createdBy: input.createdBy,
+  };
+
+  if (input.paymentMethod) {
+    payload.paymentMethod = input.paymentMethod;
+  }
+
+  if (input.metadata) {
+    payload.metadata = input.metadata;
+  }
+
+  const docRef = await adminDb.collection("financialMovements").add(payload);
+
+  if (input.type === "ADJUSTMENT" || input.type === "REFUND") {
+    await createFinancialAuditLog({
+      action: input.type === "ADJUSTMENT" ? "MANUAL_ADJUSTMENT" : "REFUND",
+      actorId: input.createdBy,
+      actorRole: input.createdByRole,
+      occurredAt: occurredDate,
+      competencyMonth,
+      relatedEntity: { kind: input.relatedEntity.kind, id: input.relatedEntity.id },
+      payload: {
+        amount,
+        direction: input.direction,
+        metadata: input.metadata || null,
+      },
+    });
+  }
+
+  return { id: docRef.id, ...payload };
+}
+
 // Products
 export async function getProducts(): Promise<Product[]> {
   const snapshot = await adminDb.collection("products").orderBy("name").get();
@@ -234,11 +427,18 @@ export async function createStockPurchaseEntry(input: {
   createdByName: string;
 }): Promise<StockPurchaseEntry> {
   const now = new Date();
+  await assertFinancialMonthOpen(now);
+  const nowTs = Timestamp.fromDate(now);
+  const competencyMonth = toCompetencyMonth(now);
   const quantity = Math.max(0, Math.floor(Number(input.quantity)));
   const unitCost = Number(input.unitCost || 0);
   const totalCost = quantity * unitCost;
 
-  const docRef = await adminDb.collection("stockPurchases").add({
+  const stockPurchaseRef = adminDb.collection("stockPurchases").doc();
+  const movementRef = adminDb.collection("financialMovements").doc();
+  const batch = adminDb.batch();
+
+  batch.set(stockPurchaseRef, {
     productId: input.productId,
     productName: input.productName,
     sku: input.sku,
@@ -248,11 +448,30 @@ export async function createStockPurchaseEntry(input: {
     source: input.source,
     createdById: input.createdById,
     createdByName: input.createdByName,
-    createdAt: Timestamp.fromDate(now),
+    createdAt: nowTs,
   });
 
+  batch.set(movementRef, {
+    type: "STOCK_PURCHASE",
+    direction: "OUT",
+    amount: totalCost,
+    relatedEntity: { kind: "stockPurchase", id: stockPurchaseRef.id },
+    occurredAt: nowTs,
+    competencyMonth,
+    createdBy: input.createdById,
+    metadata: {
+      source: input.source,
+      productId: input.productId,
+      sku: input.sku,
+      quantity,
+      unitCost,
+    },
+  });
+
+  await batch.commit();
+
   return {
-    id: docRef.id,
+    id: stockPurchaseRef.id,
     productId: input.productId,
     productName: input.productName,
     sku: input.sku,
@@ -342,8 +561,14 @@ export async function processCheckout(
   discount: number = 0,
   clientId?: string,
   clientName?: string,
-  isPaidLater: boolean = false
+  isPaidLater: boolean = false,
+  createdById: string = "system",
+  createdByRole: string = "ADMIN"
 ): Promise<Order> {
+  if (createdByRole !== "ADMIN" && createdByRole !== "CASHIER") {
+    throw new Error("Role not allowed to process checkout");
+  }
+
   const batch = adminDb.batch();
 
   const products: (Product & { requestedQty: number; requestedSize: string })[] = [];
@@ -364,6 +589,7 @@ export async function processCheckout(
   }
 
   let subtotal = 0;
+  let cogsTotal = 0;
   const orderItems: Omit<OrderItem, "id">[] = [];
 
   for (const product of products) {
@@ -375,6 +601,7 @@ export async function processCheckout(
     const profit = totalRevenue - totalCost;
 
     subtotal += totalRevenue;
+    cogsTotal += totalCost;
 
     orderItems.push({
       orderId: "",
@@ -382,6 +609,7 @@ export async function processCheckout(
       ...(product.ownerId ? { ownerId: product.ownerId } : {}),
       size: product.requestedSize,
       quantity,
+      unitCostAtSale: unitCost,
       unitCost,
       unitPrice,
       totalCost,
@@ -391,12 +619,17 @@ export async function processCheckout(
   }
 
   const totalAmount = Math.max(0, subtotal - discount);
+  const now = new Date();
+  await assertFinancialMonthOpen(now);
+  const nowTs = Timestamp.fromDate(now);
+  const competencyMonth = toCompetencyMonth(now);
 
   const orderRef = adminDb.collection("orders").doc();
   batch.set(orderRef, {
     subtotal,
     discount,
     totalAmount,
+    cogsTotal,
     payments,
     ...(clientId && { clientId }),
     ...(clientName && { clientName }),
@@ -406,12 +639,43 @@ export async function processCheckout(
       remainingAmount: totalAmount,
       paymentHistory: [],
     }),
-    createdAt: Timestamp.fromDate(new Date()),
+    createdAt: nowTs,
+  });
+
+  const saleMovementRef = adminDb.collection("financialMovements").doc();
+  batch.set(saleMovementRef, {
+    type: "SALE_REVENUE",
+    direction: "IN",
+    amount: totalAmount,
+    relatedEntity: { kind: "order", id: orderRef.id },
+    occurredAt: nowTs,
+    competencyMonth,
+    createdBy: createdById,
+    metadata: {
+      subtotal,
+      discount,
+      isPaidLater,
+      payments: (payments || []).map((payment) => ({
+        method: mapOrderPaymentMethodToFinancial(payment.method),
+        amount: Number(payment.amount || 0),
+      })),
+    },
+  });
+
+  const cogsMovementRef = adminDb.collection("financialMovements").doc();
+  batch.set(cogsMovementRef, {
+    type: "COGS",
+    direction: "OUT",
+    amount: cogsTotal,
+    relatedEntity: { kind: "order", id: orderRef.id },
+    occurredAt: nowTs,
+    competencyMonth,
+    createdBy: createdById,
   });
 
   for (const itemData of orderItems) {
     const itemRef = adminDb.collection("orderItems").doc();
-    batch.set(itemRef, { ...itemData, orderId: orderRef.id });
+    batch.set(itemRef, { ...itemData, orderId: orderRef.id, createdAt: nowTs });
   }
 
   for (const product of products) {
@@ -419,7 +683,7 @@ export async function processCheckout(
     
     const updates: Record<string, unknown> = {
       stock: FieldValue.increment(-product.requestedQty),
-      updatedAt: Timestamp.fromDate(new Date()),
+      updatedAt: nowTs,
     };
     
     if (product.sizes && product.sizes.length > 0) {
@@ -441,8 +705,9 @@ export async function processCheckout(
     subtotal,
     discount,
     totalAmount,
+    cogsTotal,
     payments,
-    createdAt: new Date(),
+    createdAt: now,
     items: orderItems.map((item, index) => ({ ...item, id: `item-${index}`, orderId: orderRef.id })),
   };
 }
@@ -451,11 +716,17 @@ export async function createExchange(input: {
   documentNumber?: string;
   customerName?: string;
   notes?: string;
+  paymentMethod?: FinancialMovementPaymentMethod;
   items: ExchangeItemInput[];
   cashRegisterId?: string;
   createdById: string;
+  createdByRole: string;
   createdByName: string;
 }): Promise<ExchangeRecord> {
+  if (input.createdByRole !== "ADMIN" && input.createdByRole !== "CASHIER") {
+    throw new Error("Role not allowed to create exchange");
+  }
+
   const providedDocumentNumber = (input.documentNumber || "").trim();
   const autoDocumentNumber = `AJUSTE-${Date.now()}`;
   const documentNumber = providedDocumentNumber || autoDocumentNumber;
@@ -465,12 +736,19 @@ export async function createExchange(input: {
   }
 
   const now = new Date();
+  const nowTs = Timestamp.fromDate(now);
+  const competencyMonth = toCompetencyMonth(now);
   const exchangeRef = adminDb.collection("exchanges").doc();
   const registerRef = input.cashRegisterId
     ? adminDb.collection("cashRegisters").doc(input.cashRegisterId)
     : null;
 
   const result = await adminDb.runTransaction(async (tx) => {
+    const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(competencyMonth));
+    if (closureSnap.exists) {
+      throw new Error(`Financial month ${competencyMonth} is closed`);
+    }
+
     const normalizedItems: ExchangeItem[] = [];
     let totalInValue = 0;
     let totalOutValue = 0;
@@ -584,11 +862,17 @@ export async function createExchange(input: {
 
     const difference = totalOutValue - totalInValue;
     const cashInAmount = Math.max(0, difference);
+    const paymentMethod = cashInAmount > 0 ? input.paymentMethod : undefined;
+
+    if (cashInAmount > 0 && !paymentMethod) {
+      throw new Error("Selecione a forma de pagamento da diferença da troca");
+    }
 
     tx.set(exchangeRef, {
       documentNumber,
       customerName: (input.customerName || "").trim(),
       notes: (input.notes || "").trim(),
+      ...(paymentMethod ? { paymentMethod } : {}),
       items: normalizedItems,
       totalInValue,
       totalOutValue,
@@ -596,14 +880,34 @@ export async function createExchange(input: {
       cashInAmount,
       createdById: input.createdById,
       createdByName: input.createdByName,
-      createdAt: Timestamp.fromDate(now),
+      createdAt: nowTs,
     });
 
     if (registerRef && cashInAmount > 0) {
-      tx.update(registerRef, {
-        totalCash: FieldValue.increment(cashInAmount),
+      const registerUpdates: Record<string, FirebaseFirestore.FieldValue> = {
         totalExchangeDifferenceIn: FieldValue.increment(cashInAmount),
         exchangeDifferenceCount: FieldValue.increment(1),
+      };
+
+      if (paymentMethod === "cash") registerUpdates.totalCash = FieldValue.increment(cashInAmount);
+      if (paymentMethod === "pix") registerUpdates.totalPix = FieldValue.increment(cashInAmount);
+      if (paymentMethod === "credit") registerUpdates.totalCredit = FieldValue.increment(cashInAmount);
+      if (paymentMethod === "debit") registerUpdates.totalDebit = FieldValue.increment(cashInAmount);
+
+      tx.update(registerRef, registerUpdates);
+    }
+
+    if (cashInAmount > 0 && paymentMethod) {
+      const movementRef = adminDb.collection("financialMovements").doc();
+      tx.set(movementRef, {
+        type: "EXCHANGE_DIFFERENCE",
+        direction: "IN",
+        amount: cashInAmount,
+        paymentMethod,
+        relatedEntity: { kind: "exchange", id: exchangeRef.id },
+        occurredAt: nowTs,
+        competencyMonth,
+        createdBy: input.createdById,
       });
     }
 
@@ -612,6 +916,7 @@ export async function createExchange(input: {
       documentNumber,
       customerName: (input.customerName || "").trim(),
       notes: (input.notes || "").trim(),
+      ...(paymentMethod ? { paymentMethod } : {}),
       items: normalizedItems,
       totalInValue,
       totalOutValue,
@@ -966,24 +1271,42 @@ export async function applyFiadoPayment(
     const appliedAmount = Math.min(amount, currentRemaining);
     const nextPaid = currentPaid + appliedAmount;
     const nextRemaining = Math.max(0, currentRemaining - appliedAmount);
+    const now = new Date();
+    await assertFinancialMonthOpen(now);
+    const nowTs = Timestamp.fromDate(now);
 
     const payment: Omit<FiadoPayment, "createdAt"> & { createdAt: FirebaseFirestore.Timestamp } = {
       id: `pay_${Date.now()}`,
       amount: appliedAmount,
       method,
-      createdAt: Timestamp.fromDate(new Date()),
+      createdAt: nowTs,
     };
 
     tx.update(orderRef, {
       amountPaid: nextPaid,
       remainingAmount: nextRemaining,
       paymentHistory: FieldValue.arrayUnion(payment),
-      ...(nextRemaining === 0 ? { paidAt: Timestamp.fromDate(new Date()) } : {}),
+      ...(nextRemaining === 0 ? { paidAt: nowTs } : {}),
     });
 
     tx.update(clientRef, {
       balance: FieldValue.increment(-appliedAmount),
-      updatedAt: Timestamp.fromDate(new Date()),
+      updatedAt: nowTs,
+    });
+
+    const movementRef = adminDb.collection("financialMovements").doc();
+    tx.set(movementRef, {
+      type: "FIADO_PAYMENT",
+      direction: "IN",
+      amount: appliedAmount,
+      paymentMethod: mapOrderPaymentMethodToFinancial(method),
+      relatedEntity: { kind: "order", id: orderId },
+      occurredAt: nowTs,
+      competencyMonth: toCompetencyMonth(now),
+      createdBy: clientId,
+      metadata: {
+        clientId,
+      },
     });
   });
 }

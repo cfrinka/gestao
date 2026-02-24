@@ -16,7 +16,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatPercentage } from "@/lib/utils";
 import { apiGet } from "@/lib/api-client";
-import { BarChart3, Download, FileText } from "lucide-react";
+import { BarChart3, Download, FileText, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -59,6 +59,15 @@ interface StoreReport {
     netProfit: number;
     netMargin: number;
   };
+  monthlyDre?: Array<{
+    month: string;
+    source: "closure" | "live";
+    revenue: number;
+    cogs: number;
+    grossProfit: number;
+    expenses: number;
+    netResult: number;
+  }>;
   cashFlow?: {
     inflowsActual: number;
     outflowsActual: number;
@@ -74,6 +83,16 @@ interface StoreReport {
     bestSalesDay?: { day: string; revenue: number; orders: number } | null;
     payLaterOutstanding: number;
     payLaterReceived: number;
+  };
+  fiadoAging?: {
+    asOf: string;
+    totalOutstanding: number;
+    buckets: {
+      current30: number;
+      days31to60: number;
+      days61to90: number;
+      days90plus: number;
+    };
   };
   inventory?: {
     totalStock: number;
@@ -141,6 +160,26 @@ interface StoreReport {
     goals: string;
     promotions: string;
   };
+  debug?: {
+    monthlySources: Array<{
+      month: string;
+      source: "closure" | "live_movements" | "legacy_collections";
+      closureExists: boolean;
+      movementCount: number;
+      legacyDiagnostics: {
+        ordersCount: number;
+        paidBillsCount: number;
+        stockPurchasesCount: number;
+        exchangesCount: number;
+      };
+      totals: {
+        revenue: number;
+        cogs: number;
+        expenses: number;
+        netResult: number;
+      };
+    }>;
+  };
 }
 
 export default function ReportsPage() {
@@ -150,13 +189,15 @@ export default function ReportsPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  const fetchReports = async () => {
+  const fetchReports = async (forceRefresh: boolean = false) => {
     setLoading(true);
     try {
       let url = "/api/reports";
       const params = new URLSearchParams();
       if (startDate) params.append("startDate", startDate);
       if (endDate) params.append("endDate", endDate);
+      if (forceRefresh) params.append("forceRefresh", "1");
+      params.append("debug", "1");
       if (params.toString()) url += `?${params.toString()}`;
 
       const data = await apiGet(url);
@@ -173,7 +214,7 @@ export default function ReportsPage() {
   }, []);
 
   const handleFilter = () => {
-    fetchReports();
+    fetchReports(true);
   };
 
   const totals = {
@@ -452,8 +493,97 @@ export default function ReportsPage() {
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
-            <Button onClick={handleFilter}>Filtrar</Button>
+            <Button onClick={handleFilter} disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Aplicando...
+                </>
+              ) : (
+                "Filtrar"
+              )}
+            </Button>
           </div>
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Buscando dados com o filtro selecionado...
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Depuração das Fontes de Dados</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Mês</TableHead>
+                <TableHead>Fonte</TableHead>
+                <TableHead className="text-right">Movimentos</TableHead>
+                <TableHead className="text-right">Pedidos (legado)</TableHead>
+                <TableHead className="text-right">Contas pagas (legado)</TableHead>
+                <TableHead className="text-right">Compras (legado)</TableHead>
+                <TableHead className="text-right">Trocas (legado)</TableHead>
+                <TableHead className="text-right">Receita</TableHead>
+                <TableHead className="text-right">CMV</TableHead>
+                <TableHead className="text-right">Despesas</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(report?.debug?.monthlySources || []).map((row) => (
+                <TableRow key={`debug-${row.month}`}>
+                  <TableCell>{row.month}</TableCell>
+                  <TableCell>{row.source}</TableCell>
+                  <TableCell className="text-right">{row.movementCount}</TableCell>
+                  <TableCell className="text-right">{row.legacyDiagnostics.ordersCount}</TableCell>
+                  <TableCell className="text-right">{row.legacyDiagnostics.paidBillsCount}</TableCell>
+                  <TableCell className="text-right">{row.legacyDiagnostics.stockPurchasesCount}</TableCell>
+                  <TableCell className="text-right">{row.legacyDiagnostics.exchangesCount}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(row.totals.revenue)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(row.totals.cogs)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(row.totals.expenses)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>DRE Mensal (Fechamento vs Aberto)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Mês</TableHead>
+                <TableHead>Fonte</TableHead>
+                <TableHead className="text-right">Receita</TableHead>
+                <TableHead className="text-right">CMV</TableHead>
+                <TableHead className="text-right">Lucro Bruto</TableHead>
+                <TableHead className="text-right">Despesas</TableHead>
+                <TableHead className="text-right">Resultado Líquido</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(report?.monthlyDre || []).map((row) => (
+                <TableRow key={row.month}>
+                  <TableCell>{row.month}</TableCell>
+                  <TableCell>{row.source === "closure" ? "Fechado" : "Aberto"}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(row.revenue)}</TableCell>
+                  <TableCell className="text-right text-red-600">{formatCurrency(row.cogs)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(row.grossProfit)}</TableCell>
+                  <TableCell className="text-right text-red-600">{formatCurrency(row.expenses)}</TableCell>
+                  <TableCell className="text-right font-semibold">{formatCurrency(row.netResult)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
@@ -669,6 +799,19 @@ export default function ReportsPage() {
           </div>
           <p className="text-sm text-gray-600 md:col-span-2">{report?.insights?.cashFlow}</p>
           {(report?.alerts?.cashFlow?.length || 0) > 0 && <p className="text-sm text-red-600 md:col-span-2">⚠ {report?.alerts?.cashFlow.join(" | ")}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Envelhecimento do Fiado</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-2 md:grid-cols-2 text-sm">
+          <p><span className="font-medium">Em aberto total:</span> {formatCurrency(report?.fiadoAging?.totalOutstanding ?? 0)}</p>
+          <p><span className="font-medium">Até 30 dias:</span> {formatCurrency(report?.fiadoAging?.buckets.current30 ?? 0)}</p>
+          <p><span className="font-medium">31 a 60 dias:</span> {formatCurrency(report?.fiadoAging?.buckets.days31to60 ?? 0)}</p>
+          <p><span className="font-medium">61 a 90 dias:</span> {formatCurrency(report?.fiadoAging?.buckets.days61to90 ?? 0)}</p>
+          <p><span className="font-medium">90+ dias:</span> {formatCurrency(report?.fiadoAging?.buckets.days90plus ?? 0)}</p>
         </CardContent>
       </Card>
 

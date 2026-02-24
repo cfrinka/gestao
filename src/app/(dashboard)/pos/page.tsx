@@ -792,6 +792,7 @@ export default function POSPage() {
 
     setProcessing(true);
     const cartSnapshot = [...cart];
+    const idempotencyKey = crypto.randomUUID();
     
     try {
       const order = await apiPost("/api/checkout", {
@@ -803,6 +804,7 @@ export default function POSPage() {
         discount: effectiveDiscount,
         clientId: selectedClientId,
         payLater: true,
+        idempotencyKey,
       });
       
       const selectedClient = clients.find(c => c.id === selectedClientId);
@@ -851,6 +853,7 @@ export default function POSPage() {
     setProcessing(true);
     const cartSnapshot = [...cart];
     const paymentsSnapshot = payments.filter(p => p.amount > 0);
+    const idempotencyKey = crypto.randomUUID();
     
     try {
       const order = await apiPost("/api/checkout", {
@@ -861,6 +864,7 @@ export default function POSPage() {
         })),
         payments: paymentsSnapshot,
         discount: effectiveDiscount,
+        idempotencyKey,
       });
       
       printReceipt(order.id, {
