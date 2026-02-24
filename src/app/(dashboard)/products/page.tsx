@@ -51,6 +51,7 @@ interface Product {
 
 const DEFAULT_SIZES = ["PP", "P", "M", "G", "GG", "XG"];
 const PLUS_SIZES = ["GG", "XG", "G1", "G2", "G3"];
+const MARKUP_MULTIPLIER = 2.8;
 
 export default function ProductsPage() {
   const { userData } = useAuth();
@@ -305,9 +306,25 @@ export default function ProductsPage() {
                     type="number"
                     step="0.01"
                     value={formData.costPrice}
-                    onChange={(e) =>
-                      setFormData({ ...formData, costPrice: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const nextCostPrice = e.target.value;
+
+                      if (editingProduct) {
+                        setFormData({ ...formData, costPrice: nextCostPrice });
+                        return;
+                      }
+
+                      const numericCost = parseFloat(nextCostPrice);
+                      const suggestedSalePrice = Number.isFinite(numericCost)
+                        ? (numericCost * MARKUP_MULTIPLIER).toFixed(2)
+                        : "";
+
+                      setFormData({
+                        ...formData,
+                        costPrice: nextCostPrice,
+                        salePrice: suggestedSalePrice,
+                      });
+                    }}
                     required
                   />
                 </div>
