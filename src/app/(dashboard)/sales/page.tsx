@@ -22,18 +22,28 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { ClipboardList, Eye, Download, Banknote, CreditCard, Smartphone } from "lucide-react";
+import { ClipboardList, Eye, Download, Banknote, CreditCard, Smartphone, Printer } from "lucide-react";
 
 interface OrderItem {
   id: string;
   quantity: number;
+  size?: string;
   unitPrice: number;
   totalRevenue: number;
   profit: number;
-  product: {
+  product?: {
     name: string;
     sku: string;
   };
+}
+
+interface StoreSettings {
+  storeName: string;
+  address: string;
+  phone: string;
+  cnpj: string;
+  footerMessage: string;
+  exchangeDays: number;
 }
 
 interface PaymentMethod {
@@ -70,6 +80,14 @@ export default function SalesPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [storeSettings, setStoreSettings] = useState<StoreSettings>({
+    storeName: "Gestão Loja",
+    address: "",
+    phone: "",
+    cnpj: "",
+    footerMessage: "Obrigado pela preferência!\nVolte sempre!",
+    exchangeDays: 10,
+  });
 
   const periodTotalSold = orders.reduce(
     (sum, o) => sum + (typeof o.totalAmount === "number" ? o.totalAmount : 0),
@@ -112,7 +130,208 @@ export default function SalesPage() {
 
   useEffect(() => {
     fetchOrders();
+    fetchStoreSettings();
   }, []);
+
+  const fetchStoreSettings = async () => {
+    try {
+      const data = await apiGet("/api/settings");
+      setStoreSettings({
+        storeName: data.storeName || "Gestão Loja",
+        address: data.address || "",
+        phone: data.phone || "",
+        cnpj: data.cnpj || "",
+        footerMessage: data.footerMessage || "Obrigado pela preferência!\nVolte sempre!",
+        exchangeDays: Number.isFinite(data.exchangeDays) ? data.exchangeDays : 10,
+      });
+    } catch {
+      // keep default settings
+    }
+  };
+
+  const printReceipt = (order: Order) => {
+    if (!order) return;
+
+    const receiptWindow = window.open("", "_blank", "width=420,height=700");
+    if (!receiptWindow) {
+      toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
+      return;
+    }
+
+    const createdAtDate = new Date(order.createdAt);
+    const dateStr = createdAtDate.toLocaleDateString("pt-BR");
+    const timeStr = createdAtDate.toLocaleTimeString("pt-BR");
+    const exchangeDays = Number.isFinite(storeSettings.exchangeDays) ? Math.max(0, Math.floor(storeSettings.exchangeDays)) : 10;
+    const exchangeDeadline = new Date(createdAtDate);
+    exchangeDeadline.setDate(exchangeDeadline.getDate() + exchangeDays);
+    const exchangeDeadlineStr = exchangeDeadline.toLocaleDateString("pt-BR");
+
+    const subtotal = order.items.reduce((sum, item) => sum + Number(item.totalRevenue || 0), 0);
+    const discount = Math.max(0, subtotal - Number(order.totalAmount || 0));
+
+    const paymentLabel: Record<PaymentMethod["method"], string> = {
+      DINHEIRO: "Dinheiro",
+      DEBITO: "Debito",
+      CREDITO: "Credito",
+      PIX: "PIX",
+    };
+
+    const itemsRows = order.items
+      .map((item) => {
+        const productName = item.product?.name || "Produto removido";
+        const itemName = `${productName}${item.size ? ` (${item.size})` : ""}`;
+        const itemTotal = Number(item.totalRevenue || 0);
+        return `<tr><td>${item.quantity}x ${itemName}</td><td class="right">${formatCurrency(itemTotal)}</td></tr>`;
+      })
+      .join("");
+
+    const paymentsRows = (order.payments || [])
+      .map((payment) => `<tr><td>${paymentLabel[payment.method] || payment.method}</td><td class="right">${formatCurrency(payment.amount)}</td></tr>`)
+      .join("");
+
+    const paymentSection = order.isPaidLater
+      ? `<div class="divider"></div><div class="section muted"><div class="meta"><strong>Pagamento:</strong> Fiado</div></div>`
+      : (order.payments && order.payments.length > 0
+        ? `<div class="divider"></div><table><tbody>${paymentsRows}</tbody></table>`
+        : "");
+
+    receiptWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Reimpressao de Cupom</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          html, body { width: 80mm; max-width: 80mm; }
+          body {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            line-height: 1.3;
+            font-weight: 600;
+            color: #000;
+            padding: 0;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+          }
+          .receipt { width: 80mm; max-width: 80mm; padding: 2.5mm 2.5mm 3mm; break-after: page; page-break-after: always; }
+          .receipt:last-child { break-after: auto; page-break-after: auto; }
+          .center { text-align: center; overflow-wrap: anywhere; word-break: break-word; }
+          .bold { font-weight: bold; }
+          .divider { margin: 8px 0; border-top: 1px dashed #000; }
+          .section { margin: 6px 0; }
+          .muted { font-size: 11px; }
+          .store-name { font-size: 15px; line-height: 1.2; letter-spacing: 0.3px; }
+          .line { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+          .meta { margin: 2px 0; }
+          .meta strong { display: inline-block; min-width: 78px; }
+          .policy { margin: 6px 0; text-align: left; }
+          .policy-line { display: block; line-height: 1.3; }
+          .validity { text-align: center; margin-top: 6px; }
+          .footer-note { text-align: center; }
+          .title { font-size: 14px; margin-bottom: 4px; }
+          table { width: 100%; border-collapse: collapse; }
+          td { vertical-align: top; padding: 1px 0; }
+          td.right { text-align: right; white-space: nowrap; padding-left: 8px; }
+          .totals td { padding-top: 2px; }
+          @media print {
+            html, body { width: 80mm !important; max-width: 80mm !important; }
+            @page { margin: 0; size: 80mm auto; }
+            .receipt { break-after: page; page-break-after: always; }
+            .receipt:last-child { break-after: auto; page-break-after: auto; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="receipt">
+          <div class="center">
+            <div class="bold store-name line">${storeSettings.storeName.toUpperCase()}</div>
+            ${storeSettings.address ? `<div class="line">${storeSettings.address}</div>` : ""}
+            ${storeSettings.phone ? `<div class="line">Tel: ${storeSettings.phone}</div>` : ""}
+            ${storeSettings.cnpj ? `<div class="line">CNPJ: ${storeSettings.cnpj}</div>` : ""}
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="center title bold">CUPOM NAO FISCAL</div>
+
+          <div class="section muted">
+            <div class="meta"><strong>Data:</strong> ${dateStr}</div>
+            <div class="meta"><strong>Hora:</strong> ${timeStr}</div>
+            <div class="meta"><strong>Documento:</strong> #${order.id.slice(-6).toUpperCase()}</div>
+            <div class="meta"><strong>Tipo:</strong> Reimpressao</div>
+          </div>
+
+          <div class="divider"></div>
+
+          <table>
+            <tbody>${itemsRows}</tbody>
+          </table>
+
+          <div class="divider"></div>
+
+          <table class="totals">
+            <tbody>
+              <tr><td>Subtotal</td><td class="right">${formatCurrency(subtotal)}</td></tr>
+              ${discount > 0 ? `<tr><td>Desconto</td><td class="right">-${formatCurrency(discount)}</td></tr>` : ""}
+              <tr><td><strong>Total</strong></td><td class="right"><strong>${formatCurrency(order.totalAmount)}</strong></td></tr>
+            </tbody>
+          </table>
+
+          ${paymentSection}
+
+          <div class="divider"></div>
+          <div class="center muted">Documento sem valor fiscal</div>
+        </div>
+
+        <div class="receipt">
+          <div class="center">
+            <div class="bold store-name line">${storeSettings.storeName.toUpperCase()}</div>
+            ${storeSettings.address ? `<div class="line">${storeSettings.address}</div>` : ""}
+            ${storeSettings.phone ? `<div class="line">Tel: ${storeSettings.phone}</div>` : ""}
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="section muted">
+            <div class="meta"><strong>Data:</strong> ${dateStr}</div>
+            <div class="meta"><strong>Hora:</strong> ${timeStr}</div>
+            <div class="meta"><strong>Documento:</strong> #${order.id.slice(-6).toUpperCase()}</div>
+            <div class="meta"><strong>Tipo:</strong> Reimpressao</div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="center section">
+            <div class="bold title">COMPROVANTE PARA TROCA</div>
+            <div class="section policy">
+              <span class="policy-line">Trocas em ate ${exchangeDays} dias</span>
+              <span class="policy-line">corridos, mediante apresentacao</span>
+              <span class="policy-line">deste comprovante.</span>
+            </div>
+            <div class="validity"><strong>Valido ate:</strong> ${exchangeDeadlineStr}</div>
+            <div class="muted footer-note">Produto deve estar sem uso e com etiqueta.</div>
+          </div>
+
+          ${storeSettings.footerMessage
+            ? `<div class="divider"></div><div class="center section muted">${storeSettings.footerMessage.split("\n").map((line) => `<div class="line">${line}</div>`).join("")}</div>`
+            : ""}
+
+          <div class="divider"></div>
+          <div class="center muted"><strong>REIMPRESSAO DE CUPOM</strong></div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            window.print();
+            window.onafterprint = function() { window.close(); };
+          };
+        </script>
+      </body>
+      </html>
+    `);
+
+    receiptWindow.document.close();
+  };
 
   const handleFilter = () => {
     fetchOrders();
@@ -342,13 +561,23 @@ export default function SalesPage() {
                       {formatCurrency(order.totalAmount)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setSelectedOrder(order)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => printReceipt(order)}
+                          title="Reimprimir cupom"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setSelectedOrder(order)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -461,7 +690,7 @@ export default function SalesPage() {
                   <TableBody>
                     {selectedOrder.items.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell>{item.product.name}</TableCell>
+                        <TableCell>{item.product?.name || "Produto removido"}</TableCell>
                         <TableCell className="text-right">
                           {item.quantity}
                         </TableCell>
@@ -475,6 +704,13 @@ export default function SalesPage() {
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => printReceipt(selectedOrder)}>
+                  <Printer className="h-4 w-4 mr-2" />
+                  Reimprimir cupom
+                </Button>
               </div>
             </div>
           )}

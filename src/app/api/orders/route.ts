@@ -4,6 +4,27 @@ import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 
 export const dynamic = "force-dynamic";
 
+function parseDateFilter(value: string | null, boundary: "start" | "end"): Date | undefined {
+  if (!value) return undefined;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const isoValue = boundary === "start" ? `${value}T00:00:00.000` : `${value}T23:59:59.999`;
+    const parsed = new Date(isoValue);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+
+  if (boundary === "start") {
+    parsed.setHours(0, 0, 0, 0);
+  } else {
+    parsed.setHours(23, 59, 59, 999);
+  }
+
+  return parsed;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const user = await verifyAuth(request);
@@ -12,13 +33,10 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const startDate = searchParams.get("startDate");
-    const endDate = searchParams.get("endDate");
+    const startDate = parseDateFilter(searchParams.get("startDate"), "start");
+    const endDate = parseDateFilter(searchParams.get("endDate"), "end");
 
-    const orders = await getOrders(
-      startDate ? new Date(startDate) : undefined,
-      endDate ? new Date(endDate) : undefined
-    );
+    const orders = await getOrders(startDate, endDate);
 
     const ordersWithDetails = await Promise.all(
       orders.map(async (order) => {
