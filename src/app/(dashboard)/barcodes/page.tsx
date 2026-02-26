@@ -132,20 +132,20 @@ export default function BarcodesPage() {
           .barcodes-container {
             display: flex;
             flex-wrap: wrap;
-            gap: 5mm;
+            gap: 4.5mm;
             justify-content: flex-start;
           }
           .barcode-item {
-            width: 50mm;
-            padding: 3mm;
+            width: 45mm;
+            padding: 2.7mm;
             border: 1px dashed #ccc;
             text-align: center;
             page-break-inside: avoid;
           }
           .product-name {
-            font-size: 9px;
+            font-size: 8px;
             font-weight: bold;
-            margin-bottom: 2mm;
+            margin-bottom: 1.8mm;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -155,9 +155,10 @@ export default function BarcodesPage() {
             height: auto;
           }
           .product-price {
-            font-size: 12px;
+            font-size: 14px;
             font-weight: bold;
-            margin-top: 2mm;
+            line-height: 1;
+            margin-top: 1.6mm;
           }
           @media print {
             body { padding: 5mm; }
@@ -179,11 +180,11 @@ export default function BarcodesPage() {
                     (_, i) => `
                     JsBarcode("#barcode-${product.id}-${i}", "${product.sku}", {
                       format: "CODE128",
-                      width: 1.5,
-                      height: 40,
-                      displayValue: true,
+                      width: 1.35,
+                      height: 36,
+                      displayValue: false,
                       fontSize: 10,
-                      margin: 5
+                      margin: 4
                     });
                   `
                   )
