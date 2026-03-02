@@ -74,6 +74,11 @@ interface Order {
   clientName?: string;
 }
 
+interface ProductDiscount {
+  productId: string;
+  discountPercent: number;
+}
+
 interface DiscountSettings {
   pixDiscountEnabled: boolean;
   pixDiscountPercent: number;
@@ -83,6 +88,8 @@ interface DiscountSettings {
   progressiveDiscount1Item: number;
   progressiveDiscount2Items: number;
   progressiveDiscount3PlusItems: number;
+  productDiscountsEnabled: boolean;
+  productDiscounts: ProductDiscount[];
 }
 
 interface StoreSettings {
@@ -149,6 +156,8 @@ export default function POSPage() {
       progressiveDiscount1Item: 0,
       progressiveDiscount2Items: 0,
       progressiveDiscount3PlusItems: 0,
+      productDiscountsEnabled: false,
+      productDiscounts: [],
     },
   });
 
@@ -190,6 +199,8 @@ export default function POSPage() {
           progressiveDiscount1Item: data.discounts?.progressiveDiscount1Item ?? 0,
           progressiveDiscount2Items: data.discounts?.progressiveDiscount2Items ?? 0,
           progressiveDiscount3PlusItems: data.discounts?.progressiveDiscount3PlusItems ?? 0,
+          productDiscountsEnabled: data.discounts?.productDiscountsEnabled ?? false,
+          productDiscounts: data.discounts?.productDiscounts ?? [],
         },
       });
     } catch (error) {
@@ -446,6 +457,23 @@ export default function POSPage() {
   const calculateAutoDiscounts = () => {
     let autoDiscount = 0;
     const details: { label: string; value: number }[] = [];
+
+    // Product-specific discounts
+    if (storeSettings.discounts.productDiscountsEnabled) {
+      cart.forEach((cartItem) => {
+        const productDiscount = storeSettings.discounts.productDiscounts.find(
+          (pd) => pd.productId === cartItem.product.id
+        );
+        if (productDiscount && productDiscount.discountPercent > 0) {
+          const discountValue = (cartItem.product.salePrice * cartItem.quantity * productDiscount.discountPercent) / 100;
+          autoDiscount += discountValue;
+          details.push({ 
+            label: `${cartItem.product.name} (${productDiscount.discountPercent}%)`, 
+            value: discountValue 
+          });
+        }
+      });
+    }
 
     // Fixed discount (percentage)
     if (storeSettings.discounts.fixedDiscountEnabled && storeSettings.discounts.fixedDiscountPercent > 0) {

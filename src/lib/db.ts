@@ -1072,6 +1072,11 @@ export async function getCashRegisterOrders(registerId: string): Promise<Order[]
 }
 
 // Store Settings
+export interface ProductDiscount {
+  productId: string;
+  discountPercent: number;
+}
+
 export interface DiscountSettings {
   pixDiscountEnabled: boolean;
   pixDiscountPercent: number;
@@ -1081,6 +1086,8 @@ export interface DiscountSettings {
   progressiveDiscount1Item: number;
   progressiveDiscount2Items: number;
   progressiveDiscount3PlusItems: number;
+  productDiscountsEnabled: boolean;
+  productDiscounts: ProductDiscount[];
 }
 
 export interface StoreSettings {
@@ -1104,6 +1111,8 @@ const DEFAULT_DISCOUNT_SETTINGS: DiscountSettings = {
   progressiveDiscount1Item: 0,
   progressiveDiscount2Items: 0,
   progressiveDiscount3PlusItems: 0,
+  productDiscountsEnabled: false,
+  productDiscounts: [],
 };
 
 const DEFAULT_SETTINGS: Omit<StoreSettings, 'id' | 'updatedAt'> = {

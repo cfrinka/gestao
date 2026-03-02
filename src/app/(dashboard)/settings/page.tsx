@@ -7,9 +7,166 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { Save, Store, Receipt, Percent } from "lucide-react";
+import { Save, Store, Receipt, Percent, Search, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+interface Product {
+  id: string;
+  name: string;
+  sku: string;
+  salePrice: number;
+  stock: number;
+}
+
+interface ProductDiscount {
+  productId: string;
+  discountPercent: number;
+}
+
+interface ProductDiscountSelectorProps {
+  productDiscounts: ProductDiscount[];
+  onChange: (productDiscounts: ProductDiscount[]) => void;
+}
+
+function ProductDiscountSelector({ productDiscounts, onChange }: ProductDiscountSelectorProps) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    try {
+      const data = await apiGet("/api/products");
+      setProducts(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error fetching products:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredProducts = products.filter((product) =>
+    product.name.toLowerCase().includes(search.toLowerCase()) ||
+    product.sku.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const addProductDiscount = (productId: string) => {
+    const existing = productDiscounts.find(pd => pd.productId === productId);
+    if (!existing) {
+      onChange([...productDiscounts, { productId, discountPercent: 0 }]);
+    }
+  };
+
+  const updateProductDiscount = (productId: string, discountPercent: number) => {
+    onChange(
+      productDiscounts.map(pd =>
+        pd.productId === productId ? { ...pd, discountPercent } : pd
+      )
+    );
+  };
+
+  const removeProductDiscount = (productId: string) => {
+    onChange(productDiscounts.filter(pd => pd.productId !== productId));
+  };
+
+  const getProduct = (productId: string) => products.find(p => p.id === productId);
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Adicionar Produto</Label>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            placeholder="Buscar por nome ou SKU..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        {search && !loading && (
+          <div className="border rounded-lg max-h-40 overflow-y-auto">
+            {filteredProducts.length === 0 ? (
+              <p className="text-center py-2 text-sm text-gray-500">Nenhum produto encontrado</p>
+            ) : (
+              filteredProducts.map((product) => {
+                const hasDiscount = productDiscounts.some(pd => pd.productId === product.id);
+                return (
+                  <div
+                    key={product.id}
+                    className={`p-2 hover:bg-gray-50 cursor-pointer flex justify-between items-center ${
+                      hasDiscount ? "bg-gray-50" : ""
+                    }`}
+                    onClick={() => !hasDiscount && addProductDiscount(product.id)}
+                  >
+                    <div>
+                      <p className="font-medium">{product.name}</p>
+                      <p className="text-sm text-gray-500">{product.sku}</p>
+                    </div>
+                    {hasDiscount ? (
+                      <span className="text-xs text-green-600">Já adicionado</span>
+                    ) : (
+                      <Button size="sm" variant="outline">Adicionar</Button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+
+      {productDiscounts.length > 0 && (
+        <div className="space-y-2">
+          <Label>Produtos com Desconto</Label>
+          <div className="space-y-2">
+            {productDiscounts.map((pd) => {
+              const product = getProduct(pd.productId);
+              return (
+                <div key={pd.productId} className="flex items-center gap-2 p-2 border rounded">
+                  <div className="flex-1">
+                    <p className="font-medium">{product?.name || "Produto não encontrado"}</p>
+                    <p className="text-sm text-gray-500">{product?.sku}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      value={pd.discountPercent}
+                      onChange={(e) => updateProductDiscount(pd.productId, parseFloat(e.target.value) || 0)}
+                      className="w-16 text-right"
+                    />
+                    <span className="text-gray-500 text-sm">%</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => removeProductDiscount(pd.productId)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface DiscountSettings {
   pixDiscountEnabled: boolean;
@@ -20,6 +177,8 @@ interface DiscountSettings {
   progressiveDiscount1Item: number;
   progressiveDiscount2Items: number;
   progressiveDiscount3PlusItems: number;
+  productDiscountsEnabled: boolean;
+  productDiscounts: ProductDiscount[];
 }
 
 interface StoreSettings {
@@ -53,6 +212,8 @@ export default function SettingsPage() {
       progressiveDiscount1Item: 0,
       progressiveDiscount2Items: 0,
       progressiveDiscount3PlusItems: 0,
+      productDiscountsEnabled: false,
+      productDiscounts: [],
     },
   });
 
@@ -88,6 +249,8 @@ export default function SettingsPage() {
           progressiveDiscount1Item: data.discounts?.progressiveDiscount1Item ?? 0,
           progressiveDiscount2Items: data.discounts?.progressiveDiscount2Items ?? 0,
           progressiveDiscount3PlusItems: data.discounts?.progressiveDiscount3PlusItems ?? 0,
+          productDiscountsEnabled: data.discounts?.productDiscountsEnabled ?? false,
+          productDiscounts: data.discounts?.productDiscounts ?? [],
         },
       });
     } catch (error) {
@@ -470,6 +633,35 @@ export default function SettingsPage() {
                   <span className="text-gray-500">%</span>
                 </div>
               </div>
+            )}
+          </div>
+
+          <div className="space-y-4 p-4 border rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Descontos por Produto</Label>
+                <p className="text-sm text-gray-500">Configure descontos específicos para produtos selecionados</p>
+              </div>
+              <Checkbox
+                checked={settings.discounts.productDiscountsEnabled}
+                onCheckedChange={(checked) =>
+                  setSettings({
+                    ...settings,
+                    discounts: { ...settings.discounts, productDiscountsEnabled: checked === true },
+                  })
+                }
+              />
+            </div>
+            {settings.discounts.productDiscountsEnabled && (
+              <ProductDiscountSelector 
+                productDiscounts={settings.discounts.productDiscounts}
+                onChange={(productDiscounts) =>
+                  setSettings({
+                    ...settings,
+                    discounts: { ...settings.discounts, productDiscounts },
+                  })
+                }
+              />
             )}
           </div>
         </CardContent>
