@@ -137,6 +137,7 @@ export interface OrderItem {
   id: string;
   orderId: string;
   productId: string;
+  productName?: string;
   ownerId?: string;
   size: string;
   quantity: number;
@@ -1229,12 +1230,37 @@ export async function getClientPendingOrders(clientId: string): Promise<Order[]>
     id: doc.id,
     ...convertTimestamp(doc.data()),
   })) as Order[];
-  
+
   // Prefer remainingAmount if present (supports partial payments). Fallback to paidAt for legacy orders.
-  return orders.filter(order => {
+  const pendingOrders = orders.filter(order => {
     if (typeof order.remainingAmount === "number") return order.remainingAmount > 0;
     return !order.paidAt;
   });
+
+  return Promise.all(
+    pendingOrders.map(async (order) => {
+      const itemsSnapshot = await adminDb.collection("orderItems")
+        .where("orderId", "==", order.id)
+        .get();
+
+      const itemsWithProductName = await Promise.all(
+        itemsSnapshot.docs.map(async (itemDoc) => {
+          const itemData = convertTimestamp(itemDoc.data()) as Omit<OrderItem, "id">;
+          const product = await getProduct(itemData.productId);
+          return {
+            id: itemDoc.id,
+            ...itemData,
+            productName: product?.name || "Produto removido",
+          } as OrderItem;
+        })
+      );
+
+      return {
+        ...order,
+        items: itemsWithProductName,
+      } as Order;
+    })
+  );
 }
 
 export async function markOrderAsPaid(orderId: string): Promise<void> {

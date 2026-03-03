@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Pencil, Trash2, Users, CreditCard, Eye, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, CreditCard, Eye, RefreshCw, Printer } from "lucide-react";
 
 interface Order {
   id: string;
@@ -33,6 +33,14 @@ interface Order {
   createdAt: string;
   amountPaid?: number;
   remainingAmount?: number;
+  items?: OrderItem[];
+}
+
+interface OrderItem {
+  id: string;
+  productName?: string;
+  size?: string;
+  quantity: number;
 }
 
 interface Client {
@@ -76,6 +84,114 @@ export default function ClientsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const printClientDebtDetails = (client: Client) => {
+    const printWindow = window.open("", "_blank", "width=420,height=700");
+    if (!printWindow) {
+      toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
+      return;
+    }
+
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("pt-BR");
+    const timeStr = now.toLocaleTimeString("pt-BR");
+    const pendingOrders = client.pendingOrders || [];
+    const totalPending = pendingOrders.reduce((sum, order) => {
+      const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
+      return sum + remaining;
+    }, 0);
+
+    const ordersHtml = pendingOrders.length
+      ? pendingOrders
+          .map((order) => {
+            const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
+            const paid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
+            const itemsHtml = order.items && order.items.length > 0
+              ? order.items
+                  .map((item) => `<div class="item-line">${item.quantity}x ${item.productName || "Produto removido"}${item.size ? ` (${item.size})` : ""}</div>`)
+                  .join("")
+              : '<div class="item-line">Sem itens detalhados</div>';
+
+            return `
+              <div class="order-block">
+                <div class="row"><span class="label">Pedido:</span><span>#${order.id.slice(-6).toUpperCase()}</span></div>
+                <div class="row"><span class="label">Data:</span><span>${new Date(order.createdAt).toLocaleDateString("pt-BR")}</span></div>
+                <div class="row"><span class="label">Pago:</span><span>${formatCurrency(paid)}</span></div>
+                <div class="row bold"><span class="label">Restante:</span><span>${formatCurrency(remaining)}</span></div>
+                <div class="items">${itemsHtml}</div>
+              </div>
+            `;
+          })
+          .join("")
+      : '<div class="empty">Nenhum pedido pendente.</div>';
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Detalhes</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            html, body { width: 80mm; max-width: 80mm; }
+            body {
+              font-family: 'Courier New', Courier, monospace;
+              font-size: 11px;
+              line-height: 1.3;
+              font-weight: 600;
+              color: #000;
+              padding: 2.5mm 2.5mm 3mm;
+              overflow-wrap: anywhere;
+              word-break: break-word;
+            }
+            .center { text-align: center; }
+            .title { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
+            .divider { margin: 8px 0; border-top: 1px dashed #000; }
+            .section { margin: 6px 0; }
+            .row { display: flex; justify-content: space-between; gap: 8px; margin: 2px 0; }
+            .label { color: #333; }
+            .bold { font-weight: bold; }
+            .order-block { border: 1px dashed #000; padding: 6px; margin: 6px 0; }
+            .items { margin-top: 4px; }
+            .item-line { font-size: 10px; margin: 1px 0; }
+            .total { font-size: 13px; font-weight: bold; text-align: right; }
+            .empty { text-align: center; margin: 8px 0; }
+            @media print {
+              html, body { width: 80mm !important; max-width: 80mm !important; }
+              @page { margin: 0; size: 80mm auto; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="center title">DETALHES</div>
+          <div class="divider"></div>
+
+          <div class="section">
+            <div class="row"><span class="label">Cliente:</span><span>${client.name}</span></div>
+            ${client.phone ? `<div class="row"><span class="label">Telefone:</span><span>${client.phone}</span></div>` : ""}
+            <div class="row"><span class="label">Emissão:</span><span>${dateStr} ${timeStr}</span></div>
+          </div>
+
+          <div class="divider"></div>
+          <div class="section">
+            <div class="bold">Pedidos Pendentes</div>
+            ${ordersHtml}
+          </div>
+
+          <div class="divider"></div>
+          <div class="total">TOTAL PENDENTE: ${formatCurrency(totalPending)}</div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() { window.close(); };
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
   };
 
   useEffect(() => {
@@ -454,7 +570,17 @@ export default function ClientsPage() {
               )}
 
               <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Pedidos Pendentes</p>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-gray-700">Pedidos Pendentes</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => printClientDebtDetails(selectedClient)}
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Imprimir 80mm
+                  </Button>
+                </div>
                 {selectedClient.pendingOrders && selectedClient.pendingOrders.length > 0 ? (
                   <div className="space-y-2">
                     {selectedClient.pendingOrders.map((order) => {
@@ -462,7 +588,7 @@ export default function ClientsPage() {
                       const paid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
                       return (
                       <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div>
+                        <div className="space-y-1">
                           <p className="text-sm font-medium">Pedido #{order.id.slice(-6).toUpperCase()}</p>
                           <p className="text-xs text-gray-500">
                             {new Date(order.createdAt).toLocaleDateString("pt-BR")}
@@ -470,6 +596,19 @@ export default function ClientsPage() {
                           <p className="text-xs text-gray-600">
                             Pago: {formatCurrency(paid)} | Restante: {formatCurrency(remaining)}
                           </p>
+                          {order.items && order.items.length > 0 && (
+                            <div className="pt-1">
+                              <p className="text-xs font-medium text-gray-700">Itens comprados:</p>
+                              <ul className="text-xs text-gray-600 list-disc pl-4 space-y-0.5">
+                                {order.items.map((item) => (
+                                  <li key={item.id}>
+                                    {item.quantity}x {item.productName || "Produto removido"}
+                                    {item.size ? ` (${item.size})` : ""}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="font-bold text-red-600">{formatCurrency(remaining)}</span>
