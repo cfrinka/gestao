@@ -109,6 +109,32 @@ interface Client {
   balance: number;
 }
 
+const NOTE_DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2] as const;
+const COIN_DENOMINATIONS = [1, 0.5, 0.25, 0.1, 0.05] as const;
+const CASH_DENOMINATIONS = [...NOTE_DENOMINATIONS, ...COIN_DENOMINATIONS] as const;
+const CASH_DENOMINATION_GROUPS = [
+  { label: "Cédulas", values: NOTE_DENOMINATIONS },
+  { label: "Moedas", values: COIN_DENOMINATIONS },
+] as const;
+
+type DenominationCounts = Record<string, number>;
+
+function createEmptyDenominationCounts(): DenominationCounts {
+  return CASH_DENOMINATIONS.reduce<DenominationCounts>((acc, value) => {
+    acc[value.toString()] = 0;
+    return acc;
+  }, {});
+}
+
+function calculateDenominationTotal(counts: DenominationCounts): number {
+  const total = CASH_DENOMINATIONS.reduce((sum, value) => {
+    const quantity = Number(counts[value.toString()] || 0);
+    return sum + value * quantity;
+  }, 0);
+
+  return Number(total.toFixed(2));
+}
+
 export default function POSPage() {
   const { userData } = useAuth();
   const { toast } = useToast();
@@ -137,6 +163,8 @@ export default function POSPage() {
   const [showClosingReport, setShowClosingReport] = useState(false);
   const [openingBalance, setOpeningBalance] = useState<number>(0);
   const [closingBalance, setClosingBalance] = useState<number>(0);
+  const [openingDenominations, setOpeningDenominations] = useState<DenominationCounts>(() => createEmptyDenominationCounts());
+  const [closingDenominations, setClosingDenominations] = useState<DenominationCounts>(() => createEmptyDenominationCounts());
   const [closingReportData, setClosingReportData] = useState<{ register: CashRegister; orders: Order[] } | null>(null);
   
   // Store settings for receipt
@@ -284,6 +312,7 @@ export default function POSPage() {
       setCashRegister(data.register);
       setShowOpenRegisterModal(false);
       setOpeningBalance(0);
+      setOpeningDenominations(createEmptyDenominationCounts());
       toast({ title: "Caixa aberto com sucesso!" });
     } catch (error) {
       toast({ title: "Erro ao abrir caixa", variant: "destructive" });
@@ -301,9 +330,42 @@ export default function POSPage() {
       setShowClosingReport(true);
       setCashRegister(null);
       setClosingBalance(0);
+      setClosingDenominations(createEmptyDenominationCounts());
     } catch (error) {
       toast({ title: "Erro ao fechar caixa", variant: "destructive" });
     }
+  };
+
+  const handleDenominationQuantityChange = (
+    mode: "open" | "close",
+    denomination: number,
+    value: string
+  ) => {
+    const numeric = Math.max(0, Math.floor(Number(value) || 0));
+    const key = denomination.toString();
+
+    if (mode === "open") {
+      const next = { ...openingDenominations, [key]: numeric };
+      setOpeningDenominations(next);
+      setOpeningBalance(calculateDenominationTotal(next));
+      return;
+    }
+
+    const next = { ...closingDenominations, [key]: numeric };
+    setClosingDenominations(next);
+    setClosingBalance(calculateDenominationTotal(next));
+  };
+
+  const openRegisterModal = () => {
+    setOpeningDenominations(createEmptyDenominationCounts());
+    setOpeningBalance(0);
+    setShowOpenRegisterModal(true);
+  };
+
+  const closeRegisterModal = () => {
+    setClosingDenominations(createEmptyDenominationCounts());
+    setClosingBalance(0);
+    setShowCloseRegisterModal(true);
   };
 
   const exportClosingReportPDF = () => {
@@ -945,13 +1007,13 @@ export default function POSPage() {
                     Vendas: {cashRegister.salesCount} | Total: {formatCurrency(cashRegister.totalSales)}
                   </p>
                 </div>
-                <Button variant="destructive" onClick={() => setShowCloseRegisterModal(true)}>
+                <Button variant="destructive" onClick={closeRegisterModal}>
                   <Lock className="h-4 w-4 mr-2" />
                   Fechar Caixa
                 </Button>
               </>
             ) : (
-              <Button onClick={() => setShowOpenRegisterModal(true)}>
+              <Button onClick={openRegisterModal}>
                 <Unlock className="h-4 w-4 mr-2" />
                 Abrir Caixa
               </Button>
@@ -1374,24 +1436,54 @@ export default function POSPage() {
 
       {/* Open Register Dialog */}
       <Dialog open={showOpenRegisterModal} onOpenChange={setShowOpenRegisterModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Abrir Caixa</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Saldo Inicial (Troco)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={openingBalance || ""}
-                onChange={(e) => setOpeningBalance(parseFloat(e.target.value) || 0)}
-                placeholder="0,00"
-              />
+              <Label>Contagem por cédulas e moedas</Label>
+              <div className="max-h-80 overflow-y-auto rounded-md border p-3 space-y-4">
+                {CASH_DENOMINATION_GROUPS.map((group) => (
+                  <div key={`open-group-${group.label}`} className="space-y-2">
+                    <p className="text-sm font-semibold text-gray-700">{group.label}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                      {group.values.map((denomination) => (
+                        <div key={`open-${denomination}`} className="rounded-md border p-2 space-y-1">
+                          <div className="text-sm font-medium">{formatCurrency(denomination)}</div>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={openingDenominations[denomination.toString()] || ""}
+                            onChange={(e) => handleDenominationQuantityChange("open", denomination, e.target.value)}
+                            placeholder="0"
+                            className="h-8 text-right"
+                          />
+                          <div className="text-xs text-gray-500 text-right">
+                            {formatCurrency((openingDenominations[denomination.toString()] || 0) * denomination)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="p-3 bg-gray-100 rounded-lg flex items-center justify-between">
+              <span className="text-sm text-gray-600">Saldo inicial calculado</span>
+              <span className="text-lg font-bold text-green-600">{formatCurrency(openingBalance)}</span>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowOpenRegisterModal(false)}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setShowOpenRegisterModal(false);
+                  setOpeningDenominations(createEmptyDenominationCounts());
+                  setOpeningBalance(0);
+                }}
+              >
                 Cancelar
               </Button>
               <Button className="flex-1" onClick={handleOpenRegister}>
@@ -1405,7 +1497,7 @@ export default function POSPage() {
 
       {/* Close Register Dialog */}
       <Dialog open={showCloseRegisterModal} onOpenChange={setShowCloseRegisterModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Fechar Caixa</DialogTitle>
           </DialogHeader>
@@ -1436,18 +1528,48 @@ export default function POSPage() {
               </div>
             )}
             <div className="space-y-2">
-              <Label>Saldo Final (Contagem do Dinheiro)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={closingBalance || ""}
-                onChange={(e) => setClosingBalance(parseFloat(e.target.value) || 0)}
-                placeholder="0,00"
-              />
+              <Label>Contagem por cédulas e moedas</Label>
+              <div className="max-h-80 overflow-y-auto rounded-md border p-3 space-y-4">
+                {CASH_DENOMINATION_GROUPS.map((group) => (
+                  <div key={`close-group-${group.label}`} className="space-y-2">
+                    <p className="text-sm font-semibold text-gray-700">{group.label}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                      {group.values.map((denomination) => (
+                        <div key={`close-${denomination}`} className="rounded-md border p-2 space-y-1">
+                          <div className="text-sm font-medium">{formatCurrency(denomination)}</div>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={closingDenominations[denomination.toString()] || ""}
+                            onChange={(e) => handleDenominationQuantityChange("close", denomination, e.target.value)}
+                            placeholder="0"
+                            className="h-8 text-right"
+                          />
+                          <div className="text-xs text-gray-500 text-right">
+                            {formatCurrency((closingDenominations[denomination.toString()] || 0) * denomination)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="p-3 bg-gray-100 rounded-lg flex items-center justify-between">
+              <span className="text-sm text-gray-600">Saldo final calculado</span>
+              <span className="text-lg font-bold text-green-600">{formatCurrency(closingBalance)}</span>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowCloseRegisterModal(false)}>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setShowCloseRegisterModal(false);
+                  setClosingDenominations(createEmptyDenominationCounts());
+                  setClosingBalance(0);
+                }}
+              >
                 Cancelar
               </Button>
               <Button variant="destructive" className="flex-1" onClick={handleCloseRegister}>
