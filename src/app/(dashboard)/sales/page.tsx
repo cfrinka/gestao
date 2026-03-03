@@ -120,7 +120,11 @@ export default function SalesPage() {
       if (params.toString()) url += `?${params.toString()}`;
 
       const data = await apiGet(url);
-      setOrders(Array.isArray(data) ? data : []);
+      const normalizedOrders: Order[] = Array.isArray(data) ? data : [];
+      normalizedOrders.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setOrders(normalizedOrders);
     } catch (error) {
       toast({ title: "Erro ao carregar vendas", variant: "destructive" });
     } finally {
