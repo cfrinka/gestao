@@ -215,6 +215,7 @@ export interface ExchangeRecord {
   items: ExchangeItem[];
   totalInValue: number;
   totalOutValue: number;
+  discountAmount: number;
   difference: number;
   cashInAmount?: number;
   createdById: string;
@@ -718,6 +719,7 @@ export async function createExchange(input: {
   customerName?: string;
   notes?: string;
   paymentMethod?: FinancialMovementPaymentMethod;
+  discountAmount?: number;
   items: ExchangeItemInput[];
   cashRegisterId?: string;
   createdById: string;
@@ -731,6 +733,11 @@ export async function createExchange(input: {
   const providedDocumentNumber = (input.documentNumber || "").trim();
   const autoDocumentNumber = `AJUSTE-${Date.now()}`;
   const documentNumber = providedDocumentNumber || autoDocumentNumber;
+  const requestedDiscountAmount = Number(input.discountAmount || 0);
+
+  if (!Number.isFinite(requestedDiscountAmount) || requestedDiscountAmount < 0) {
+    throw new Error("Desconto inválido na troca");
+  }
 
   if (!Array.isArray(input.items) || input.items.length === 0) {
     throw new Error("Adicione ao menos um item na troca");
@@ -861,7 +868,9 @@ export async function createExchange(input: {
       });
     }
 
-    const difference = totalOutValue - totalInValue;
+    const grossDifference = totalOutValue - totalInValue;
+    const discountAmount = Math.min(requestedDiscountAmount, Math.max(0, grossDifference));
+    const difference = grossDifference - discountAmount;
     const cashInAmount = Math.max(0, difference);
     const paymentMethod = cashInAmount > 0 ? input.paymentMethod : undefined;
 
@@ -877,6 +886,7 @@ export async function createExchange(input: {
       items: normalizedItems,
       totalInValue,
       totalOutValue,
+      discountAmount,
       difference,
       cashInAmount,
       createdById: input.createdById,
@@ -921,6 +931,7 @@ export async function createExchange(input: {
       items: normalizedItems,
       totalInValue,
       totalOutValue,
+      discountAmount,
       difference,
       cashInAmount,
       createdById: input.createdById,

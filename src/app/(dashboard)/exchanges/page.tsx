@@ -45,6 +45,7 @@ interface ExchangeRecord {
   paymentMethod?: ExchangePaymentMethod;
   totalInValue: number;
   totalOutValue: number;
+  discountAmount?: number;
   difference: number;
   createdByName: string;
   createdAt: string;
@@ -64,6 +65,7 @@ export default function ExchangesPage() {
 
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
+  const [discountAmount, setDiscountAmount] = useState("");
   const [differencePaymentMethod, setDifferencePaymentMethod] = useState<ExchangePaymentMethod | "">("");
 
   useEffect(() => {
@@ -178,7 +180,10 @@ export default function ExchangesPage() {
     .reduce((sum, item) => sum + item.product.salePrice * item.quantity, 0);
   const entryItems = cart.filter((item) => item.direction === "IN");
   const outputItems = cart.filter((item) => item.direction === "OUT");
-  const totalDifference = totalOutValue - totalInValue;
+  const grossDifference = totalOutValue - totalInValue;
+  const numericDiscountAmount = Math.max(0, Number(discountAmount || 0));
+  const appliedDiscountAmount = Math.min(numericDiscountAmount, Math.max(0, grossDifference));
+  const totalDifference = grossDifference - appliedDiscountAmount;
 
   const registerExchange = async () => {
     if (cart.length === 0) {
@@ -202,6 +207,7 @@ export default function ExchangesPage() {
       await apiPost("/api/exchanges", {
         customerName,
         notes,
+        discountAmount: appliedDiscountAmount,
         paymentMethod: totalDifference > 0 ? differencePaymentMethod : undefined,
         idempotencyKey,
         items: cart.map((item) => ({
@@ -215,6 +221,7 @@ export default function ExchangesPage() {
       toast({ title: "Troca registrada com sucesso" });
       setCustomerName("");
       setNotes("");
+      setDiscountAmount("");
       setDifferencePaymentMethod("");
       clearCart();
       await fetchAll();
@@ -448,6 +455,26 @@ export default function ExchangesPage() {
                     <span className="text-gray-600">Total de saídas:</span>
                     <span className="text-red-600 font-medium">{formatCurrency(totalOutValue)}</span>
                   </div>
+                  {grossDifference > 0 && (
+                    <div className="space-y-2 mt-2">
+                      <Label htmlFor="exchange-discount">Desconto na troca</Label>
+                      <Input
+                        id="exchange-discount"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={discountAmount}
+                        onChange={(e) => setDiscountAmount(e.target.value)}
+                        placeholder="0,00"
+                      />
+                    </div>
+                  )}
+                  {appliedDiscountAmount > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Desconto aplicado:</span>
+                      <span className="text-amber-600 font-medium">- {formatCurrency(appliedDiscountAmount)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-base font-bold">
                     <span>Diferença:</span>
                     <span>{formatCurrency(totalDifference)}</span>
@@ -506,6 +533,7 @@ export default function ExchangesPage() {
                   <TableHead>Pagamento Diferença</TableHead>
                   <TableHead className="text-right">Entradas</TableHead>
                   <TableHead className="text-right">Saídas</TableHead>
+                  <TableHead className="text-right">Desconto</TableHead>
                   <TableHead className="text-right">Diferença</TableHead>
                   <TableHead>Operador</TableHead>
                 </TableRow>
@@ -524,6 +552,7 @@ export default function ExchangesPage() {
                     </TableCell>
                     <TableCell className="text-right text-green-600">{formatCurrency(exchange.totalInValue || 0)}</TableCell>
                     <TableCell className="text-right text-red-600">{formatCurrency(exchange.totalOutValue || 0)}</TableCell>
+                    <TableCell className="text-right text-amber-600">{formatCurrency(exchange.discountAmount || 0)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(exchange.difference || 0)}</TableCell>
                     <TableCell>{exchange.createdByName || "-"}</TableCell>
                   </TableRow>

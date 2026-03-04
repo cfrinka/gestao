@@ -17,6 +17,7 @@ interface CreateExchangeBody {
   customerName?: string;
   notes?: string;
   paymentMethod?: "cash" | "pix" | "credit" | "debit";
+  discountAmount?: number;
   items: ExchangeItemBody[];
   idempotencyKey?: string;
 }
@@ -85,6 +86,7 @@ export async function POST(request: NextRequest) {
       customerName: body.customerName || "",
       notes: body.notes || "",
       paymentMethod: body.paymentMethod || "",
+      discountAmount: Number(body.discountAmount || 0),
       items: body.items,
       userId: user.uid,
     });
@@ -128,6 +130,7 @@ export async function POST(request: NextRequest) {
       customerName: body.customerName,
       notes: body.notes,
       paymentMethod: body.paymentMethod,
+      discountAmount: body.discountAmount,
       items: body.items,
       cashRegisterId: openRegister?.id,
       createdById: user.uid,
