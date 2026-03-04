@@ -25,7 +25,7 @@ export default function LoginPage() {
     try {
       await signIn(email, password);
       router.push("/dashboard");
-    } catch (error) {
+    } catch {
       toast({
         title: "Erro ao fazer login",
         description: "Email ou senha inválidos",

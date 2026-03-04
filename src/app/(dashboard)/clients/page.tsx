@@ -78,7 +78,7 @@ export default function ClientsPage() {
     try {
       const data = await apiGet("/api/clients");
       setClients(Array.isArray(data) ? data : []);
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar clientes", variant: "destructive" });
       setClients([]);
     } finally {
@@ -253,7 +253,7 @@ export default function ClientsPage() {
       const data = await apiGet(`/api/clients/${client.id}`);
       setSelectedClient(data);
       setDetailsOpen(true);
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar detalhes", variant: "destructive" });
     }
   };
@@ -287,7 +287,7 @@ export default function ClientsPage() {
       setPaymentDialogOpen(false);
       setPayingOrderId(null);
       fetchClients();
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao registrar pagamento", variant: "destructive" });
     }
   };

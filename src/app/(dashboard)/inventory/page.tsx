@@ -43,7 +43,7 @@ export default function InventoryPage() {
     try {
       const data = await apiGet("/api/products");
       setProducts(Array.isArray(data) ? data : []);
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar produtos", variant: "destructive" });
     } finally {
       setLoading(false);

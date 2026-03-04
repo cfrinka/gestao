@@ -77,7 +77,7 @@ export default function BillsPage() {
     try {
       const data = await apiGet(`/api/bills?month=${encodeURIComponent(month)}&status=${encodeURIComponent(status)}`);
       setBills(Array.isArray(data) ? data : []);
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar contas", variant: "destructive" });
       setBills([]);
     } finally {
@@ -100,7 +100,7 @@ export default function BillsPage() {
         `/api/reports?startDate=${encodeURIComponent(start.toISOString())}&endDate=${encodeURIComponent(end.toISOString())}`
       );
       setReport({ profit: typeof data?.profit === "number" ? data.profit : 0 });
-    } catch (error) {
+    } catch {
       setReport(null);
       toast({ title: "Erro ao carregar lucro do mês", variant: "destructive" });
     } finally {
@@ -127,7 +127,7 @@ export default function BillsPage() {
       await apiPatch(`/api/bills/${billId}`, { action: "mark_paid", method });
       toast({ title: "Conta marcada como paga" });
       fetchBills();
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao atualizar conta", variant: "destructive" });
     }
   };
@@ -138,7 +138,7 @@ export default function BillsPage() {
       await apiDelete(`/api/bills/${billId}`);
       toast({ title: "Conta excluída" });
       fetchBills();
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao excluir conta", variant: "destructive" });
     }
   };

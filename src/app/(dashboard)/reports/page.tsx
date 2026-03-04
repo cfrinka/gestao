@@ -202,7 +202,7 @@ export default function ReportsPage() {
 
       const data = await apiGet(url);
       setReport(data || null);
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar relatórios", variant: "destructive" });
     } finally {
       setLoading(false);

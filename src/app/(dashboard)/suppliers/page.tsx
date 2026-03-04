@@ -68,7 +68,7 @@ export default function SuppliersPage() {
     try {
       const data = await apiGet("/api/suppliers");
       setSuppliers(Array.isArray(data) ? data : []);
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar fornecedores", variant: "destructive" });
       setSuppliers([]);
     } finally {
@@ -117,7 +117,7 @@ export default function SuppliersPage() {
       await apiDelete(`/api/suppliers/${id}`);
       toast({ title: "Fornecedor excluído!" });
       fetchSuppliers();
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao excluir fornecedor", variant: "destructive" });
     }
   };

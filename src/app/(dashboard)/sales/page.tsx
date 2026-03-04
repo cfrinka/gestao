@@ -125,7 +125,7 @@ export default function SalesPage() {
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       setOrders(normalizedOrders);
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar vendas", variant: "destructive" });
     } finally {
       setLoading(false);

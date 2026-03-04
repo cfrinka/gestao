@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { adminAuth, adminDb } from "./firebase-admin";
 
-export interface AuthUser {
+interface AuthUser {
   uid: string;
   email: string;
   role: string;

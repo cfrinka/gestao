@@ -55,7 +55,7 @@ export default function UsersPage() {
     try {
       const data = await apiGet("/api/users");
       setUsers(Array.isArray(data) ? data : []);
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar usuários", variant: "destructive" });
     } finally {
       setLoading(false);

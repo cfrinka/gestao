@@ -22,13 +22,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, generateSku } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Package } from "lucide-react";
@@ -96,7 +89,7 @@ export default function ProductsPage() {
         console.error("Error fetching products:", data);
         setProducts([]);
       }
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar produtos", variant: "destructive" });
       setProducts([]);
     } finally {
@@ -159,7 +152,7 @@ export default function ProductsPage() {
       await apiDelete(`/api/products/${id}`);
       toast({ title: "Produto excluído!" });
       fetchProducts();
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao excluir produto", variant: "destructive" });
     }
   };

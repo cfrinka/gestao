@@ -30,7 +30,6 @@ export default function DashboardPage() {
     totalProfit: 0,
   });
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
@@ -68,8 +67,6 @@ export default function DashboardPage() {
         }
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
-      } finally {
-        setLoading(false);
       }
     }
     

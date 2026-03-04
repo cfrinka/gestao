@@ -144,7 +144,6 @@ export default function POSPage() {
   const [search, setSearch] = useState("");
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [selectedSize, setSelectedSize] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -202,7 +201,7 @@ export default function POSPage() {
     try {
       const data = await apiGet("/api/clients");
       setClients(Array.isArray(data) ? data : []);
-    } catch (error) {
+    } catch {
       // Clients may not be accessible for cashiers
       setClients([]);
     }
@@ -287,7 +286,7 @@ export default function POSPage() {
     try {
       const data = await apiGet("/api/products");
       setProducts(Array.isArray(data) ? data : []);
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar produtos", variant: "destructive" });
     } finally {
       setLoading(false);
@@ -314,7 +313,7 @@ export default function POSPage() {
       setOpeningBalance(0);
       setOpeningDenominations(createEmptyDenominationCounts());
       toast({ title: "Caixa aberto com sucesso!" });
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao abrir caixa", variant: "destructive" });
     }
   };
@@ -331,7 +330,7 @@ export default function POSPage() {
       setCashRegister(null);
       setClosingBalance(0);
       setClosingDenominations(createEmptyDenominationCounts());
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao fechar caixa", variant: "destructive" });
     }
   };
@@ -466,13 +465,11 @@ export default function POSPage() {
       setCart([...cart, { product, size, quantity: 1 }]);
     }
     setSelectedProduct(null);
-    setSelectedSize("");
   };
 
   const handleProductClick = (product: Product) => {
     if (product.sizes?.length > 0) {
       setSelectedProduct(product);
-      setSelectedSize("");
     } else {
       addToCart(product, "");
     }
@@ -881,7 +878,6 @@ export default function POSPage() {
     }
 
     setProcessing(true);
-    const cartSnapshot = [...cart];
     const idempotencyKey = crypto.randomUUID();
     
     try {

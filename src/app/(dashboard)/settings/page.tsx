@@ -10,13 +10,6 @@ import { useToast } from "@/components/ui/use-toast";
 import { Save, Store, Receipt, Percent, Search, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 interface Product {
   id: string;
@@ -253,7 +246,7 @@ export default function SettingsPage() {
           productDiscounts: data.discounts?.productDiscounts ?? [],
         },
       });
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao carregar configurações", variant: "destructive" });
     } finally {
       setLoading(false);
@@ -327,7 +320,7 @@ export default function SettingsPage() {
     try {
       await apiPut("/api/settings", settings);
       toast({ title: "Configurações salvas com sucesso!" });
-    } catch (error) {
+    } catch {
       toast({ title: "Erro ao salvar configurações", variant: "destructive" });
     } finally {
       setSaving(false);

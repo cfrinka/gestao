@@ -92,46 +92,7 @@ export async function createFinancialAuditLog(input: {
   });
 }
 
-export interface FinancialClosureSnapshot {
-  id: string;
-  month: string;
-  revenue: number;
-  cogs: number;
-  grossProfit: number;
-  expenses: number;
-  netResult: number;
-  cashIn: number;
-  cashOut: number;
-  inventoryValue: number;
-  fiadoOutstanding: number;
-  lockedAt: Date;
-  lockedBy: string;
-}
-
 export type FinancialAuditAction = "FINANCIAL_CLOSE" | "MANUAL_ADJUSTMENT" | "REFUND";
-
-export interface FinancialAuditLog {
-  id: string;
-  action: FinancialAuditAction;
-  actorId: string;
-  actorRole: string;
-  occurredAt: Timestamp;
-  competencyMonth?: string;
-  relatedEntity?: { kind: string; id: string };
-  payload?: Record<string, unknown>;
-}
-
-export type CreateFinancialMovementInput = {
-  type: FinancialMovementType;
-  direction: FinancialMovementDirection;
-  amount: number;
-  paymentMethod?: FinancialMovementPaymentMethod;
-  relatedEntity: FinancialMovementRelatedEntity;
-  occurredAt?: Date;
-  createdBy: string;
-  createdByRole: string;
-  metadata?: Record<string, unknown>;
-};
 
 export interface OrderItem {
   id: string;
@@ -304,69 +265,6 @@ export async function assertFinancialMonthOpen(date: Date): Promise<void> {
   }
 }
 
-export async function createFinancialMovement(
-  input: CreateFinancialMovementInput
-): Promise<FinancialMovement> {
-  if (input.createdByRole !== "ADMIN") {
-    throw new Error("Only ADMIN can create financial movements");
-  }
-
-  const amount = Number(input.amount);
-  if (!Number.isFinite(amount) || amount <= 0) {
-    throw new Error("Invalid financial movement amount");
-  }
-
-  if (!input.relatedEntity?.kind || !input.relatedEntity?.id) {
-    throw new Error("Invalid related entity");
-  }
-
-  const occurredDate =
-    input.occurredAt instanceof Date && !Number.isNaN(input.occurredAt.getTime())
-      ? input.occurredAt
-      : new Date();
-  await assertFinancialMonthOpen(occurredDate);
-  const occurredAt = Timestamp.fromDate(occurredDate);
-  const competencyMonth = toCompetencyMonth(occurredDate);
-
-  const payload: Omit<FinancialMovement, "id"> = {
-    type: input.type,
-    direction: input.direction,
-    amount,
-    relatedEntity: input.relatedEntity,
-    occurredAt,
-    competencyMonth,
-    createdBy: input.createdBy,
-  };
-
-  if (input.paymentMethod) {
-    payload.paymentMethod = input.paymentMethod;
-  }
-
-  if (input.metadata) {
-    payload.metadata = input.metadata;
-  }
-
-  const docRef = await adminDb.collection("financialMovements").add(payload);
-
-  if (input.type === "ADJUSTMENT" || input.type === "REFUND") {
-    await createFinancialAuditLog({
-      action: input.type === "ADJUSTMENT" ? "MANUAL_ADJUSTMENT" : "REFUND",
-      actorId: input.createdBy,
-      actorRole: input.createdByRole,
-      occurredAt: occurredDate,
-      competencyMonth,
-      relatedEntity: { kind: input.relatedEntity.kind, id: input.relatedEntity.id },
-      payload: {
-        amount,
-        direction: input.direction,
-        metadata: input.metadata || null,
-      },
-    });
-  }
-
-  return { id: docRef.id, ...payload };
-}
-
 // Products
 export async function getProducts(): Promise<Product[]> {
   const snapshot = await adminDb.collection("products").orderBy("name").get();
@@ -528,26 +426,6 @@ export async function getOrders(
   }
 
   return orders;
-}
-
-export async function getOrderWithDetails(id: string): Promise<Order | null> {
-  const orderDoc = await adminDb.collection("orders").doc(id).get();
-  if (!orderDoc.exists) return null;
-
-  const itemsSnapshot = await adminDb.collection("orderItems")
-    .where("orderId", "==", id)
-    .get();
-
-  const items = itemsSnapshot.docs.map((itemDoc) => ({
-    id: itemDoc.id,
-    ...itemDoc.data(),
-  })) as OrderItem[];
-
-  return {
-    id: orderDoc.id,
-    ...convertTimestamp(orderDoc.data()!),
-    items,
-  } as Order;
 }
 
 // Checkout

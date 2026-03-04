@@ -131,7 +131,7 @@ export async function PATCH(
       // Prefer partial-payment flow; fallback to legacy full pay if something goes wrong
       try {
         await applyFiadoPayment(params.id, orderId, finalAmount, finalMethod);
-      } catch (e) {
+      } catch {
         // Legacy fallback: mark paid and clear full amount
         await markOrderAsPaid(orderId);
         await updateClientBalance(params.id, -order.totalAmount);

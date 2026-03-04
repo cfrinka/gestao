@@ -469,11 +469,6 @@ async function buildMonthAggregateWithDebug(month: string): Promise<{ aggregate:
   };
 }
 
-async function buildMonthAggregate(month: string): Promise<MonthAggregate> {
-  const result = await buildMonthAggregateWithDebug(month);
-  return result.aggregate;
-}
-
 async function buildFiadoAging(endDate: Date) {
   const sales = new Map<string, { occurredAt: Date; amount: number }>();
   const payments = new Map<string, number>();
