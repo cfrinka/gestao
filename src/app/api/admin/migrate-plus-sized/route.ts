@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
-import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
+import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";
 
@@ -83,27 +83,31 @@ async function runMigration(apply: boolean, limit: number): Promise<MigratePlusS
 }
 
 export async function GET(request: NextRequest) {
-  const user = await verifyAuth(request);
-  if (!user) return unauthorizedResponse();
-  if (user.role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest }) => {
+      const { searchParams } = new URL(authorizedRequest.url);
+      const apply = parseApply(searchParams.get("apply"));
+      const limit = parseLimit(searchParams.get("limit"));
 
-  const { searchParams } = new URL(request.url);
-  const apply = parseApply(searchParams.get("apply"));
-  const limit = parseLimit(searchParams.get("limit"));
-
-  const result = await runMigration(apply, limit);
-  return NextResponse.json({ apply, limit, ...result });
+      const result = await runMigration(apply, limit);
+      return NextResponse.json({ apply, limit, ...result });
+    },
+    { roles: ["ADMIN"], operationName: "admin migrate-plus-sized get" }
+  );
 }
 
 export async function POST(request: NextRequest) {
-  const user = await verifyAuth(request);
-  if (!user) return unauthorizedResponse();
-  if (user.role !== "ADMIN") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest }) => {
+      const body = (await authorizedRequest.json().catch(() => ({}))) as { apply?: boolean; limit?: number };
+      const apply = body.apply === true;
+      const limit = typeof body.limit === "number" && body.limit > 0 ? Math.min(500, body.limit) : 200;
 
-  const body = (await request.json().catch(() => ({}))) as { apply?: boolean; limit?: number };
-  const apply = body.apply === true;
-  const limit = typeof body.limit === "number" && body.limit > 0 ? Math.min(500, body.limit) : 200;
-
-  const result = await runMigration(apply, limit);
-  return NextResponse.json({ apply, limit, ...result });
+      const result = await runMigration(apply, limit);
+      return NextResponse.json({ apply, limit, ...result });
+    },
+    { roles: ["ADMIN"], operationName: "admin migrate-plus-sized post" }
+  );
 }

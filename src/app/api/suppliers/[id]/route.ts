@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
+import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { deleteSupplier, getSupplier, updateSupplier } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -16,88 +16,70 @@ function normalizeMethods(value: unknown): (typeof METHOD_VALUES)[number][] | un
 }
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) return unauthorizedResponse();
+  return withAuthorizedRoute(
+    request,
+    async () => {
+      const supplier = await getSupplier(params.id);
+      if (!supplier) {
+        return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
+      }
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const supplier = await getSupplier(params.id);
-    if (!supplier) {
-      return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
-    }
-
-    return NextResponse.json(supplier);
-  } catch (error) {
-    console.error("Error fetching supplier:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+      return NextResponse.json(supplier);
+    },
+    { roles: ["ADMIN"], operationName: "Supplier GET" }
+  );
 }
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) return unauthorizedResponse();
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest }) => {
+      const existing = await getSupplier(params.id);
+      if (!existing) {
+        return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
+      }
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+      const body = (await authorizedRequest.json().catch(() => ({}))) as Record<string, unknown>;
 
-    const existing = await getSupplier(params.id);
-    if (!existing) {
-      return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
-    }
+      const name = typeof body.name === "string" ? body.name.trim() : undefined;
+      const instagram = typeof body.instagram === "string" ? body.instagram.trim() : undefined;
+      const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() : undefined;
+      const website = typeof body.website === "string" ? body.website.trim() : undefined;
+      const observations = typeof body.observations === "string" ? body.observations.trim() : undefined;
+      const acceptedPaymentMethods = normalizeMethods(body.acceptedPaymentMethods);
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      if (name !== undefined && !name) {
+        return NextResponse.json({ error: "Name is required" }, { status: 400 });
+      }
 
-    const name = typeof body.name === "string" ? body.name.trim() : undefined;
-    const instagram = typeof body.instagram === "string" ? body.instagram.trim() : undefined;
-    const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() : undefined;
-    const website = typeof body.website === "string" ? body.website.trim() : undefined;
-    const observations = typeof body.observations === "string" ? body.observations.trim() : undefined;
-    const acceptedPaymentMethods = normalizeMethods(body.acceptedPaymentMethods);
+      await updateSupplier(params.id, {
+        ...(name !== undefined ? { name } : {}),
+        ...(instagram !== undefined ? { instagram } : {}),
+        ...(whatsapp !== undefined ? { whatsapp } : {}),
+        ...(website !== undefined ? { website } : {}),
+        ...(observations !== undefined ? { observations } : {}),
+        ...(acceptedPaymentMethods !== undefined ? { acceptedPaymentMethods } : {}),
+      });
 
-    if (name !== undefined && !name) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
-    }
-
-    await updateSupplier(params.id, {
-      ...(name !== undefined ? { name } : {}),
-      ...(instagram !== undefined ? { instagram } : {}),
-      ...(whatsapp !== undefined ? { whatsapp } : {}),
-      ...(website !== undefined ? { website } : {}),
-      ...(observations !== undefined ? { observations } : {}),
-      ...(acceptedPaymentMethods !== undefined ? { acceptedPaymentMethods } : {}),
-    });
-
-    const updated = await getSupplier(params.id);
-    return NextResponse.json(updated);
-  } catch (error) {
-    console.error("Error updating supplier:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+      const updated = await getSupplier(params.id);
+      return NextResponse.json(updated);
+    },
+    { roles: ["ADMIN"], operationName: "Supplier PUT" }
+  );
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) return unauthorizedResponse();
+  return withAuthorizedRoute(
+    request,
+    async () => {
+      const existing = await getSupplier(params.id);
+      if (!existing) {
+        return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
+      }
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const existing = await getSupplier(params.id);
-    if (!existing) {
-      return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
-    }
-
-    await deleteSupplier(params.id);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting supplier:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+      await deleteSupplier(params.id);
+      return NextResponse.json({ success: true });
+    },
+    { roles: ["ADMIN"], operationName: "Supplier DELETE" }
+  );
 }

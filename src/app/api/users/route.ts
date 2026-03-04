@@ -2,74 +2,59 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUsers } from "@/lib/db";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
-import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
+import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) {
-      return unauthorizedResponse();
-    }
-
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const users = await getUsers();
-
-    return NextResponse.json(users);
-  } catch (error) {
-    console.error("Error fetching users:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  return withAuthorizedRoute(
+    request,
+    async () => {
+      const users = await getUsers();
+      return NextResponse.json(users);
+    },
+    { roles: ["ADMIN"], operationName: "Users GET" }
+  );
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const authUser = await verifyAuth(request);
-    if (!authUser) {
-      return unauthorizedResponse();
-    }
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest }) => {
+      const body = await authorizedRequest.json();
+      const { email, password, name, role } = body;
 
-    if (authUser.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+      if (!email || !password || !name || !role) {
+        return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+      }
 
-    const body = await request.json();
-    const { email, password, name, role } = body;
+      const firebaseUser = await adminAuth.createUser({
+        email,
+        password,
+        displayName: name,
+      });
 
-    if (!email || !password || !name || !role) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-    }
+      const now = new Date();
+      await adminDb.collection("users").doc(firebaseUser.uid).set({
+        email,
+        name,
+        role,
+        createdAt: Timestamp.fromDate(now),
+        updatedAt: Timestamp.fromDate(now),
+      });
 
-    const firebaseUser = await adminAuth.createUser({
-      email,
-      password,
-      displayName: name,
-    });
-
-    const now = new Date();
-    await adminDb.collection("users").doc(firebaseUser.uid).set({
-      email,
-      name,
-      role,
-      createdAt: Timestamp.fromDate(now),
-      updatedAt: Timestamp.fromDate(now),
-    });
-
-    return NextResponse.json({
-      id: firebaseUser.uid,
-      email,
-      name,
-      role,
-      createdAt: now,
-      updatedAt: now,
-    }, { status: 201 });
-  } catch (error) {
-    console.error("Error creating user:", error);
-    const message = error instanceof Error ? error.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+      return NextResponse.json(
+        {
+          id: firebaseUser.uid,
+          email,
+          name,
+          role,
+          createdAt: now,
+          updatedAt: now,
+        },
+        { status: 201 }
+      );
+    },
+    { roles: ["ADMIN"], operationName: "Users POST" }
+  );
 }

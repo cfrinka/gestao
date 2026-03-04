@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Timestamp } from "firebase-admin/firestore";
-import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
+import { verifyAuth } from "@/lib/auth-api";
+import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { adminDb } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
@@ -134,111 +135,105 @@ function detectMonthAnomalies(month: string, movements: MovementDoc[], aggregati
   return anomalies;
 }
 
-async function resolveActor(request: NextRequest): Promise<{ actorId: string; actorRole: string } | null> {
+async function resolveActor(request: NextRequest): Promise<{ uid: string; email: string; role: string } | null> {
   const cronSecret = request.headers.get("x-automation-secret") || "";
   const configuredSecret = process.env.FINANCIAL_AUTOMATION_SECRET || "";
 
   if (configuredSecret && cronSecret && cronSecret === configuredSecret) {
-    return { actorId: "automation", actorRole: "SYSTEM" };
+    return { uid: "automation", email: "", role: "SYSTEM" };
   }
 
-  const user = await verifyAuth(request);
-  if (!user) return null;
-  if (user.role !== "ADMIN") return { actorId: user.uid, actorRole: "FORBIDDEN" };
-
-  return { actorId: user.uid, actorRole: user.role };
+  return verifyAuth(request);
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const actor = await resolveActor(request);
-    if (!actor) return unauthorizedResponse();
-    if (actor.actorRole === "FORBIDDEN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  return withAuthorizedRoute(
+    request,
+    async ({ user }) => {
+      const months = listRecentMonths(13);
+      const now = Timestamp.now();
 
-    const months = listRecentMonths(13);
-    const now = Timestamp.now();
+      const monthlyAggregations: MonthAggregation[] = [];
+      const anomalyRows: Array<{ month: string; issues: string[]; severity: "info" | "warning" | "high" }> = [];
 
-    const monthlyAggregations: MonthAggregation[] = [];
-    const anomalyRows: Array<{ month: string; issues: string[]; severity: "info" | "warning" | "high" }> = [];
+      for (const month of months) {
+        const movementSnapshot = await adminDb
+          .collection("financialMovements")
+          .where("competencyMonth", "==", month)
+          .get();
 
-    for (const month of months) {
-      const movementSnapshot = await adminDb
-        .collection("financialMovements")
-        .where("competencyMonth", "==", month)
-        .get();
+        const movements = movementSnapshot.docs.map((doc) => doc.data() as MovementDoc);
+        const aggregation = aggregateMonth(month, movements);
+        monthlyAggregations.push(aggregation);
 
-      const movements = movementSnapshot.docs.map((doc) => doc.data() as MovementDoc);
-      const aggregation = aggregateMonth(month, movements);
-      monthlyAggregations.push(aggregation);
+        await adminDb.collection("financialMonthlyAggregates").doc(month).set({
+          ...aggregation,
+          updatedAt: now,
+          updatedBy: user.uid,
+        });
 
-      await adminDb.collection("financialMonthlyAggregates").doc(month).set({
-        ...aggregation,
-        updatedAt: now,
-        updatedBy: actor.actorId,
+        const anomalies = detectMonthAnomalies(month, movements, aggregation);
+        if (anomalies.length > 0) {
+          anomalyRows.push({
+            month,
+            issues: anomalies,
+            severity: anomalies.some((issue) => issue.includes("Duplicated") || issue.includes("Missing COGS"))
+              ? "high"
+              : "warning",
+          });
+        }
+      }
+
+      const openMonth = toCompetencyMonth(new Date());
+      const previewMonth = previousMonth(openMonth);
+      const closureSnapshot = await adminDb.collection("financialClosures").doc(previewMonth).get();
+
+      let closurePreviewCreated = false;
+      if (!closureSnapshot.exists) {
+        const previewAggregate = monthlyAggregations.find((item) => item.month === previewMonth);
+        if (previewAggregate) {
+          await adminDb.collection("financialClosurePreviews").doc(previewMonth).set({
+            month: previewMonth,
+            source: "automation",
+            revenue: previewAggregate.revenue,
+            cogs: previewAggregate.cogs,
+            grossProfit: previewAggregate.revenue - previewAggregate.cogs,
+            expenses: previewAggregate.expenses,
+            netResult: previewAggregate.netResult,
+            cashIn: previewAggregate.cashIn,
+            cashOut: previewAggregate.cashOut,
+            generatedAt: now,
+            generatedBy: user.uid,
+          });
+          closurePreviewCreated = true;
+        }
+      }
+
+      const runRef = adminDb.collection("financialAutomationRuns").doc();
+      await runRef.set({
+        actorId: user.uid,
+        actorRole: user.role,
+        executedAt: now,
+        aggregatedMonths: months,
+        closurePreviewMonth: previewMonth,
+        closurePreviewCreated,
+        anomalyCount: anomalyRows.length,
+        anomalies: anomalyRows,
       });
 
-      const anomalies = detectMonthAnomalies(month, movements, aggregation);
-      if (anomalies.length > 0) {
-        anomalyRows.push({
-          month,
-          issues: anomalies,
-          severity: anomalies.some((issue) => issue.includes("Duplicated") || issue.includes("Missing COGS"))
-            ? "high"
-            : "warning",
-        });
-      }
+      return NextResponse.json({
+        runId: runRef.id,
+        aggregatedMonths: months.length,
+        closurePreviewMonth: previewMonth,
+        closurePreviewCreated,
+        anomalyCount: anomalyRows.length,
+        anomalies: anomalyRows,
+      });
+    },
+    {
+      roles: ["ADMIN", "SYSTEM"],
+      operationName: "automation financial-health post",
+      authorize: resolveActor,
     }
-
-    const openMonth = toCompetencyMonth(new Date());
-    const previewMonth = previousMonth(openMonth);
-    const closureSnapshot = await adminDb.collection("financialClosures").doc(previewMonth).get();
-
-    let closurePreviewCreated = false;
-    if (!closureSnapshot.exists) {
-      const previewAggregate = monthlyAggregations.find((item) => item.month === previewMonth);
-      if (previewAggregate) {
-        await adminDb.collection("financialClosurePreviews").doc(previewMonth).set({
-          month: previewMonth,
-          source: "automation",
-          revenue: previewAggregate.revenue,
-          cogs: previewAggregate.cogs,
-          grossProfit: previewAggregate.revenue - previewAggregate.cogs,
-          expenses: previewAggregate.expenses,
-          netResult: previewAggregate.netResult,
-          cashIn: previewAggregate.cashIn,
-          cashOut: previewAggregate.cashOut,
-          generatedAt: now,
-          generatedBy: actor.actorId,
-        });
-        closurePreviewCreated = true;
-      }
-    }
-
-    const runRef = adminDb.collection("financialAutomationRuns").doc();
-    await runRef.set({
-      actorId: actor.actorId,
-      actorRole: actor.actorRole,
-      executedAt: now,
-      aggregatedMonths: months,
-      closurePreviewMonth: previewMonth,
-      closurePreviewCreated,
-      anomalyCount: anomalyRows.length,
-      anomalies: anomalyRows,
-    });
-
-    return NextResponse.json({
-      runId: runRef.id,
-      aggregatedMonths: months.length,
-      closurePreviewMonth: previewMonth,
-      closurePreviewCreated,
-      anomalyCount: anomalyRows.length,
-      anomalies: anomalyRows,
-    });
-  } catch (error) {
-    console.error("Error running financial automation:", error);
-    const message = error instanceof Error ? error.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  );
 }

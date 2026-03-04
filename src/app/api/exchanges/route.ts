@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createExchange, getExchanges, getOpenCashRegister } from "@/lib/db";
-import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
-import { adminDb } from "@/lib/firebase-admin";
+import { withAuthorizedRoute } from "@/lib/api/authorized-route";
+import { ExchangesService } from "@/domains/exchanges/exchanges-service";
+import { FirestoreExchangesRepository } from "@/domains/exchanges/firestore-exchanges-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -23,134 +23,59 @@ interface CreateExchangeBody {
 }
 
 export async function GET(request: NextRequest) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) {
-      return unauthorizedResponse();
-    }
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest }) => {
+      const { searchParams } = new URL(authorizedRequest.url);
+      const requestedLimit = parseInt(searchParams.get("limit") || "50", 10);
+      const limit = Number.isFinite(requestedLimit) ? requestedLimit : 50;
+      const startDate = searchParams.get("startDate");
+      const endDate = searchParams.get("endDate");
 
-    const { searchParams } = new URL(request.url);
-    const requestedLimit = parseInt(searchParams.get("limit") || "50", 10);
-    const limit = Number.isFinite(requestedLimit) ? requestedLimit : 50;
-    const startDate = searchParams.get("startDate");
-    const endDate = searchParams.get("endDate");
+      const parsedStartDate = startDate ? new Date(startDate) : undefined;
+      const parsedEndDate = endDate ? new Date(endDate) : undefined;
 
-    const parsedStartDate = startDate ? new Date(startDate) : undefined;
-    const parsedEndDate = endDate ? new Date(endDate) : undefined;
+      const hasValidRange =
+        parsedStartDate instanceof Date &&
+        !Number.isNaN(parsedStartDate.getTime()) &&
+        parsedEndDate instanceof Date &&
+        !Number.isNaN(parsedEndDate.getTime());
 
-    const hasValidRange =
-      parsedStartDate instanceof Date &&
-      !Number.isNaN(parsedStartDate.getTime()) &&
-      parsedEndDate instanceof Date &&
-      !Number.isNaN(parsedEndDate.getTime());
+      const service = new ExchangesService(new FirestoreExchangesRepository());
+      const exchanges = await service.list({
+        limit,
+        startDate: hasValidRange ? parsedStartDate : undefined,
+        endDate: hasValidRange ? parsedEndDate : undefined,
+      });
 
-    const exchanges = await getExchanges(
-      limit,
-      hasValidRange ? parsedStartDate : undefined,
-      hasValidRange ? parsedEndDate : undefined
-    );
-    return NextResponse.json(exchanges);
-  } catch (error) {
-    console.error("Error fetching exchanges:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+      return NextResponse.json(exchanges);
+    },
+    { operationName: "Exchanges GET" }
+  );
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) {
-      return unauthorizedResponse();
-    }
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest, user }) => {
+      const body = (await authorizedRequest.json()) as CreateExchangeBody;
+      const service = new ExchangesService(new FirestoreExchangesRepository());
 
-    const body = (await request.json()) as CreateExchangeBody;
-
-    const safeIdempotencyKey = (body.idempotencyKey || "").trim();
-    if (!safeIdempotencyKey) {
-      return NextResponse.json({ error: "idempotencyKey is required" }, { status: 400 });
-    }
-
-    if (user.role !== "ADMIN" && user.role !== "CASHIER") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    if (!Array.isArray(body.items) || body.items.length === 0) {
-      return NextResponse.json({ error: "Adicione ao menos um item na troca" }, { status: 400 });
-    }
-
-    const idempotencyRef = adminDb
-      .collection("idempotencyKeys")
-      .doc(`exchange:${user.uid}:${safeIdempotencyKey}`);
-
-    const requestHash = JSON.stringify({
-      customerName: body.customerName || "",
-      notes: body.notes || "",
-      paymentMethod: body.paymentMethod || "",
-      discountAmount: Number(body.discountAmount || 0),
-      items: body.items,
-      userId: user.uid,
-    });
-
-    const idempotencyCheck = await adminDb.runTransaction(async (tx: FirebaseFirestore.Transaction) => {
-      const snap = await tx.get(idempotencyRef);
-      if (snap.exists) {
-        return { exists: true, data: snap.data() as Record<string, unknown> };
-      }
-
-      tx.create(idempotencyRef, {
-        scope: "exchange",
-        ownerId: user.uid,
-        key: safeIdempotencyKey,
-        requestHash,
-        status: "PROCESSING",
-        createdAt: new Date(),
+      const result = await service.create({
+        userId: user.uid,
+        userRole: user.role,
+        userDisplayName: user.email || user.uid,
+        documentNumber: body.documentNumber,
+        customerName: body.customerName,
+        notes: body.notes,
+        paymentMethod: body.paymentMethod,
+        discountAmount: body.discountAmount,
+        items: body.items,
+        idempotencyKey: body.idempotencyKey || "",
       });
 
-      return { exists: false, data: null };
-    });
-
-    if (idempotencyCheck.exists) {
-      const existingHash = String(idempotencyCheck.data?.requestHash || "");
-      if (existingHash !== requestHash) {
-        return NextResponse.json({ error: "Idempotency key reuse with different payload" }, { status: 409 });
-      }
-
-      const status = String(idempotencyCheck.data?.status || "");
-      if (status === "COMPLETED" && idempotencyCheck.data?.response) {
-        return NextResponse.json(idempotencyCheck.data.response as unknown, { status: 200 });
-      }
-
-      return NextResponse.json({ error: "Request already being processed" }, { status: 409 });
-    }
-
-    const openRegister = await getOpenCashRegister(user.uid);
-
-    const exchange = await createExchange({
-      documentNumber: body.documentNumber,
-      customerName: body.customerName,
-      notes: body.notes,
-      paymentMethod: body.paymentMethod,
-      discountAmount: body.discountAmount,
-      items: body.items,
-      cashRegisterId: openRegister?.id,
-      createdById: user.uid,
-      createdByRole: user.role,
-      createdByName: user.email || user.uid,
-    });
-
-    await idempotencyRef.set(
-      {
-        status: "COMPLETED",
-        completedAt: new Date(),
-        response: JSON.parse(JSON.stringify(exchange)),
-      },
-      { merge: true }
-    );
-
-    return NextResponse.json(exchange, { status: 201 });
-  } catch (error) {
-    console.error("Error creating exchange:", error);
-    const message = error instanceof Error ? error.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+      return NextResponse.json(result.body, { status: result.status });
+    },
+    { operationName: "Exchanges POST" }
+  );
 }

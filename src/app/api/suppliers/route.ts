@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
+import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { createSupplier, getSuppliers } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -15,56 +15,44 @@ function normalizeMethods(value: unknown): (typeof METHOD_VALUES)[number][] {
 }
 
 export async function GET(request: NextRequest) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) return unauthorizedResponse();
-
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const suppliers = await getSuppliers();
-    return NextResponse.json(suppliers);
-  } catch (error) {
-    console.error("Error fetching suppliers:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  return withAuthorizedRoute(
+    request,
+    async () => {
+      const suppliers = await getSuppliers();
+      return NextResponse.json(suppliers);
+    },
+    { roles: ["ADMIN"], operationName: "Suppliers GET" }
+  );
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) return unauthorizedResponse();
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest }) => {
+      const body = (await authorizedRequest.json().catch(() => ({}))) as Record<string, unknown>;
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      const instagram = typeof body.instagram === "string" ? body.instagram.trim() : "";
+      const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() : "";
+      const website = typeof body.website === "string" ? body.website.trim() : "";
+      const observations = typeof body.observations === "string" ? body.observations.trim() : "";
+      const acceptedPaymentMethods = normalizeMethods(body.acceptedPaymentMethods);
 
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!name) {
+        return NextResponse.json({ error: "Name is required" }, { status: 400 });
+      }
 
-    const name = typeof body.name === "string" ? body.name.trim() : "";
-    const instagram = typeof body.instagram === "string" ? body.instagram.trim() : "";
-    const whatsapp = typeof body.whatsapp === "string" ? body.whatsapp.trim() : "";
-    const website = typeof body.website === "string" ? body.website.trim() : "";
-    const observations = typeof body.observations === "string" ? body.observations.trim() : "";
-    const acceptedPaymentMethods = normalizeMethods(body.acceptedPaymentMethods);
+      const supplier = await createSupplier({
+        name,
+        instagram,
+        whatsapp,
+        website,
+        observations,
+        acceptedPaymentMethods,
+      });
 
-    if (!name) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
-    }
-
-    const supplier = await createSupplier({
-      name,
-      instagram,
-      whatsapp,
-      website,
-      observations,
-      acceptedPaymentMethods,
-    });
-
-    return NextResponse.json(supplier, { status: 201 });
-  } catch (error) {
-    console.error("Error creating supplier:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+      return NextResponse.json(supplier, { status: 201 });
+    },
+    { roles: ["ADMIN"], operationName: "Suppliers POST" }
+  );
 }

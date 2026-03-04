@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClient, updateClient, deleteClient, getClientPendingOrders, updateClientBalance, markOrderAsPaid, applyFiadoPayment } from "@/lib/db";
-import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
+import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";
 
@@ -8,149 +8,115 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) {
-      return unauthorizedResponse();
-    }
+  return withAuthorizedRoute(
+    request,
+    async () => {
+      const client = await getClient(params.id);
+      if (!client) {
+        return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      }
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const client = await getClient(params.id);
-    if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    const pendingOrders = await getClientPendingOrders(params.id);
-    return NextResponse.json({ ...client, pendingOrders });
-  } catch (error) {
-    console.error("Error fetching client:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+      const pendingOrders = await getClientPendingOrders(params.id);
+      return NextResponse.json({ ...client, pendingOrders });
+    },
+    { roles: ["ADMIN"], operationName: "Client GET" }
+  );
 }
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) {
-      return unauthorizedResponse();
-    }
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest }) => {
+      const client = await getClient(params.id);
+      if (!client) {
+        return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      }
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+      const body = await authorizedRequest.json();
+      const { name, phone, email, notes } = body;
 
-    const client = await getClient(params.id);
-    if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    const body = await request.json();
-    const { name, phone, email, notes } = body;
-
-    await updateClient(params.id, { name, phone, email, notes });
-    const updatedClient = await getClient(params.id);
-    return NextResponse.json(updatedClient);
-  } catch (error) {
-    console.error("Error updating client:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+      await updateClient(params.id, { name, phone, email, notes });
+      const updatedClient = await getClient(params.id);
+      return NextResponse.json(updatedClient);
+    },
+    { roles: ["ADMIN"], operationName: "Client PUT" }
+  );
 }
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) {
-      return unauthorizedResponse();
-    }
+  return withAuthorizedRoute(
+    request,
+    async () => {
+      const client = await getClient(params.id);
+      if (!client) {
+        return NextResponse.json({ error: "Client not found" }, { status: 404 });
+      }
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+      if (client.balance !== 0) {
+        return NextResponse.json({ error: "Cannot delete client with pending balance" }, { status: 400 });
+      }
 
-    const client = await getClient(params.id);
-    if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    if (client.balance !== 0) {
-      return NextResponse.json({ error: "Cannot delete client with pending balance" }, { status: 400 });
-    }
-
-    await deleteClient(params.id);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting client:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+      await deleteClient(params.id);
+      return NextResponse.json({ success: true });
+    },
+    { roles: ["ADMIN"], operationName: "Client DELETE" }
+  );
 }
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) {
-      return unauthorizedResponse();
-    }
-
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const client = await getClient(params.id);
-    if (!client) {
-      return NextResponse.json({ error: "Client not found" }, { status: 404 });
-    }
-
-    const body = await request.json();
-    const { action, orderId, amount, method } = body;
-
-    if (action === "pay_order" && orderId) {
-      const pendingOrders = await getClientPendingOrders(params.id);
-      const order = pendingOrders.find(o => o.id === orderId);
-      
-      if (!order) {
-        return NextResponse.json({ error: "Order not found or already paid" }, { status: 404 });
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest }) => {
+      const client = await getClient(params.id);
+      if (!client) {
+        return NextResponse.json({ error: "Client not found" }, { status: 404 });
       }
 
-      const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
-      const paymentAmount = typeof amount === "number" ? amount : parseFloat(amount);
-      const finalAmount = Number.isFinite(paymentAmount) && paymentAmount > 0 ? paymentAmount : remaining;
-      const finalMethod = method || "DINHEIRO";
+      const body = await authorizedRequest.json();
+      const { action, orderId, amount, method } = body;
 
-      // Prefer partial-payment flow; fallback to legacy full pay if something goes wrong
-      try {
-        await applyFiadoPayment(params.id, orderId, finalAmount, finalMethod);
-      } catch {
-        // Legacy fallback: mark paid and clear full amount
-        await markOrderAsPaid(orderId);
-        await updateClientBalance(params.id, -order.totalAmount);
+      if (action === "pay_order" && orderId) {
+        const pendingOrders = await getClientPendingOrders(params.id);
+        const order = pendingOrders.find(o => o.id === orderId);
+
+        if (!order) {
+          return NextResponse.json({ error: "Order not found or already paid" }, { status: 404 });
+        }
+
+        const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
+        const paymentAmount = typeof amount === "number" ? amount : parseFloat(amount);
+        const finalAmount = Number.isFinite(paymentAmount) && paymentAmount > 0 ? paymentAmount : remaining;
+        const finalMethod = method || "DINHEIRO";
+
+        try {
+          await applyFiadoPayment(params.id, orderId, finalAmount, finalMethod);
+        } catch {
+          await markOrderAsPaid(orderId);
+          await updateClientBalance(params.id, -order.totalAmount);
+        }
+
+        const updatedClient = await getClient(params.id);
+        const refreshedPending = await getClientPendingOrders(params.id);
+        return NextResponse.json({ ...updatedClient, pendingOrders: refreshedPending });
       }
 
-      const updatedClient = await getClient(params.id);
-      const refreshedPending = await getClientPendingOrders(params.id);
-      return NextResponse.json({ ...updatedClient, pendingOrders: refreshedPending });
-    }
+      if (action === "adjust_balance" && amount !== undefined) {
+        await updateClientBalance(params.id, amount);
+        const updatedClient = await getClient(params.id);
+        return NextResponse.json(updatedClient);
+      }
 
-    if (action === "adjust_balance" && amount !== undefined) {
-      await updateClientBalance(params.id, amount);
-      const updatedClient = await getClient(params.id);
-      return NextResponse.json(updatedClient);
-    }
-
-    return NextResponse.json({ error: "Invalid action" }, { status: 400 });
-  } catch (error) {
-    console.error("Error patching client:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+    },
+    { roles: ["ADMIN"], operationName: "Client PATCH" }
+  );
 }

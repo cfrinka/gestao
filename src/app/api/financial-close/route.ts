@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
+import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
 import { createFinancialAuditLog } from "@/lib/db";
@@ -28,46 +28,39 @@ function getMonthDateRange(month: string): { start: Date; end: Date } {
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const user = await verifyAuth(request);
-    if (!user) {
-      return unauthorizedResponse();
-    }
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest, user }) => {
+      const body = (await authorizedRequest.json().catch(() => ({}))) as { month?: string };
+      const month = (body.month || "").trim();
 
-    if (user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+      if (!isValidCompetencyMonth(month)) {
+        return NextResponse.json({ error: "Invalid month. Expected YYYY-MM" }, { status: 400 });
+      }
 
-    const body = (await request.json().catch(() => ({}))) as { month?: string };
-    const month = (body.month || "").trim();
+      const currentMonth = toCompetencyMonth(new Date());
+      if (month === currentMonth) {
+        return NextResponse.json({ error: "Current month cannot be closed" }, { status: 400 });
+      }
 
-    if (!isValidCompetencyMonth(month)) {
-      return NextResponse.json({ error: "Invalid month. Expected YYYY-MM" }, { status: 400 });
-    }
+      const closureRef = adminDb.collection("financialClosures").doc(month);
+      const existing = await closureRef.get();
+      if (existing.exists) {
+        return NextResponse.json({ error: `Month ${month} is already closed` }, { status: 409 });
+      }
 
-    const currentMonth = toCompetencyMonth(new Date());
-    if (month === currentMonth) {
-      return NextResponse.json({ error: "Current month cannot be closed" }, { status: 400 });
-    }
+      const movementsSnapshot = await adminDb
+        .collection("financialMovements")
+        .where("competencyMonth", "==", month)
+        .get();
 
-    const closureRef = adminDb.collection("financialClosures").doc(month);
-    const existing = await closureRef.get();
-    if (existing.exists) {
-      return NextResponse.json({ error: `Month ${month} is already closed` }, { status: 409 });
-    }
+      let revenue = 0;
+      let cogs = 0;
+      let expenses = 0;
+      let cashIn = 0;
+      let cashOut = 0;
 
-    const movementsSnapshot = await adminDb
-      .collection("financialMovements")
-      .where("competencyMonth", "==", month)
-      .get();
-
-    let revenue = 0;
-    let cogs = 0;
-    let expenses = 0;
-    let cashIn = 0;
-    let cashOut = 0;
-
-    for (const doc of movementsSnapshot.docs) {
+      for (const doc of movementsSnapshot.docs) {
       const movement = doc.data() as {
         type?: string;
         direction?: "IN" | "OUT";
@@ -85,24 +78,24 @@ export async function POST(request: NextRequest) {
       if (movement.direction === "OUT") cashOut += amount;
     }
 
-    const grossProfit = revenue - cogs;
-    const netResult = grossProfit - expenses;
+      const grossProfit = revenue - cogs;
+      const netResult = grossProfit - expenses;
 
-    const { end } = getMonthDateRange(month);
+      const { end } = getMonthDateRange(month);
 
-    const [productsSnapshot, ordersSnapshot] = await Promise.all([
-      adminDb.collection("products").get(),
-      adminDb.collection("orders").where("createdAt", "<=", Timestamp.fromDate(end)).get(),
-    ]);
+      const [productsSnapshot, ordersSnapshot] = await Promise.all([
+        adminDb.collection("products").get(),
+        adminDb.collection("orders").where("createdAt", "<=", Timestamp.fromDate(end)).get(),
+      ]);
 
-    const inventoryValue = productsSnapshot.docs.reduce((sum, doc) => {
+      const inventoryValue = productsSnapshot.docs.reduce((sum, doc) => {
       const data = doc.data() as { stock?: number; costPrice?: number };
       const stock = Number(data.stock || 0);
       const costPrice = Number(data.costPrice || 0);
       return sum + stock * costPrice;
     }, 0);
 
-    const fiadoOutstanding = ordersSnapshot.docs.reduce((sum, doc) => {
+      const fiadoOutstanding = ordersSnapshot.docs.reduce((sum, doc) => {
       const data = doc.data() as {
         isPaidLater?: boolean;
         remainingAmount?: number;
@@ -121,9 +114,9 @@ export async function POST(request: NextRequest) {
       return sum + Math.max(0, totalAmount - amountPaid);
     }, 0);
 
-    const lockedAt = Timestamp.fromDate(new Date());
+      const lockedAt = Timestamp.fromDate(new Date());
 
-    await closureRef.set({
+      await closureRef.set({
       month,
       revenue,
       cogs,
@@ -138,7 +131,7 @@ export async function POST(request: NextRequest) {
       lockedBy: user.uid,
     });
 
-    await createFinancialAuditLog({
+      await createFinancialAuditLog({
       action: "FINANCIAL_CLOSE",
       actorId: user.uid,
       actorRole: user.role,
@@ -158,26 +151,24 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(
-      {
-        id: month,
-        month,
-        revenue,
-        cogs,
-        grossProfit,
-        expenses,
-        netResult,
-        cashIn,
-        cashOut,
-        inventoryValue,
-        fiadoOutstanding,
-        lockedBy: user.uid,
-      },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error("Error closing financial month:", error);
-    const message = error instanceof Error ? error.message : "Internal server error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+      return NextResponse.json(
+        {
+          id: month,
+          month,
+          revenue,
+          cogs,
+          grossProfit,
+          expenses,
+          netResult,
+          cashIn,
+          cashOut,
+          inventoryValue,
+          fiadoOutstanding,
+          lockedBy: user.uid,
+        },
+        { status: 201 }
+      );
+    },
+    { roles: ["ADMIN"], operationName: "Financial Close POST" }
+  );
 }
