@@ -75,7 +75,7 @@ export async function PATCH(
 ) {
   return withAuthorizedRoute(
     request,
-    async ({ request: authorizedRequest }) => {
+    async ({ request: authorizedRequest, user }) => {
       const client = await getClient(params.id);
       if (!client) {
         return NextResponse.json({ error: "Client not found" }, { status: 404 });
@@ -98,7 +98,7 @@ export async function PATCH(
         const finalMethod = method || "DINHEIRO";
 
         try {
-          await applyFiadoPayment(params.id, orderId, finalAmount, finalMethod);
+          await applyFiadoPayment(params.id, orderId, finalAmount, finalMethod, user.uid);
         } catch {
           await markOrderAsPaid(orderId);
           await updateClientBalance(params.id, -order.totalAmount);

@@ -304,9 +304,10 @@ export async function applyFiadoPayment(
   clientId: string,
   orderId: string,
   amount: number,
-  method: PaymentMethod["method"]
+  method: PaymentMethod["method"],
+  receivedByUserId?: string
 ): Promise<void> {
-  return applyFiadoPaymentDomain(clientId, orderId, amount, method);
+  return applyFiadoPaymentDomain(clientId, orderId, amount, method, receivedByUserId);
 }
 
 export async function getStoreSettings(): Promise<StoreSettings> {

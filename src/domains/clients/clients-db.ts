@@ -24,6 +24,15 @@ function mapOrderPaymentMethodToFinancial(method: PaymentMethod["method"]): "cas
   return "debit";
 }
 
+function mapOrderPaymentMethodToCashRegisterField(
+  method: PaymentMethod["method"]
+): "totalCash" | "totalPix" | "totalCredit" | "totalDebit" {
+  if (method === "DINHEIRO") return "totalCash";
+  if (method === "PIX") return "totalPix";
+  if (method === "CREDITO") return "totalCredit";
+  return "totalDebit";
+}
+
 export async function getClients(): Promise<Client[]> {
   const snapshot = await adminDb.collection("clients").orderBy("name").get();
   return snapshot.docs.map((doc) => ({
@@ -131,7 +140,8 @@ export async function applyFiadoPayment(
   clientId: string,
   orderId: string,
   amount: number,
-  method: PaymentMethod["method"]
+  method: PaymentMethod["method"],
+  receivedByUserId?: string
 ): Promise<void> {
   if (!amount || amount <= 0) {
     throw new Error("Payment amount must be greater than zero");
@@ -202,5 +212,24 @@ export async function applyFiadoPayment(
         clientId,
       },
     });
+
+    const safeReceivedByUserId = String(receivedByUserId || "").trim();
+    if (safeReceivedByUserId) {
+      const openRegisterQuery = adminDb
+        .collection("cashRegisters")
+        .where("userId", "==", safeReceivedByUserId)
+        .where("status", "==", "OPEN")
+        .limit(1);
+      const openRegisterSnapshot = await tx.get(openRegisterQuery);
+      if (!openRegisterSnapshot.empty) {
+        const registerDoc = openRegisterSnapshot.docs[0];
+        const paymentField = mapOrderPaymentMethodToCashRegisterField(method);
+
+        tx.update(registerDoc.ref, {
+          totalSales: FieldValue.increment(appliedAmount),
+          [paymentField]: FieldValue.increment(appliedAmount),
+        });
+      }
+    }
   });
 }
