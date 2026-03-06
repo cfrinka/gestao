@@ -42,7 +42,7 @@ import {
   getProducts as getProductsDomain,
   updateProduct as updateProductDomain,
 } from "@/domains/products/products-db";
-import { getOrders as getOrdersDomain } from "@/domains/orders/orders-db";
+import { getOrders as getOrdersDomain, updateOrder as updateOrderDomain } from "@/domains/orders/orders-db";
 import {
   closeCashRegister as closeCashRegisterDomain,
   getCashRegisterOrders as getCashRegisterOrdersDomain,
@@ -154,6 +154,16 @@ export async function getOrders(
   endDate?: Date
 ): Promise<Order[]> {
   return getOrdersDomain(startDate, endDate);
+}
+
+export async function updateOrder(input: {
+  orderId: string;
+  discount: number;
+  payments: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>;
+  actorId: string;
+  actorRole: string;
+}): Promise<Order> {
+  return updateOrderDomain(input);
 }
 
 // Checkout

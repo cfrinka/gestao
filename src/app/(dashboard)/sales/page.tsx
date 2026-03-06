@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { apiGet } from "@/lib/api-client";
+import { apiGet, apiPatch } from "@/lib/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth-context";
 import { ClipboardList, Eye, Download, Banknote, CreditCard, Smartphone, Printer } from "lucide-react";
 
 interface OrderItem {
@@ -61,6 +62,8 @@ interface FiadoPayment {
 interface Order {
   id: string;
   createdAt: string;
+  subtotal?: number;
+  discount?: number;
   totalAmount: number;
   payments?: PaymentMethod[];
   items: OrderItem[];
@@ -75,9 +78,19 @@ interface Order {
 
 export default function SalesPage() {
   const { toast } = useToast();
+  const { userData } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [isEditingSale, setIsEditingSale] = useState(false);
+  const [savingSaleEdit, setSavingSaleEdit] = useState(false);
+  const [editDiscount, setEditDiscount] = useState("0");
+  const [editPayments, setEditPayments] = useState<Record<PaymentMethod["method"], string>>({
+    DINHEIRO: "0",
+    DEBITO: "0",
+    CREDITO: "0",
+    PIX: "0",
+  });
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [storeSettings, setStoreSettings] = useState<StoreSettings>({
@@ -99,6 +112,36 @@ export default function SalesPage() {
     if (typeof o.remainingAmount === "number") return sum + o.remainingAmount;
     return sum + (o.paidAt ? 0 : (typeof o.totalAmount === "number" ? o.totalAmount : 0));
   }, 0);
+
+  const canEditSales = userData?.role === "ADMIN";
+
+  useEffect(() => {
+    if (!selectedOrder) {
+      setIsEditingSale(false);
+      return;
+    }
+
+    const subtotalFromItems = selectedOrder.items.reduce((sum, item) => sum + Number(item.totalRevenue || 0), 0);
+    const initialDiscount =
+      typeof selectedOrder.discount === "number"
+        ? selectedOrder.discount
+        : Math.max(0, subtotalFromItems - Number(selectedOrder.totalAmount || 0));
+
+    const paymentMap: Record<PaymentMethod["method"], string> = {
+      DINHEIRO: "0",
+      DEBITO: "0",
+      CREDITO: "0",
+      PIX: "0",
+    };
+
+    (selectedOrder.payments || []).forEach((payment) => {
+      paymentMap[payment.method] = String(Number(payment.amount || 0));
+    });
+
+    setEditDiscount(String(initialDiscount));
+    setEditPayments(paymentMap);
+    setIsEditingSale(false);
+  }, [selectedOrder]);
 
   const periodReceived = orders.reduce((sum, o) => {
     const total = typeof o.totalAmount === "number" ? o.totalAmount : 0;
@@ -428,6 +471,45 @@ export default function SalesPage() {
     a.click();
   };
 
+  const handleSaveSaleEdit = async () => {
+    if (!selectedOrder) return;
+
+    const safeDiscount = Number(editDiscount || 0);
+    if (!Number.isFinite(safeDiscount) || safeDiscount < 0) {
+      toast({ title: "Desconto inválido", variant: "destructive" });
+      return;
+    }
+
+    const payments: PaymentMethod[] = (Object.keys(editPayments) as PaymentMethod["method"][])
+      .map((method) => ({
+        method,
+        amount: Number(editPayments[method] || 0),
+      }))
+      .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
+
+    setSavingSaleEdit(true);
+    try {
+      const updatedOrder = (await apiPatch("/api/orders", {
+        orderId: selectedOrder.id,
+        discount: safeDiscount,
+        payments,
+      })) as Order;
+
+      setSelectedOrder(updatedOrder);
+      await fetchOrders();
+      setIsEditingSale(false);
+      toast({ title: "Venda atualizada com sucesso" });
+    } catch (error) {
+      toast({
+        title: "Erro ao atualizar venda",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingSaleEdit(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -606,6 +688,72 @@ export default function SalesPage() {
                   Total: {formatCurrency(selectedOrder.totalAmount)}
                 </span>
               </div>
+
+              {canEditSales && !selectedOrder.isPaidLater && (
+                <div className="rounded-lg border p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Correção da venda (somente administrador)</p>
+                    {!isEditingSale ? (
+                      <Button variant="outline" size="sm" onClick={() => setIsEditingSale(true)}>
+                        Editar venda
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsEditingSale(false)}
+                        disabled={savingSaleEdit}
+                      >
+                        Cancelar
+                      </Button>
+                    )}
+                  </div>
+
+                  {isEditingSale && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label>Desconto</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={editDiscount}
+                          onChange={(e) => setEditDiscount(e.target.value)}
+                        />
+                      </div>
+
+                      {(Object.keys(editPayments) as PaymentMethod["method"][]).map((method) => (
+                        <div key={method} className="space-y-1">
+                          <Label>
+                            {method === "DINHEIRO" && "Dinheiro"}
+                            {method === "DEBITO" && "Débito"}
+                            {method === "CREDITO" && "Crédito"}
+                            {method === "PIX" && "PIX"}
+                          </Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={editPayments[method]}
+                            onChange={(e) =>
+                              setEditPayments((current) => ({
+                                ...current,
+                                [method]: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      ))}
+
+                      <div className="sm:col-span-2 flex justify-end">
+                        <Button onClick={handleSaveSaleEdit} disabled={savingSaleEdit}>
+                          {savingSaleEdit ? "Salvando..." : "Salvar correções"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {selectedOrder.isPaidLater && (
                 <div className={`p-3 rounded-lg ${selectedOrder.paidAt ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>

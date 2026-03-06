@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, getProduct } from "@/lib/db";
+import { getOrders, getProduct, updateOrder } from "@/lib/db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";
@@ -61,5 +61,38 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(ordersWithDetails);
     },
     { operationName: "Orders GET" }
+  );
+}
+
+interface UpdateOrderBody {
+  orderId?: string;
+  discount?: number;
+  payments?: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>;
+}
+
+export async function PATCH(request: NextRequest) {
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest, user }) => {
+      const body = (await authorizedRequest.json()) as UpdateOrderBody;
+      const orderId = String(body.orderId || "").trim();
+      if (!orderId) {
+        return NextResponse.json({ error: "orderId is required" }, { status: 400 });
+      }
+
+      const discount = Number(body.discount || 0);
+      const payments = Array.isArray(body.payments) ? body.payments : [];
+
+      const updatedOrder = await updateOrder({
+        orderId,
+        discount,
+        payments,
+        actorId: user.uid,
+        actorRole: user.role,
+      });
+
+      return NextResponse.json(updatedOrder);
+    },
+    { roles: ["ADMIN"], operationName: "Orders PATCH" }
   );
 }
