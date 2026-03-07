@@ -42,9 +42,41 @@ interface Product {
   sizes: ProductSize[];
 }
 
-const DEFAULT_SIZES = ["PP", "P", "M", "G", "GG", "XG"];
+const DEFAULT_SIZES = ["TU", "P", "M", "G", "GG", "XG"];
 const PLUS_SIZES = ["GG", "XG", "G1", "G2", "G3"];
 const MARKUP_MULTIPLIER = 2.8;
+
+function normalizeSizeLabel(value: string): string {
+  return value.trim().toUpperCase() === "PP" ? "TU" : value;
+}
+
+function normalizeProductSizes(sizes: ProductSize[]): ProductSize[] {
+  const bySize = new Map<string, number>();
+
+  for (const sizeEntry of sizes || []) {
+    const normalizedSize = normalizeSizeLabel(String(sizeEntry.size || "").trim());
+    if (!normalizedSize) continue;
+    const previous = bySize.get(normalizedSize) ?? 0;
+    bySize.set(normalizedSize, previous + Number(sizeEntry.stock || 0));
+  }
+
+  const preferredOrder = ["TU", "P", "M", "G", "GG", "XG", "G1", "G2", "G3"];
+  const ordered: ProductSize[] = [];
+
+  for (const size of preferredOrder) {
+    const stock = bySize.get(size);
+    if (stock !== undefined) {
+      ordered.push({ size, stock });
+      bySize.delete(size);
+    }
+  }
+
+  for (const [size, stock] of Array.from(bySize.entries())) {
+    ordered.push({ size, stock });
+  }
+
+  return ordered;
+}
 
 export default function ProductsPage() {
   const { userData } = useAuth();
@@ -84,7 +116,11 @@ export default function ProductsPage() {
     try {
       const data = await apiGet("/api/products");
       if (Array.isArray(data)) {
-        setProducts(data);
+        const normalizedProducts = data.map((product) => ({
+          ...product,
+          sizes: normalizeProductSizes(Array.isArray(product.sizes) ? product.sizes : []),
+        }));
+        setProducts(normalizedProducts);
       } else {
         console.error("Error fetching products:", data);
         setProducts([]);
@@ -94,6 +130,25 @@ export default function ProductsPage() {
       setProducts([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const migratePPToTU = async () => {
+    if (!confirm('Isso vai substituir o tamanho PP por TU em produtos e históricos. Continuar?')) return;
+
+    try {
+      const result = await apiPost("/api/admin/migrate-pp-to-tu", { apply: true, limitPerCollection: 5000 });
+      toast({
+        title: "Migração PP → TU concluída",
+        description: `Atualizados: ${result?.totalUpdated ?? 0} | Escaneados: ${result?.totalScanned ?? 0}`,
+      });
+      fetchProducts();
+    } catch (error) {
+      toast({
+        title: "Erro ao migrar PP para TU",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
     }
   };
 
@@ -167,7 +222,7 @@ export default function ProductsPage() {
       salePrice: product.salePrice.toString(),
       stock: product.stock.toString(),
       sizes: product.sizes?.length > 0 
-        ? product.sizes 
+        ? normalizeProductSizes(product.sizes)
         : (product.plusSized === true ? PLUS_SIZES : DEFAULT_SIZES).map(size => ({ size, stock: 0 })),
     });
     setDialogOpen(true);
@@ -242,6 +297,9 @@ export default function ProductsPage() {
               </Button>
               <Button variant="outline" onClick={migratePlusSizeSizes}>
                 Ajustar tamanhos Plus
+              </Button>
+              <Button variant="outline" onClick={migratePPToTU}>
+                Migrar PP → TU
               </Button>
             </>
           )}
