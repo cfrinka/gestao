@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { apiGet, apiPatch } from "@/lib/api-client";
+import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
+import { apiGet, apiPatch, apiPost } from "@/lib/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
+import { auth } from "@/lib/firebase";
 import { ClipboardList, Eye, Download, Banknote, CreditCard, Smartphone, Printer } from "lucide-react";
 
 interface OrderItem {
@@ -74,6 +76,10 @@ interface Order {
   remainingAmount?: number;
   paymentHistory?: FiadoPayment[];
   paidAt?: string;
+  isCancelled?: boolean;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancellationReason?: string;
 }
 
 export default function SalesPage() {
@@ -84,6 +90,9 @@ export default function SalesPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isEditingSale, setIsEditingSale] = useState(false);
   const [savingSaleEdit, setSavingSaleEdit] = useState(false);
+  const [cancellingSale, setCancellingSale] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelPassword, setCancelPassword] = useState("");
   const [editDiscount, setEditDiscount] = useState("0");
   const [editPayments, setEditPayments] = useState<Record<PaymentMethod["method"], string>>({
     DINHEIRO: "0",
@@ -102,12 +111,13 @@ export default function SalesPage() {
     exchangeDays: 10,
   });
 
-  const periodTotalSold = orders.reduce(
-    (sum, o) => sum + (typeof o.totalAmount === "number" ? o.totalAmount : 0),
-    0
-  );
+  const periodTotalSold = orders.reduce((sum, o) => {
+    if (o.isCancelled) return sum;
+    return sum + (typeof o.totalAmount === "number" ? o.totalAmount : 0);
+  }, 0);
 
   const periodFiadoOutstanding = orders.reduce((sum, o) => {
+    if (o.isCancelled) return sum;
     if (!o.isPaidLater) return sum;
     if (typeof o.remainingAmount === "number") return sum + o.remainingAmount;
     return sum + (o.paidAt ? 0 : (typeof o.totalAmount === "number" ? o.totalAmount : 0));
@@ -141,9 +151,13 @@ export default function SalesPage() {
     setEditDiscount(String(initialDiscount));
     setEditPayments(paymentMap);
     setIsEditingSale(false);
+    setCancellingSale(false);
+    setCancelReason("");
+    setCancelPassword("");
   }, [selectedOrder]);
 
   const periodReceived = orders.reduce((sum, o) => {
+    if (o.isCancelled) return sum;
     const total = typeof o.totalAmount === "number" ? o.totalAmount : 0;
     if (!o.isPaidLater) return sum + total;
     if (typeof o.amountPaid === "number") return sum + o.amountPaid;
@@ -473,6 +487,10 @@ export default function SalesPage() {
 
   const handleSaveSaleEdit = async () => {
     if (!selectedOrder) return;
+    if (selectedOrder.isCancelled) {
+      toast({ title: "Venda cancelada não pode ser editada", variant: "destructive" });
+      return;
+    }
 
     const safeDiscount = Number(editDiscount || 0);
     if (!Number.isFinite(safeDiscount) || safeDiscount < 0) {
@@ -507,6 +525,53 @@ export default function SalesPage() {
       });
     } finally {
       setSavingSaleEdit(false);
+    }
+  };
+
+  const handleCancelSale = async () => {
+    if (!selectedOrder) return;
+    if (selectedOrder.isCancelled) {
+      toast({ title: "Venda já cancelada", variant: "destructive" });
+      return;
+    }
+
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser?.email) {
+      toast({ title: "Sessão inválida", description: "Faça login novamente.", variant: "destructive" });
+      return;
+    }
+
+    const trimmedPassword = cancelPassword.trim();
+    if (!trimmedPassword) {
+      toast({ title: "Informe a senha para confirmar", variant: "destructive" });
+      return;
+    }
+
+    setCancellingSale(true);
+    try {
+      const credential = EmailAuthProvider.credential(firebaseUser.email, trimmedPassword);
+      await reauthenticateWithCredential(firebaseUser, credential);
+      await firebaseUser.getIdToken(true);
+
+      const updated = (await apiPost("/api/orders", {
+        orderId: selectedOrder.id,
+        reason: cancelReason.trim(),
+      })) as Order;
+
+      setSelectedOrder(updated);
+      await fetchOrders();
+      setIsEditingSale(false);
+      setCancelPassword("");
+
+      toast({ title: "Venda cancelada com sucesso" });
+    } catch (error) {
+      toast({
+        title: "Erro ao cancelar venda",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setCancellingSale(false);
     }
   };
 
@@ -607,7 +672,12 @@ export default function SalesPage() {
                 {orders?.map((order) => (
                   <TableRow key={order.id}>
                     <TableCell className="font-medium">
-                      #{order.id.slice(-6).toUpperCase()}
+                      <div className="flex items-center gap-2">
+                        <span>#{order.id.slice(-6).toUpperCase()}</span>
+                        {order.isCancelled && (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-700">Cancelada</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{formatDate(new Date(order.createdAt))}</TableCell>
                     <TableCell>{order.items.length}</TableCell>
@@ -644,7 +714,7 @@ export default function SalesPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right font-bold">
-                      {formatCurrency(order.totalAmount)}
+                      {order.isCancelled ? "R$ 0,00" : formatCurrency(order.totalAmount)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
@@ -685,11 +755,23 @@ export default function SalesPage() {
               <div className="flex justify-between text-sm text-gray-600">
                 <span>Data: {formatDate(new Date(selectedOrder.createdAt))}</span>
                 <span className="font-bold text-lg">
-                  Total: {formatCurrency(selectedOrder.totalAmount)}
+                  Total: {selectedOrder.isCancelled ? "R$ 0,00" : formatCurrency(selectedOrder.totalAmount)}
                 </span>
               </div>
 
-              {canEditSales && !selectedOrder.isPaidLater && (
+              {selectedOrder.isCancelled && (
+                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800 space-y-1">
+                  <p className="font-medium">Venda cancelada</p>
+                  <p>
+                    Motivo: {selectedOrder.cancellationReason || "Sem motivo informado"}
+                  </p>
+                  {selectedOrder.cancelledAt && (
+                    <p>Cancelada em: {formatDate(new Date(selectedOrder.cancelledAt))}</p>
+                  )}
+                </div>
+              )}
+
+              {canEditSales && !selectedOrder.isPaidLater && !selectedOrder.isCancelled && (
                 <div className="rounded-lg border p-3 space-y-3">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium">Correção da venda (somente administrador)</p>
@@ -752,6 +834,39 @@ export default function SalesPage() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {canEditSales && !selectedOrder.isPaidLater && !selectedOrder.isCancelled && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-3">
+                  <p className="text-sm font-medium text-red-800">Cancelar venda (somente administrador)</p>
+                  <p className="text-xs text-red-700">
+                    O cancelamento mantém o histórico da venda, mas remove o impacto dela dos números de caixa e relatórios.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label>Motivo do cancelamento</Label>
+                      <Input
+                        placeholder="Ex.: venda lançada em duplicidade"
+                        value={cancelReason}
+                        onChange={(e) => setCancelReason(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label>Senha do administrador</Label>
+                      <Input
+                        type="password"
+                        placeholder="Digite sua senha para confirmar"
+                        value={cancelPassword}
+                        onChange={(e) => setCancelPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="sm:col-span-2 flex justify-end">
+                      <Button variant="destructive" onClick={handleCancelSale} disabled={cancellingSale}>
+                        {cancellingSale ? "Cancelando..." : "Cancelar venda"}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
 

@@ -3,11 +3,157 @@ import { adminDb } from "@/lib/firebase-admin";
 import type { Order, OrderItem } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 
+function normalizePositivePayments(
+  payments: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>
+): Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }> {
+  return payments
+    .map((payment) => ({
+      method: payment.method,
+      amount: Number(payment.amount || 0),
+    }))
+    .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
+}
+
+async function findMatchingCashRegister(
+  tx: FirebaseFirestore.Transaction,
+  orderCreatedAt: Date
+): Promise<FirebaseFirestore.QueryDocumentSnapshot | undefined> {
+  const registerQuery = adminDb
+    .collection("cashRegisters")
+    .where("openedAt", "<=", Timestamp.fromDate(orderCreatedAt))
+    .orderBy("openedAt", "desc")
+    .limit(10);
+  const registerSnapshot = await tx.get(registerQuery);
+  return registerSnapshot.docs.find((doc) => {
+    const data = doc.data();
+    const closedAt = data.closedAt && typeof data.closedAt.toDate === "function" ? data.closedAt.toDate() : null;
+    return !closedAt || closedAt.getTime() >= orderCreatedAt.getTime();
+  });
+}
+
 function mapOrderPaymentMethodToFinancial(method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"): "cash" | "pix" | "credit" | "debit" {
   if (method === "DINHEIRO") return "cash";
   if (method === "PIX") return "pix";
   if (method === "CREDITO") return "credit";
   return "debit";
+}
+
+export async function cancelOrder(input: {
+  orderId: string;
+  actorId: string;
+  actorRole: string;
+  reason?: string;
+}): Promise<Order> {
+  if (input.actorRole !== "ADMIN") {
+    throw new Error("Only admins can cancel sales");
+  }
+
+  const safeReason = String(input.reason || "").trim();
+  const orderRef = adminDb.collection("orders").doc(input.orderId);
+
+  return adminDb.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) {
+      throw new Error("Order not found");
+    }
+
+    const order = convertTimestamp<Order>(orderSnap.data()!);
+    if (order.isCancelled) {
+      throw new Error("Order is already cancelled");
+    }
+    if (order.isPaidLater) {
+      throw new Error("Fiado sales cannot be cancelled in this screen");
+    }
+
+    const now = new Date();
+    const nowTs = Timestamp.fromDate(now);
+    const currentTotal = Math.max(0, Number(order.totalAmount || 0));
+    const currentPayments = normalizePositivePayments((order.payments || []) as Array<{
+      method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX";
+      amount: number;
+    }>);
+
+    tx.update(orderRef, {
+      isCancelled: true,
+      cancelledAt: nowTs,
+      cancelledBy: input.actorId,
+      cancellationReason: safeReason || "Sem motivo informado",
+      updatedAt: nowTs,
+    });
+
+    const saleMovementQuery = adminDb
+      .collection("financialMovements")
+      .where("type", "==", "SALE_REVENUE")
+      .where("relatedEntity.id", "==", input.orderId)
+      .limit(1);
+    const saleMovementSnapshot = await tx.get(saleMovementQuery);
+    if (!saleMovementSnapshot.empty) {
+      tx.update(saleMovementSnapshot.docs[0].ref, {
+        amount: 0,
+        metadata: {
+          ...(saleMovementSnapshot.docs[0].data().metadata || {}),
+          cancelled: true,
+          cancelledAt: nowTs,
+          cancelledBy: input.actorId,
+          cancellationReason: safeReason || "Sem motivo informado",
+        },
+      });
+    }
+
+    const cogsMovementQuery = adminDb
+      .collection("financialMovements")
+      .where("type", "==", "COGS")
+      .where("relatedEntity.id", "==", input.orderId)
+      .limit(1);
+    const cogsMovementSnapshot = await tx.get(cogsMovementQuery);
+    if (!cogsMovementSnapshot.empty) {
+      tx.update(cogsMovementSnapshot.docs[0].ref, {
+        amount: 0,
+        metadata: {
+          ...(cogsMovementSnapshot.docs[0].data().metadata || {}),
+          cancelled: true,
+          cancelledAt: nowTs,
+          cancelledBy: input.actorId,
+        },
+      });
+    }
+
+    const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
+    const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
+    if (matchingRegister && currentTotal > 0) {
+      const currentByMethod = paymentAmountByMethod(currentPayments);
+      tx.update(matchingRegister.ref, {
+        totalSales: FieldValue.increment(-currentTotal),
+        totalCash: FieldValue.increment(-currentByMethod.DINHEIRO),
+        totalDebit: FieldValue.increment(-currentByMethod.DEBITO),
+        totalCredit: FieldValue.increment(-currentByMethod.CREDITO),
+        totalPix: FieldValue.increment(-currentByMethod.PIX),
+        salesCount: FieldValue.increment(-1),
+      });
+    }
+
+    const auditRef = adminDb.collection("financialAuditLogs").doc();
+    tx.set(auditRef, {
+      action: "ORDER_CANCELLATION",
+      actorId: input.actorId,
+      actorRole: input.actorRole,
+      occurredAt: nowTs,
+      relatedEntity: { kind: "order", id: input.orderId },
+      payload: {
+        reason: safeReason || "Sem motivo informado",
+        originalTotalAmount: currentTotal,
+        originalPayments: currentPayments,
+      },
+    });
+
+    return {
+      ...order,
+      isCancelled: true,
+      cancelledAt: now,
+      cancelledBy: input.actorId,
+      cancellationReason: safeReason || "Sem motivo informado",
+    };
+  });
 }
 
 function paymentAmountByMethod(
@@ -37,12 +183,7 @@ export async function updateOrder(input: {
     throw new Error("Discount must be a valid non-negative number");
   }
 
-  const normalizedPayments = input.payments
-    .map((payment) => ({
-      method: payment.method,
-      amount: Number(payment.amount || 0),
-    }))
-    .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
+  const normalizedPayments = normalizePositivePayments(input.payments);
 
   const orderRef = adminDb.collection("orders").doc(input.orderId);
 
@@ -53,6 +194,9 @@ export async function updateOrder(input: {
     }
 
     const order = convertTimestamp<Order>(orderSnap.data()!);
+    if (order.isCancelled) {
+      throw new Error("Cancelled sales cannot be edited");
+    }
     if (order.isPaidLater) {
       throw new Error("Fiado sales cannot be edited in this screen");
     }
@@ -110,17 +254,7 @@ export async function updateOrder(input: {
     }
 
     const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
-    const registerQuery = adminDb
-      .collection("cashRegisters")
-      .where("openedAt", "<=", Timestamp.fromDate(orderCreatedAt))
-      .orderBy("openedAt", "desc")
-      .limit(10);
-    const registerSnapshot = await tx.get(registerQuery);
-    const matchingRegister = registerSnapshot.docs.find((doc) => {
-      const data = doc.data();
-      const closedAt = data.closedAt && typeof data.closedAt.toDate === "function" ? data.closedAt.toDate() : null;
-      return !closedAt || closedAt.getTime() >= orderCreatedAt.getTime();
-    });
+    const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
 
     if (matchingRegister) {
       const previousByMethod = paymentAmountByMethod((order.payments || []) as Array<{

@@ -42,7 +42,7 @@ import {
   getProducts as getProductsDomain,
   updateProduct as updateProductDomain,
 } from "@/domains/products/products-db";
-import { getOrders as getOrdersDomain, updateOrder as updateOrderDomain } from "@/domains/orders/orders-db";
+import { cancelOrder as cancelOrderDomain, getOrders as getOrdersDomain, updateOrder as updateOrderDomain } from "@/domains/orders/orders-db";
 import {
   closeCashRegister as closeCashRegisterDomain,
   getCashRegisterOrders as getCashRegisterOrdersDomain,
@@ -164,6 +164,15 @@ export async function updateOrder(input: {
   actorRole: string;
 }): Promise<Order> {
   return updateOrderDomain(input);
+}
+
+export async function cancelOrder(input: {
+  orderId: string;
+  actorId: string;
+  actorRole: string;
+  reason?: string;
+}): Promise<Order> {
+  return cancelOrderDomain(input);
 }
 
 // Checkout

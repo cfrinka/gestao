@@ -8,6 +8,7 @@ type AuthorizedUser = {
   uid: string;
   email: string;
   role: string;
+  authTime?: number;
 };
 
 type HandlerContext = {

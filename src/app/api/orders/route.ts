@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, getProduct, updateOrder } from "@/lib/db";
+import { cancelOrder, getOrders, getProduct, updateOrder } from "@/lib/db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
+
+const RECENT_AUTH_WINDOW_SECONDS = 5 * 60;
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +70,44 @@ interface UpdateOrderBody {
   orderId?: string;
   discount?: number;
   payments?: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>;
+}
+
+interface CancelOrderBody {
+  orderId?: string;
+  reason?: string;
+}
+
+export async function POST(request: NextRequest) {
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest, user }) => {
+      const body = (await authorizedRequest.json()) as CancelOrderBody;
+      const orderId = String(body.orderId || "").trim();
+      if (!orderId) {
+        return NextResponse.json({ error: "orderId is required" }, { status: 400 });
+      }
+
+      const authTime = Number(user.authTime || 0);
+      const nowInSeconds = Math.floor(Date.now() / 1000);
+      const isRecentAuth = authTime > 0 && nowInSeconds - authTime <= RECENT_AUTH_WINDOW_SECONDS;
+      if (!isRecentAuth) {
+        return NextResponse.json(
+          { error: "Confirmação de senha expirada. Informe a senha novamente para cancelar a venda." },
+          { status: 401 }
+        );
+      }
+
+      const cancelledOrder = await cancelOrder({
+        orderId,
+        reason: String(body.reason || "").trim(),
+        actorId: user.uid,
+        actorRole: user.role,
+      });
+
+      return NextResponse.json(cancelledOrder);
+    },
+    { roles: ["ADMIN"], operationName: "Orders POST Cancel" }
+  );
 }
 
 export async function PATCH(request: NextRequest) {

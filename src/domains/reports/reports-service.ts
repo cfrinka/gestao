@@ -25,6 +25,7 @@ type LegacyOrderDoc = {
   totalAmount?: number;
   cogsTotal?: number;
   isPaidLater?: boolean;
+  isCancelled?: boolean;
   payments?: Array<{ method?: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount?: number }>;
 };
 
@@ -209,6 +210,8 @@ async function buildAggregateFromLegacyCollections(month: string): Promise<{
 
   for (const doc of ordersSnap.docs) {
     const order = doc.data() as LegacyOrderDoc;
+    if (order.isCancelled) continue;
+
     const subtotal = Number(order.subtotal || 0);
     const discount = Number(order.discount || 0);
     const totalAmount = Number(order.totalAmount || 0);
@@ -474,10 +477,20 @@ async function buildFiadoAging(endDate: Date) {
 }
 
 async function buildProductMarginRanking(start: Date, end: Date) {
-  const [productsSnapshot, itemsSnapshot] = await Promise.all([
+  const [productsSnapshot, itemsSnapshot, ordersSnapshot] = await Promise.all([
     adminDb.collection("products").get(),
     adminDb.collection("orderItems").where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<=", Timestamp.fromDate(end)).get(),
+    adminDb.collection("orders").where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<=", Timestamp.fromDate(end)).get(),
   ]);
+
+  const cancelledOrderIds = new Set(
+    ordersSnapshot.docs
+      .filter((doc) => {
+        const data = doc.data() as { isCancelled?: boolean };
+        return Boolean(data.isCancelled);
+      })
+      .map((doc) => doc.id)
+  );
 
   const productsById = new Map(
     productsSnapshot.docs.map((doc) => {
@@ -489,7 +502,9 @@ async function buildProductMarginRanking(start: Date, end: Date) {
   const perfMap = new Map<string, { qty: number; revenue: number; cost: number; profit: number }>();
 
   for (const itemDoc of itemsSnapshot.docs) {
-    const item = itemDoc.data() as { productId?: string; quantity?: number; totalRevenue?: number; totalCost?: number };
+    const item = itemDoc.data() as { orderId?: string; productId?: string; quantity?: number; totalRevenue?: number; totalCost?: number };
+    if (item.orderId && cancelledOrderIds.has(item.orderId)) continue;
+
     const productId = item.productId || "unknown";
     const qty = Number(item.quantity || 0);
     const revenue = Number(item.totalRevenue || 0);

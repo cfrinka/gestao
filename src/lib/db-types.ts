@@ -66,7 +66,7 @@ export type FinancialMovement = {
   metadata?: Record<string, unknown>;
 };
 
-export type FinancialAuditAction = "FINANCIAL_CLOSE" | "MANUAL_ADJUSTMENT" | "REFUND";
+export type FinancialAuditAction = "FINANCIAL_CLOSE" | "MANUAL_ADJUSTMENT" | "REFUND" | "ORDER_CANCELLATION";
 
 export interface OrderItem {
   id: string;
@@ -110,6 +110,10 @@ export interface Order {
   remainingAmount?: number;
   paymentHistory?: FiadoPayment[];
   paidAt?: Date;
+  isCancelled?: boolean;
+  cancelledAt?: Date;
+  cancelledBy?: string;
+  cancellationReason?: string;
   createdAt: Date;
   items?: OrderItem[];
 }
