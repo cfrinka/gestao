@@ -1432,7 +1432,7 @@ export default function POSPage() {
 
       {/* Open Register Dialog */}
       <Dialog open={showOpenRegisterModal} onOpenChange={setShowOpenRegisterModal}>
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>Abrir Caixa</DialogTitle>
           </DialogHeader>
@@ -1443,9 +1443,12 @@ export default function POSPage() {
                 {CASH_DENOMINATION_GROUPS.map((group) => (
                   <div key={`open-group-${group.label}`} className="space-y-2">
                     <p className="text-sm font-semibold text-gray-700">{group.label}</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                    <div
+                      className="grid gap-2"
+                      style={{ gridTemplateColumns: `repeat(${group.values.length}, minmax(0, 1fr))` }}
+                    >
                       {group.values.map((denomination) => (
-                        <div key={`open-${denomination}`} className="rounded-md border p-2 space-y-1">
+                        <div key={`open-${denomination}`} className="rounded-md border p-2 space-y-1 min-w-0">
                           <div className="text-sm font-medium">{formatCurrency(denomination)}</div>
                           <Input
                             type="number"
@@ -1529,9 +1532,12 @@ export default function POSPage() {
                 {CASH_DENOMINATION_GROUPS.map((group) => (
                   <div key={`close-group-${group.label}`} className="space-y-2">
                     <p className="text-sm font-semibold text-gray-700">{group.label}</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                    <div
+                      className="grid gap-2"
+                      style={{ gridTemplateColumns: `repeat(${group.values.length}, minmax(0, 1fr))` }}
+                    >
                       {group.values.map((denomination) => (
-                        <div key={`close-${denomination}`} className="rounded-md border p-2 space-y-1">
+                        <div key={`close-${denomination}`} className="rounded-md border p-2 space-y-1 min-w-0">
                           <div className="text-sm font-medium">{formatCurrency(denomination)}</div>
                           <Input
                             type="number"
