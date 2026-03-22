@@ -56,3 +56,7 @@ export const adminDb = new Proxy({} as Firestore, {
     return (db as unknown as Record<string | symbol, unknown>)[prop];
   },
 });
+
+export function getAdminApp(): App {
+  return getApp();
+}

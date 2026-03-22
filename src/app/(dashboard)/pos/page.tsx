@@ -33,6 +33,7 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  image?: string;
 }
 
 interface CartItem {
@@ -107,6 +108,24 @@ interface Client {
   name: string;
   phone?: string;
   balance: number;
+}
+
+function ProductImage({ src, name }: { src?: string; name: string }) {
+  const [error, setError] = useState(false);
+  const seed = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const fallbackSrc = `https://picsum.photos/seed/${seed}/100/100`;
+  const imageSrc = error || !src ? fallbackSrc : src;
+  
+  return (
+    <div className="w-12 h-12 rounded overflow-hidden bg-gray-100 flex-shrink-0">
+      <img
+        src={imageSrc}
+        alt={name}
+        className="w-full h-full object-cover"
+        onError={() => setError(true)}
+      />
+    </div>
+  );
 }
 
 const NOTE_DENOMINATIONS = [200, 100, 50, 20, 10, 5, 2] as const;
@@ -1048,26 +1067,29 @@ export default function POSPage() {
                   }`}
                   onClick={() => handleProductClick(product)}
                 >
-                  <CardContent className="p-4 relative">
+                  <CardContent className="p-3 relative">
                     {product.plusSized === true && (
-                      <div className="absolute right-3 top-3">
+                      <div className="absolute right-2 top-2 z-10">
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#355444] text-white">
                           PLUS
                         </span>
                       </div>
                     )}
-                    <div className="flex flex-col">
-                      <span className="font-medium text-sm truncate">
-                        {product.name}
-                      </span>
-                      <span className="text-xs text-gray-500">{product.sku}</span>
-                      <div className="flex justify-between items-center mt-2">
-                        <span className="font-bold text-green-600">
-                          {formatCurrency(product.salePrice)}
+                    <div className="flex gap-3">
+                      <ProductImage src={product.image} name={product.name} />
+                      <div className="flex flex-col flex-1 min-w-0">
+                        <span className="font-medium text-sm truncate">
+                          {product.name}
                         </span>
-                        <span className="text-xs text-gray-400">
-                          Est: {product.stock}
-                        </span>
+                        <span className="text-xs text-gray-500">{product.sku}</span>
+                        <div className="flex justify-between items-center mt-auto">
+                          <span className="font-bold text-green-600">
+                            {formatCurrency(product.salePrice)}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            Est: {product.stock}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </CardContent>
@@ -1098,6 +1120,7 @@ export default function POSPage() {
                     key={`${item.product.id}-${item.size}`}
                     className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg"
                   >
+                    <ProductImage src={item.product.image} name={item.product.name} />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">
                         {item.product.name}

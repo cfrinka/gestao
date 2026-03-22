@@ -15,6 +15,7 @@ export interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  image?: string;
   createdAt: Date;
   updatedAt: Date;
 }
