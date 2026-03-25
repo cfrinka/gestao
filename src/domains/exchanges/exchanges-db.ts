@@ -156,8 +156,14 @@ export async function createExchange(input: {
     for (const [productId, product] of Array.from(mutableProducts.entries())) {
       const productRef = adminDb.collection("products").doc(productId);
       const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
+      
+      // Recalculate total stock from sizes to ensure consistency
+      const finalStock = hasSizes
+        ? product.sizes.reduce((sum, s) => sum + Number(s.stock || 0), 0)
+        : Number(product.stock || 0);
+      
       tx.update(productRef, {
-        stock: Number(product.stock || 0),
+        stock: finalStock,
         ...(hasSizes ? { sizes: product.sizes } : {}),
         updatedAt: Timestamp.fromDate(now),
       });

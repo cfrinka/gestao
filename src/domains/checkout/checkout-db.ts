@@ -156,19 +156,23 @@ export async function processCheckout(
   for (const product of products) {
     const productRef = adminDb.collection("products").doc(product.id);
 
-    const updates: Record<string, unknown> = {
-      stock: FieldValue.increment(-product.requestedQty),
-      updatedAt: nowTs,
-    };
-
     if (product.sizes && product.sizes.length > 0) {
       const updatedSizes = product.sizes.map((s) =>
         s.size === product.requestedSize ? { ...s, stock: s.stock - product.requestedQty } : s
       );
-      updates.sizes = updatedSizes;
+      // Recalculate total stock from sizes to ensure consistency
+      const newStock = updatedSizes.reduce((sum, s) => sum + Number(s.stock || 0), 0);
+      batch.update(productRef, {
+        stock: newStock,
+        sizes: updatedSizes,
+        updatedAt: nowTs,
+      });
+    } else {
+      batch.update(productRef, {
+        stock: FieldValue.increment(-product.requestedQty),
+        updatedAt: nowTs,
+      });
     }
-
-    batch.update(productRef, updates);
   }
 
   await batch.commit();

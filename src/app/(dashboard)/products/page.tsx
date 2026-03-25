@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, generateSku } from "@/lib/utils";
-import { Plus, Pencil, Trash2, Package } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, RefreshCw, Upload, Loader2 } from "lucide-react";
 
 interface ProductSize {
   size: string;
@@ -40,11 +40,30 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  image?: string;
 }
 
 const DEFAULT_SIZES = ["TU", "P", "M", "G", "GG", "XG"];
 const PLUS_SIZES = ["GG", "XG", "G1", "G2", "G3"];
 const MARKUP_MULTIPLIER = 2.8;
+
+function ProductImage({ src, name }: { src?: string; name: string }) {
+  const [error, setError] = useState(false);
+  const seed = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const fallbackSrc = `https://picsum.photos/seed/${seed}/100/100`;
+  const imageSrc = error || !src ? fallbackSrc : src;
+  
+  return (
+    <div className="w-12 h-12 rounded overflow-hidden bg-gray-100 flex items-center justify-center">
+      <img
+        src={imageSrc}
+        alt={name}
+        className="w-full h-full object-cover"
+        onError={() => setError(true)}
+      />
+    </div>
+  );
+}
 
 function normalizeSizeLabel(value: string): string {
   return value.trim().toUpperCase() === "PP" ? "TU" : value;
@@ -86,6 +105,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
@@ -94,6 +114,7 @@ export default function ProductsPage() {
     salePrice: "",
     stock: "0",
     sizes: DEFAULT_SIZES.map(size => ({ size, stock: 0 })),
+    image: "",
   });
 
   useEffect(() => {
@@ -224,6 +245,7 @@ export default function ProductsPage() {
       sizes: product.sizes?.length > 0 
         ? normalizeProductSizes(product.sizes)
         : (product.plusSized === true ? PLUS_SIZES : DEFAULT_SIZES).map(size => ({ size, stock: 0 })),
+      image: product.image || "",
     });
     setDialogOpen(true);
   };
@@ -238,6 +260,7 @@ export default function ProductsPage() {
       salePrice: "",
       stock: "0",
       sizes: DEFAULT_SIZES.map(size => ({ size, stock: 0 })),
+      image: "",
     });
   };
 
@@ -252,6 +275,80 @@ export default function ProductsPage() {
     resetForm();
     setFormData(prev => ({ ...prev, sku: generateSku() }));
     setDialogOpen(true);
+  };
+
+  const fetchRandomImage = async () => {
+    try {
+      const query = formData.name || "fashion clothing";
+      const response = await apiGet(`/api/images/random?query=${encodeURIComponent(query)}`);
+      if (response?.url) {
+        setFormData(prev => ({ ...prev, image: response.url }));
+      }
+    } catch {
+      toast({ title: "Erro ao buscar imagem", variant: "destructive" });
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    if (!allowedTypes.includes(file.type)) {
+      toast({ title: "Tipo de arquivo inválido", description: "Use JPEG, PNG, WebP ou GIF", variant: "destructive" });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "Arquivo muito grande", description: "Máximo 5MB", variant: "destructive" });
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      const { auth } = await import("@/lib/firebase");
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        throw new Error("Não autenticado");
+      }
+
+      const formDataUpload = new FormData();
+      formDataUpload.append("file", file);
+      if (editingProduct?.id) {
+        formDataUpload.append("productId", editingProduct.id);
+      }
+
+      const response = await fetch("/api/images/upload", {
+        method: "POST",
+        body: formDataUpload,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Erro ao fazer upload");
+      }
+
+      const data = await response.json();
+      if (data?.url) {
+        setFormData(prev => ({ ...prev, image: data.url }));
+        toast({ title: "Imagem enviada com sucesso!" });
+      }
+    } catch (error) {
+      toast({ 
+        title: "Erro ao enviar imagem", 
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive" 
+      });
+    } finally {
+      setUploadingImage(false);
+      // Reset input
+      e.target.value = "";
+    }
   };
 
   const migratePlusSized = async () => {
@@ -421,6 +518,55 @@ export default function ProductsPage() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label>Imagem do Produto</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="URL da imagem ou faça upload"
+                    value={formData.image}
+                    onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                    className="flex-1"
+                  />
+                  <input
+                    type="file"
+                    id="image-upload"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                    disabled={uploadingImage}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => document.getElementById("image-upload")?.click()}
+                    disabled={uploadingImage}
+                    title="Fazer upload de imagem"
+                  >
+                    {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={fetchRandomImage}
+                    title="Gerar imagem aleatória"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+                {formData.image && (
+                  <div className="mt-2 relative w-24 h-24 rounded border overflow-hidden">
+                    <img
+                      src={formData.image}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="flex justify-end gap-2">
                 <Button
                   type="button"
@@ -465,6 +611,7 @@ export default function ProductsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-16">Imagem</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>SKU</TableHead>
                   <TableHead>Plus</TableHead>
@@ -477,6 +624,9 @@ export default function ProductsPage() {
               <TableBody>
                 {filteredProducts.map((product) => (
                   <TableRow key={product.id}>
+                    <TableCell>
+                      <ProductImage src={product.image} name={product.name} />
+                    </TableCell>
                     <TableCell className="font-medium">{product.name}</TableCell>
                     <TableCell>{product.sku}</TableCell>
                     <TableCell>
