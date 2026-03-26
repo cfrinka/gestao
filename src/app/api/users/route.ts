@@ -39,6 +39,9 @@ export async function POST(request: NextRequest) {
         email,
         name,
         role,
+        isActive: true,
+        deactivatedAt: null,
+        deactivatedBy: null,
         createdAt: Timestamp.fromDate(now),
         updatedAt: Timestamp.fromDate(now),
       });
@@ -56,5 +59,83 @@ export async function POST(request: NextRequest) {
       );
     },
     { roles: ["ADMIN"], operationName: "Users POST" }
+  );
+}
+
+export async function PUT(request: NextRequest) {
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest }) => {
+      const body = await authorizedRequest.json();
+      const { id, role } = body as { id?: string; role?: string };
+
+      if (!id || !role) {
+        return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+      }
+
+      if (role !== "ADMIN" && role !== "CASHIER") {
+        return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+      }
+
+      const userRef = adminDb.collection("users").doc(id);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      const now = new Date();
+      await userRef.update({
+        role,
+        updatedAt: Timestamp.fromDate(now),
+      });
+
+      const updatedData = userSnap.data() as { email?: string; name?: string };
+      return NextResponse.json({
+        id,
+        email: updatedData?.email || "",
+        name: updatedData?.name || "",
+        role,
+        updatedAt: now,
+      });
+    },
+    { roles: ["ADMIN"], operationName: "Users PUT" }
+  );
+}
+
+export async function DELETE(request: NextRequest) {
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest, user }) => {
+      const { searchParams } = new URL(authorizedRequest.url);
+      const id = searchParams.get("id");
+
+      if (!id) {
+        return NextResponse.json({ error: "Missing user id" }, { status: 400 });
+      }
+
+      if (id === user.uid) {
+        return NextResponse.json({ error: "You cannot deactivate your own user" }, { status: 400 });
+      }
+
+      const userRef = adminDb.collection("users").doc(id);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+
+      const now = new Date();
+      await Promise.all([
+        userRef.update({
+          isActive: false,
+          deactivatedAt: Timestamp.fromDate(now),
+          deactivatedBy: user.uid,
+          updatedAt: Timestamp.fromDate(now),
+        }),
+        adminAuth.updateUser(id, { disabled: true }),
+      ]);
+
+      return NextResponse.json({ ok: true });
+    },
+    { roles: ["ADMIN"], operationName: "Users DELETE" }
   );
 }

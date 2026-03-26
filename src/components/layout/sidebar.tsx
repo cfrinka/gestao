@@ -19,6 +19,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+interface SidebarProps {
+  mobile?: boolean;
+  onNavigate?: () => void;
+}
+
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["ADMIN", "CASHIER"] },
   { name: "PDV", href: "/pos", icon: ShoppingCart, roles: ["ADMIN", "CASHIER"] },
@@ -35,7 +40,7 @@ const navigation = [
   { name: "Configurações", href: "/settings", icon: Settings, roles: ["ADMIN"] },
 ];
 
-export function Sidebar() {
+export function Sidebar({ mobile = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const { userData } = useAuth();
   const userRole = userData?.role || "CASHIER";
@@ -44,8 +49,10 @@ export function Sidebar() {
     item.roles.includes(userRole)
   );
 
+  const wrapperClassName = mobile ? "flex w-64 flex-col h-full" : "hidden md:flex md:w-64 md:flex-col";
+
   return (
-    <div className="hidden md:flex md:w-64 md:flex-col">
+    <div className={wrapperClassName}>
       <div className="flex flex-col flex-grow pt-5 bg-[#2A5473] overflow-y-auto">
         <div className="flex items-center flex-shrink-0 px-4 gap-2">
           <Store className="h-8 w-8 text-white" />
@@ -59,6 +66,7 @@ export function Sidebar() {
                 <Link
                   key={item.name}
                   href={item.href}
+                  onClick={onNavigate}
                   className={cn(
                     isActive
                       ? "bg-[#355444] text-white"

@@ -44,3 +44,6 @@ db-admin.ts
 
 # Local scripts
 scripts/seed.ts
+
+# Local deployment notes (contains sensitive data)
+DEPLOYMENT.md

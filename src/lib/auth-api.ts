@@ -22,6 +22,10 @@ export async function verifyAuth(request: NextRequest): Promise<AuthUser | null>
     const userDoc = await adminDb.collection("users").doc(decodedToken.uid).get();
     const userData = userDoc.data();
 
+    if (userData?.isActive === false) {
+      return null;
+    }
+
     const rawRole = userData?.role || "CASHIER";
     const normalizedRole = rawRole === "OWNER" ? "ADMIN" : rawRole;
     
