@@ -62,13 +62,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Make the file publicly accessible
-    await fileRef.makePublic();
+    const expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 365 * 10;
+    const [readUrl] = await fileRef.getSignedUrl({
+      action: "read",
+      expires: expiresAt,
+    });
 
-    // Get the public URL
-    const publicUrl = `https://storage.googleapis.com/${bucketName}/${filename}`;
-
-    return NextResponse.json({ url: publicUrl });
+    return NextResponse.json({ url: readUrl });
   } catch (error) {
     console.error("Error uploading image:", error);
     const message = error instanceof Error ? error.message : "Failed to upload image";
