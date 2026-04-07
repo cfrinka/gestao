@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { 
+  applyCashRegisterAdjustment,
   getOpenCashRegister, 
   openCashRegister, 
   closeCashRegister, 
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
-      const { action, openingBalance, closingBalance } = body;
+      const { action, openingBalance, closingBalance, amount, note } = body;
 
       if (action === "open") {
         const existingRegister = await getOpenCashRegister(user.uid);
@@ -53,6 +54,24 @@ export async function POST(request: NextRequest) {
           register: closedRegister,
           orders,
         });
+      }
+
+      if (action === "supply" || action === "withdrawal") {
+        const register = await getOpenCashRegister(user.uid);
+        if (!register) {
+          return NextResponse.json({ error: "Nenhum caixa aberto" }, { status: 400 });
+        }
+
+        const updatedRegister = await applyCashRegisterAdjustment({
+          registerId: register.id,
+          type: action === "supply" ? "SUPPLY" : "WITHDRAWAL",
+          amount: Number(amount || 0),
+          note: typeof note === "string" ? note : undefined,
+          actorId: user.uid,
+          actorRole: user.role,
+        });
+
+        return NextResponse.json({ register: updatedRegister });
       }
 
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });

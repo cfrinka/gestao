@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, Scan, Printer } from "lucide-react";
+import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, Scan, ArrowDownCircle, ArrowUpCircle } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Label } from "@/components/ui/label";
@@ -61,6 +61,8 @@ interface CashRegister {
   totalDebit: number;
   totalCredit: number;
   totalPix: number;
+  totalCashSupply?: number;
+  totalCashWithdrawal?: number;
   salesCount: number;
   totalExchangeDifferenceIn?: number;
   exchangeDifferenceCount?: number;
@@ -178,6 +180,10 @@ export default function POSPage() {
   const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
   const [showOpenRegisterModal, setShowOpenRegisterModal] = useState(false);
   const [showCloseRegisterModal, setShowCloseRegisterModal] = useState(false);
+  const [showCashAdjustmentModal, setShowCashAdjustmentModal] = useState(false);
+  const [cashAdjustmentType, setCashAdjustmentType] = useState<"supply" | "withdrawal">("supply");
+  const [cashAdjustmentAmount, setCashAdjustmentAmount] = useState<string>("");
+  const [cashAdjustmentNote, setCashAdjustmentNote] = useState<string>("");
   const [showClosingReport, setShowClosingReport] = useState(false);
   const [openingBalance, setOpeningBalance] = useState<number>(0);
   const [closingBalance, setClosingBalance] = useState<number>(0);
@@ -223,6 +229,42 @@ export default function POSPage() {
     } catch {
       // Clients may not be accessible for cashiers
       setClients([]);
+    }
+  };
+
+  const openCashAdjustmentModal = (type: "supply" | "withdrawal") => {
+    setCashAdjustmentType(type);
+    setCashAdjustmentAmount("");
+    setCashAdjustmentNote("");
+    setShowCashAdjustmentModal(true);
+  };
+
+  const handleCashAdjustment = async () => {
+    const amount = Number(cashAdjustmentAmount || 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({ title: "Informe um valor válido", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const data = await apiPost("/api/cash-register", {
+        action: cashAdjustmentType,
+        amount,
+        note: cashAdjustmentNote,
+      });
+      setCashRegister(data.register || null);
+      setShowCashAdjustmentModal(false);
+      setCashAdjustmentAmount("");
+      setCashAdjustmentNote("");
+      toast({
+        title: cashAdjustmentType === "supply" ? "Troco adicionado" : "Sangria registrada",
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao registrar movimentação",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
     }
   };
   
@@ -845,46 +887,6 @@ export default function POSPage() {
     receiptWindow.document.close();
   };
 
-  const handlePrintTest = () => {
-    const testItems: CartItem[] = [
-      {
-        product: {
-          id: "test-item-1",
-          name: "Blusa teste",
-          sku: "TESTE-001",
-          salePrice: 49.9,
-          stock: 0,
-          sizes: [],
-        },
-        size: "M",
-        quantity: 1,
-      },
-      {
-        product: {
-          id: "test-item-2",
-          name: "Calca jeans teste",
-          sku: "TESTE-002",
-          salePrice: 89.9,
-          stock: 0,
-          sizes: [],
-        },
-        size: "42",
-        quantity: 1,
-      },
-    ];
-    const testTotal = testItems.reduce((sum, item) => sum + item.product.salePrice * item.quantity, 0);
-    const testDiscount = 10;
-    const testFinalTotal = Math.max(0, testTotal - testDiscount);
-
-    printReceipt("TESTE-80MM", {
-      isTest: true,
-      items: testItems,
-      payments: [{ method: "PIX", amount: testFinalTotal }],
-      totalAmount: testFinalTotal,
-      discount: testDiscount,
-    });
-  };
-
   const handlePayLater = async () => {
     if (cart.length === 0) {
       toast({ title: "Carrinho vazio", variant: "destructive" });
@@ -1008,10 +1010,6 @@ export default function POSPage() {
             <p className="text-gray-500">Ponto de Venda</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" onClick={handlePrintTest}>
-              <Printer className="h-4 w-4 mr-2" />
-              Print test
-            </Button>
             {cashRegister ? (
               <>
                 <div className="text-right text-sm">
@@ -1022,6 +1020,14 @@ export default function POSPage() {
                     Vendas: {cashRegister.salesCount} | Total: {formatCurrency(cashRegister.totalSales)}
                   </p>
                 </div>
+                <Button variant="outline" onClick={() => openCashAdjustmentModal("supply")}>
+                  <ArrowUpCircle className="h-4 w-4 mr-2" />
+                  Adicionar Troco
+                </Button>
+                <Button variant="outline" onClick={() => openCashAdjustmentModal("withdrawal")}>
+                  <ArrowDownCircle className="h-4 w-4 mr-2" />
+                  Sangria
+                </Button>
                 <Button variant="destructive" onClick={closeRegisterModal}>
                   <Lock className="h-4 w-4 mr-2" />
                   Fechar Caixa
@@ -1419,6 +1425,45 @@ export default function POSPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={showCashAdjustmentModal} onOpenChange={setShowCashAdjustmentModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{cashAdjustmentType === "supply" ? "Adicionar Troco" : "Registrar Sangria"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cash-adjustment-amount">Valor (R$)</Label>
+              <Input
+                id="cash-adjustment-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={cashAdjustmentAmount}
+                onChange={(e) => setCashAdjustmentAmount(e.target.value)}
+                placeholder="0,00"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cash-adjustment-note">Observação (opcional)</Label>
+              <Input
+                id="cash-adjustment-note"
+                value={cashAdjustmentNote}
+                onChange={(e) => setCashAdjustmentNote(e.target.value)}
+                placeholder="Ex.: Troco para início do turno"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowCashAdjustmentModal(false)}>
+                Cancelar
+              </Button>
+              <Button className="flex-1" onClick={handleCashAdjustment}>
+                Confirmar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Size Selection Dialog */}
       <Dialog open={!!selectedProduct} onOpenChange={() => setSelectedProduct(null)}>
         <DialogContent className="sm:max-w-md">
@@ -1542,10 +1587,25 @@ export default function POSPage() {
                   <span>Dinheiro Recebido:</span>
                   <span className="font-medium">{formatCurrency(cashRegister.totalCash)}</span>
                 </div>
+                <div className="flex justify-between">
+                  <span>Adição de Troco:</span>
+                  <span className="font-medium text-green-600">{formatCurrency(cashRegister.totalCashSupply || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Sangrias:</span>
+                  <span className="font-medium text-red-600">-{formatCurrency(cashRegister.totalCashWithdrawal || 0)}</span>
+                </div>
                 <Separator />
                 <div className="flex justify-between font-bold">
                   <span>Saldo Esperado:</span>
-                  <span>{formatCurrency(cashRegister.openingBalance + cashRegister.totalCash)}</span>
+                  <span>
+                    {formatCurrency(
+                      cashRegister.openingBalance +
+                        cashRegister.totalCash +
+                        (cashRegister.totalCashSupply || 0) -
+                        (cashRegister.totalCashWithdrawal || 0)
+                    )}
+                  </span>
                 </div>
               </div>
             )}
@@ -1699,8 +1759,15 @@ export default function POSPage() {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span>Saldo Esperado (Inicial + Dinheiro):</span>
-                    <span className="font-medium">{formatCurrency(closingReportData.register.openingBalance + closingReportData.register.totalCash)}</span>
+                    <span>Saldo Esperado (Inicial + Dinheiro + Troco - Sangria):</span>
+                    <span className="font-medium">
+                      {formatCurrency(
+                        closingReportData.register.openingBalance +
+                          closingReportData.register.totalCash +
+                          (closingReportData.register.totalCashSupply || 0) -
+                          (closingReportData.register.totalCashWithdrawal || 0)
+                      )}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span>Saldo Informado:</span>
@@ -1709,8 +1776,25 @@ export default function POSPage() {
                   <Separator />
                   <div className="flex justify-between text-sm font-bold">
                     <span>Diferença:</span>
-                    <span className={(closingReportData.register.closingBalance || 0) - (closingReportData.register.openingBalance + closingReportData.register.totalCash) < 0 ? "text-red-600" : "text-green-600"}>
-                      {formatCurrency((closingReportData.register.closingBalance || 0) - (closingReportData.register.openingBalance + closingReportData.register.totalCash))}
+                    <span
+                      className={
+                        (closingReportData.register.closingBalance || 0) -
+                          (closingReportData.register.openingBalance +
+                            closingReportData.register.totalCash +
+                            (closingReportData.register.totalCashSupply || 0) -
+                            (closingReportData.register.totalCashWithdrawal || 0)) <
+                        0
+                          ? "text-red-600"
+                          : "text-green-600"
+                      }
+                    >
+                      {formatCurrency(
+                        (closingReportData.register.closingBalance || 0) -
+                          (closingReportData.register.openingBalance +
+                            closingReportData.register.totalCash +
+                            (closingReportData.register.totalCashSupply || 0) -
+                            (closingReportData.register.totalCashWithdrawal || 0))
+                      )}
                     </span>
                   </div>
                 </CardContent>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAuth } from "@/contexts/auth-context";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,7 +97,6 @@ function normalizeProductSizes(sizes: ProductSize[]): ProductSize[] {
 }
 
 export default function ProductsPage() {
-  const { userData } = useAuth();
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -151,44 +149,6 @@ export default function ProductsPage() {
       setProducts([]);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const migratePPToTU = async () => {
-    if (!confirm('Isso vai substituir o tamanho PP por TU em produtos e históricos. Continuar?')) return;
-
-    try {
-      const result = await apiPost("/api/admin/migrate-pp-to-tu", { apply: true, limitPerCollection: 5000 });
-      toast({
-        title: "Migração PP → TU concluída",
-        description: `Atualizados: ${result?.totalUpdated ?? 0} | Escaneados: ${result?.totalScanned ?? 0}`,
-      });
-      fetchProducts();
-    } catch (error) {
-      toast({
-        title: "Erro ao migrar PP para TU",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const migratePlusSizeSizes = async () => {
-    if (!confirm('Isso vai ajustar os tamanhos para produtos Plus Size (P→G1, M→G2, G→G3). Continuar?')) return;
-
-    try {
-      const result = await apiPost("/api/admin/migrate-plus-size-sizes", { apply: true, limit: 500 });
-      toast({
-        title: "Ajuste concluído",
-        description: `Atualizados: ${result?.updated ?? 0} | Escaneados: ${result?.scanned ?? 0}`,
-      });
-      fetchProducts();
-    } catch (error) {
-      toast({
-        title: "Erro ao ajustar tamanhos Plus Size",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
     }
   };
 
@@ -351,25 +311,6 @@ export default function ProductsPage() {
     }
   };
 
-  const migratePlusSized = async () => {
-    if (!confirm('Isso vai marcar como "Plus Size" todos os produtos cujo nome contém "Plus". Continuar?')) return;
-
-    try {
-      const result = await apiPost("/api/admin/migrate-plus-sized", { apply: true, limit: 500 });
-      toast({
-        title: "Migração concluída",
-        description: `Atualizados: ${result?.updated ?? 0} | Escaneados: ${result?.scanned ?? 0}`,
-      });
-      fetchProducts();
-    } catch (error) {
-      toast({
-        title: "Erro ao migrar Plus Size",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
-    }
-  };
-
   const normalizedSearch = search.trim().toLowerCase();
   const filteredProducts = normalizedSearch
     ? products.filter((p) => {
@@ -387,19 +328,6 @@ export default function ProductsPage() {
           <p className="text-gray-500">Gerencie os produtos da loja</p>
         </div>
         <div className="flex items-center gap-2">
-          {userData?.role === "ADMIN" && (
-            <>
-              <Button variant="outline" onClick={migratePlusSized}>
-                Migrar Plus Size
-              </Button>
-              <Button variant="outline" onClick={migratePlusSizeSizes}>
-                Ajustar tamanhos Plus
-              </Button>
-              <Button variant="outline" onClick={migratePPToTU}>
-                Migrar PP → TU
-              </Button>
-            </>
-          )}
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={openNewDialog}>

@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Pencil, Trash2, Users, CreditCard, Eye, RefreshCw, Printer } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, CreditCard, Eye, Printer } from "lucide-react";
 
 interface Order {
   id: string;
@@ -58,7 +58,6 @@ export default function ClientsPage() {
   const { toast } = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  const [migratingFiado, setMigratingFiado] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -307,50 +306,6 @@ export default function ClientsPage() {
     setDialogOpen(true);
   };
 
-  const handleMigrateFiado = async () => {
-    if (migratingFiado) return;
-
-    try {
-      setMigratingFiado(true);
-
-      const dryRun = await apiPost("/api/admin/migrate-fiado", { apply: false, limit: 200 });
-      const toUpdate = typeof dryRun?.toUpdate === "number" ? dryRun.toUpdate : 0;
-
-      if (toUpdate <= 0) {
-        toast({ title: "Migração FIADO", description: "Nenhum pedido para atualizar." });
-        return;
-      }
-
-      const ok = confirm(
-        `Migração FIADO: ${toUpdate} pedido(s) serão atualizados.\n\nDeseja aplicar agora?`
-      );
-      if (!ok) return;
-
-      const applied = await apiPost("/api/admin/migrate-fiado", { apply: true, limit: 200 });
-      const updated = typeof applied?.updated === "number" ? applied.updated : 0;
-      const errors = typeof applied?.errors === "number" ? applied.errors : 0;
-
-      toast({
-        title: "Migração FIADO concluída",
-        description: `Atualizados: ${updated}. Erros: ${errors}.`,
-      });
-
-      if (detailsOpen && selectedClient) {
-        const refreshed = await apiGet(`/api/clients/${selectedClient.id}`);
-        setSelectedClient(refreshed);
-      }
-      fetchClients();
-    } catch (error) {
-      toast({
-        title: "Erro na migração FIADO",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
-    } finally {
-      setMigratingFiado(false);
-    }
-  };
-
   // Only ADMIN can access this page
   if (userData?.role === "CASHIER") {
     return (
@@ -370,10 +325,6 @@ export default function ClientsPage() {
           <p className="text-gray-500">Gerencie clientes e pagamentos pendentes</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleMigrateFiado} disabled={migratingFiado}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${migratingFiado ? "animate-spin" : ""}`} />
-            Migrar FIADO
-          </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={openNewDialog}>

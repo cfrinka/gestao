@@ -204,6 +204,8 @@ export interface CashRegister {
   totalDebit: number;
   totalCredit: number;
   totalPix: number;
+  totalCashSupply: number;
+  totalCashWithdrawal: number;
   salesCount: number;
   totalExchangeDifferenceIn: number;
   exchangeDifferenceCount: number;

@@ -44,6 +44,7 @@ import {
 } from "@/domains/products/products-db";
 import { cancelOrder as cancelOrderDomain, getOrders as getOrdersDomain, updateOrder as updateOrderDomain } from "@/domains/orders/orders-db";
 import {
+  applyCashRegisterAdjustment as applyCashRegisterAdjustmentDomain,
   closeCashRegister as closeCashRegisterDomain,
   getCashRegisterOrders as getCashRegisterOrdersDomain,
   getOpenCashRegister as getOpenCashRegisterDomain,
@@ -251,6 +252,17 @@ export async function closeCashRegister(registerId: string, closingBalance: numb
 
 export async function updateCashRegisterSales(registerId: string, payments: PaymentMethod[], saleTotal: number): Promise<void> {
   return updateCashRegisterSalesDomain(registerId, payments, saleTotal);
+}
+
+export async function applyCashRegisterAdjustment(input: {
+  registerId: string;
+  type: "SUPPLY" | "WITHDRAWAL";
+  amount: number;
+  note?: string;
+  actorId: string;
+  actorRole: string;
+}): Promise<CashRegister> {
+  return applyCashRegisterAdjustmentDomain(input);
 }
 
 export async function getCashRegisterOrders(registerId: string): Promise<Order[]> {

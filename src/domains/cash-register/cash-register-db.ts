@@ -1,7 +1,17 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { CashRegister, Order, PaymentMethod } from "@/lib/db-types";
+import { HttpError } from "@/lib/api/http-errors";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { createFinancialAuditLog } from "@/domains/financial/financial-db";
+
+type CashAdjustmentType = "SUPPLY" | "WITHDRAWAL";
+
+function toCompetencyMonth(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
 
 export async function getOpenCashRegister(userId: string): Promise<CashRegister | null> {
   const snapshot = await adminDb
@@ -35,6 +45,8 @@ export async function openCashRegister(
     totalDebit: 0,
     totalCredit: 0,
     totalPix: 0,
+    totalCashSupply: 0,
+    totalCashWithdrawal: 0,
     salesCount: 0,
     totalExchangeDifferenceIn: 0,
     exchangeDifferenceCount: 0,
@@ -54,6 +66,8 @@ export async function openCashRegister(
     totalDebit: 0,
     totalCredit: 0,
     totalPix: 0,
+    totalCashSupply: 0,
+    totalCashWithdrawal: 0,
     salesCount: 0,
     totalExchangeDifferenceIn: 0,
     exchangeDifferenceCount: 0,
@@ -90,6 +104,75 @@ export async function updateCashRegisterSales(
     totalPix: FieldValue.increment(pixAmount),
     salesCount: FieldValue.increment(1),
   });
+}
+
+export async function applyCashRegisterAdjustment(input: {
+  registerId: string;
+  type: CashAdjustmentType;
+  amount: number;
+  note?: string;
+  actorId: string;
+  actorRole: string;
+}): Promise<CashRegister> {
+  const amount = Number(input.amount || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new HttpError(400, "Valor da movimentação deve ser maior que zero");
+  }
+
+  const registerRef = adminDb.collection("cashRegisters").doc(input.registerId);
+  const now = new Date();
+
+  await adminDb.runTransaction(async (tx) => {
+    const registerSnap = await tx.get(registerRef);
+    if (!registerSnap.exists) {
+      throw new HttpError(404, "Caixa não encontrado");
+    }
+
+    const data = registerSnap.data() as {
+      status?: string;
+      openingBalance?: number;
+      totalCash?: number;
+      totalCashSupply?: number;
+      totalCashWithdrawal?: number;
+    };
+
+    if (data.status !== "OPEN") {
+      throw new HttpError(400, "Caixa não está aberto");
+    }
+
+    const openingBalance = Number(data.openingBalance || 0);
+    const totalCash = Number(data.totalCash || 0);
+    const totalCashSupply = Number(data.totalCashSupply || 0);
+    const totalCashWithdrawal = Number(data.totalCashWithdrawal || 0);
+    const availableCash = openingBalance + totalCash + totalCashSupply - totalCashWithdrawal;
+
+    if (input.type === "WITHDRAWAL" && amount > availableCash) {
+      throw new HttpError(400, "Saldo em dinheiro insuficiente para sangria");
+    }
+
+    tx.update(registerRef, {
+      ...(input.type === "SUPPLY"
+        ? { totalCashSupply: FieldValue.increment(amount) }
+        : { totalCashWithdrawal: FieldValue.increment(amount) }),
+    });
+  });
+
+  await createFinancialAuditLog({
+    action: "MANUAL_ADJUSTMENT",
+    actorId: input.actorId,
+    actorRole: input.actorRole,
+    occurredAt: now,
+    competencyMonth: toCompetencyMonth(now),
+    relatedEntity: { kind: "cashRegister", id: input.registerId },
+    payload: {
+      adjustmentType: input.type,
+      amount,
+      note: input.note || null,
+    },
+  });
+
+  const updatedDoc = await registerRef.get();
+  return { id: updatedDoc.id, ...convertTimestamp<Omit<CashRegister, "id">>(updatedDoc.data()!) };
 }
 
 export async function getCashRegisterOrders(registerId: string): Promise<Order[]> {
