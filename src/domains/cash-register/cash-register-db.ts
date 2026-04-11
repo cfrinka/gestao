@@ -1,11 +1,27 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
-import type { CashRegister, Order, PaymentMethod } from "@/lib/db-types";
+import type { CashRegister, FinancialMovementPaymentMethod, Order, PaymentMethod } from "@/lib/db-types";
 import { HttpError } from "@/lib/api/http-errors";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { createFinancialAuditLog } from "@/domains/financial/financial-db";
 
 type CashAdjustmentType = "SUPPLY" | "WITHDRAWAL";
+
+type FiadoPaymentMovement = {
+  id: string;
+  type?: string;
+  amount?: number;
+  paymentMethod?: FinancialMovementPaymentMethod;
+  occurredAt?: Date;
+  metadata?: Record<string, unknown>;
+};
+
+function mapFinancialToOrderPaymentMethod(method?: FinancialMovementPaymentMethod): PaymentMethod["method"] {
+  if (method === "cash") return "DINHEIRO";
+  if (method === "pix") return "PIX";
+  if (method === "credit") return "CREDITO";
+  return "DEBITO";
+}
 
 function toCompetencyMonth(date: Date): string {
   const year = date.getFullYear();
@@ -190,8 +206,51 @@ export async function getCashRegisterOrders(registerId: string): Promise<Order[]
     .orderBy("createdAt", "desc")
     .get();
 
-  return snapshot.docs.map((doc) => ({
+  const fiadoMovementsSnapshot = await adminDb
+    .collection("financialMovements")
+    .where("occurredAt", ">=", openedAt)
+    .where("occurredAt", "<=", closedAt)
+    .orderBy("occurredAt", "desc")
+    .get();
+
+  const fiadoPaymentEntries: Order[] = fiadoMovementsSnapshot.docs
+    .map((doc) => ({
+      id: doc.id,
+      ...convertTimestamp<Record<string, unknown>>(doc.data()),
+    }) as FiadoPaymentMovement)
+    .filter((movement) => movement.type === "FIADO_PAYMENT")
+    .filter((movement) => {
+      const metadata = movement.metadata as Record<string, unknown> | undefined;
+      const movementRegisterId = String(metadata?.cashRegisterId || "").trim();
+      const movementReceiverId = String(metadata?.receivedByUserId || "").trim();
+      return movementRegisterId === registerId || movementReceiverId === registerData.userId;
+    })
+    .map((movement) => {
+      const metadata = movement.metadata as Record<string, unknown> | undefined;
+      const amount = Number(movement.amount || 0);
+      const clientName = String(metadata?.clientName || "Cliente").trim() || "Cliente";
+      const paymentMethod = mapFinancialToOrderPaymentMethod(
+        movement.paymentMethod as FinancialMovementPaymentMethod | undefined
+      );
+      const occurredAt = movement.occurredAt instanceof Date ? movement.occurredAt : new Date();
+
+      return {
+        id: `fiado-payment-${movement.id}`,
+        subtotal: amount,
+        discount: 0,
+        totalAmount: amount,
+        payments: [{ method: paymentMethod, amount }],
+        clientName: `pagamento ${clientName}`,
+        createdAt: occurredAt,
+      } as Order;
+    });
+
+  const orders = snapshot.docs.map((doc) => ({
     id: doc.id,
     ...convertTimestamp<Omit<Order, "id">>(doc.data()),
   }));
+
+  return [...orders, ...fiadoPaymentEntries].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 }

@@ -164,6 +164,12 @@ export async function applyFiadoPayment(
       throw new Error("Order does not belong to this client");
     }
 
+    const clientSnap = await tx.get(clientRef);
+    if (!clientSnap.exists) {
+      throw new Error("Client not found");
+    }
+    const clientName = String(clientSnap.data()?.name || order.clientName || "Cliente").trim();
+
     const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : order.paidAt ? order.totalAmount : 0;
     const currentRemaining =
       typeof order.remainingAmount === "number" ? order.remainingAmount : order.paidAt ? 0 : order.totalAmount;
@@ -198,6 +204,28 @@ export async function applyFiadoPayment(
       updatedAt: nowTs,
     });
 
+    const safeReceivedByUserId = String(receivedByUserId || "").trim();
+    let cashRegisterId: string | null = null;
+    if (safeReceivedByUserId) {
+      const openRegisterQuery = adminDb
+        .collection("cashRegisters")
+        .where("userId", "==", safeReceivedByUserId)
+        .where("status", "==", "OPEN")
+        .limit(1);
+      const openRegisterSnapshot = await tx.get(openRegisterQuery);
+      if (!openRegisterSnapshot.empty) {
+        const registerDoc = openRegisterSnapshot.docs[0];
+        const paymentField = mapOrderPaymentMethodToCashRegisterField(method);
+        cashRegisterId = registerDoc.id;
+
+        tx.update(registerDoc.ref, {
+          totalSales: FieldValue.increment(appliedAmount),
+          [paymentField]: FieldValue.increment(appliedAmount),
+          salesCount: FieldValue.increment(1),
+        });
+      }
+    }
+
     const movementRef = adminDb.collection("financialMovements").doc();
     tx.set(movementRef, {
       type: "FIADO_PAYMENT",
@@ -210,27 +238,11 @@ export async function applyFiadoPayment(
       createdBy: clientId,
       metadata: {
         clientId,
+        clientName,
+        receivedByUserId: safeReceivedByUserId || null,
+        cashRegisterId,
       },
     });
-
-    const safeReceivedByUserId = String(receivedByUserId || "").trim();
-    if (safeReceivedByUserId) {
-      const openRegisterQuery = adminDb
-        .collection("cashRegisters")
-        .where("userId", "==", safeReceivedByUserId)
-        .where("status", "==", "OPEN")
-        .limit(1);
-      const openRegisterSnapshot = await tx.get(openRegisterQuery);
-      if (!openRegisterSnapshot.empty) {
-        const registerDoc = openRegisterSnapshot.docs[0];
-        const paymentField = mapOrderPaymentMethodToCashRegisterField(method);
-
-        tx.update(registerDoc.ref, {
-          totalSales: FieldValue.increment(appliedAmount),
-          [paymentField]: FieldValue.increment(appliedAmount),
-        });
-      }
-    }
   });
 }
 
