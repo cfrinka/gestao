@@ -233,3 +233,111 @@ export async function applyFiadoPayment(
     }
   });
 }
+
+export async function removeFiadoOrderItem(
+  clientId: string,
+  orderId: string,
+  orderItemId: string
+): Promise<void> {
+  const orderRef = adminDb.collection("orders").doc(orderId);
+  const clientRef = adminDb.collection("clients").doc(clientId);
+  const orderItemRef = adminDb.collection("orderItems").doc(orderItemId);
+
+  await adminDb.runTransaction(async (tx) => {
+    const [orderSnap, clientSnap, orderItemSnap] = await Promise.all([
+      tx.get(orderRef),
+      tx.get(clientRef),
+      tx.get(orderItemRef),
+    ]);
+
+    if (!orderSnap.exists) {
+      throw new Error("Order not found");
+    }
+    if (!clientSnap.exists) {
+      throw new Error("Client not found");
+    }
+    if (!orderItemSnap.exists) {
+      throw new Error("Order item not found");
+    }
+
+    const order = convertTimestamp<Order>(orderSnap.data()!);
+    if (!order.isPaidLater) {
+      throw new Error("Order is not a FIADO order");
+    }
+    if (order.clientId !== clientId) {
+      throw new Error("Order does not belong to this client");
+    }
+
+    const orderItem = convertTimestamp<OrderItem>(orderItemSnap.data()!);
+    if (orderItem.orderId !== orderId) {
+      throw new Error("Order item does not belong to this order");
+    }
+
+    const productRef = adminDb.collection("products").doc(orderItem.productId);
+    const productSnap = await tx.get(productRef);
+
+    const removedRevenue = Number(orderItem.totalRevenue || orderItem.unitPrice * orderItem.quantity || 0);
+    const removedCost = Number(orderItem.totalCost || orderItem.unitCost * orderItem.quantity || 0);
+
+    const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : order.paidAt ? order.totalAmount : 0;
+    const currentRemaining =
+      typeof order.remainingAmount === "number" ? order.remainingAmount : order.paidAt ? 0 : order.totalAmount;
+    const currentSubtotal =
+      typeof order.subtotal === "number" ? order.subtotal : order.totalAmount + Number(order.discount || 0);
+    const currentCogs = Number(order.cogsTotal || 0);
+
+    const nextSubtotal = Math.max(0, currentSubtotal - removedRevenue);
+    const nextTotal = Math.max(0, Number(order.totalAmount || 0) - removedRevenue);
+    const nextCogs = Math.max(0, currentCogs - removedCost);
+    const nextPaid = Math.min(currentPaid, nextTotal);
+    const nextRemaining = Math.max(0, nextTotal - nextPaid);
+    const clientBalanceDelta = nextRemaining - currentRemaining;
+    const nowTs = Timestamp.fromDate(new Date());
+
+    tx.update(orderRef, {
+      subtotal: nextSubtotal,
+      totalAmount: nextTotal,
+      cogsTotal: nextCogs,
+      amountPaid: nextPaid,
+      remainingAmount: nextRemaining,
+      paidAt: nextRemaining === 0 ? nowTs : null,
+    });
+
+    tx.update(clientRef, {
+      balance: FieldValue.increment(clientBalanceDelta),
+      updatedAt: nowTs,
+    });
+
+    if (productSnap.exists) {
+      const productData = productSnap.data() as {
+        stock?: number;
+        sizes?: Array<{ size: string; stock: number }>;
+      };
+
+      const safeSize = String(orderItem.size || "").trim();
+      const sizes = Array.isArray(productData.sizes) ? productData.sizes : [];
+      const sizeIndex = safeSize ? sizes.findIndex((entry) => entry.size === safeSize) : -1;
+      let nextSizes = sizes;
+
+      if (safeSize) {
+        if (sizeIndex >= 0) {
+          nextSizes = sizes.map((entry, index) =>
+            index === sizeIndex
+              ? { ...entry, stock: Number(entry.stock || 0) + orderItem.quantity }
+              : entry
+          );
+        } else {
+          nextSizes = [...sizes, { size: safeSize, stock: orderItem.quantity }];
+        }
+      }
+
+      tx.update(productRef, {
+        stock: FieldValue.increment(orderItem.quantity),
+        ...(safeSize ? { sizes: nextSizes } : {}),
+        updatedAt: nowTs,
+      });
+    }
+
+    tx.delete(orderItemRef);
+  });
+}

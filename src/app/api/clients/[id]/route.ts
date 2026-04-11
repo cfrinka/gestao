@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClient, updateClient, deleteClient, getClientPendingOrders, updateClientBalance, markOrderAsPaid, applyFiadoPayment } from "@/lib/db";
+import {
+  getClient,
+  updateClient,
+  deleteClient,
+  getClientPendingOrders,
+  updateClientBalance,
+  markOrderAsPaid,
+  applyFiadoPayment,
+  removeFiadoOrderItem,
+} from "@/lib/db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";
@@ -82,7 +91,7 @@ export async function PATCH(
       }
 
       const body = await authorizedRequest.json();
-      const { action, orderId, amount, method } = body;
+      const { action, orderId, orderItemId, amount, method } = body;
 
       if (action === "pay_order" && orderId) {
         const pendingOrders = await getClientPendingOrders(params.id);
@@ -113,6 +122,13 @@ export async function PATCH(
         await updateClientBalance(params.id, amount);
         const updatedClient = await getClient(params.id);
         return NextResponse.json(updatedClient);
+      }
+
+      if (action === "remove_order_item" && orderId && orderItemId) {
+        await removeFiadoOrderItem(params.id, orderId, orderItemId);
+        const updatedClient = await getClient(params.id);
+        const refreshedPending = await getClientPendingOrders(params.id);
+        return NextResponse.json({ ...updatedClient, pendingOrders: refreshedPending });
       }
 
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });

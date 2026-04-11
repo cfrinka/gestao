@@ -21,6 +21,7 @@ import {
   getClientPendingOrders as getClientPendingOrdersDomain,
   getClients as getClientsDomain,
   markOrderAsPaid as markOrderAsPaidDomain,
+  removeFiadoOrderItem as removeFiadoOrderItemDomain,
   updateClient as updateClientDomain,
   updateClientBalance as updateClientBalanceDomain,
 } from "@/domains/clients/clients-db";
@@ -339,6 +340,14 @@ export async function applyFiadoPayment(
   receivedByUserId?: string
 ): Promise<void> {
   return applyFiadoPaymentDomain(clientId, orderId, amount, method, receivedByUserId);
+}
+
+export async function removeFiadoOrderItem(
+  clientId: string,
+  orderId: string,
+  orderItemId: string
+): Promise<void> {
+  return removeFiadoOrderItemDomain(clientId, orderId, orderItemId);
 }
 
 export async function getStoreSettings(): Promise<StoreSettings> {

@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Plus, Pencil, Trash2, Users, CreditCard, Eye, Printer } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, CreditCard, Eye, Printer, X } from "lucide-react";
 
 interface Order {
   id: string;
@@ -64,6 +64,7 @@ export default function ClientsPage() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [payingOrderId, setPayingOrderId] = useState<string | null>(null);
+  const [removingOrderItemId, setRemovingOrderItemId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<"DINHEIRO" | "DEBITO" | "CREDITO" | "PIX">("DINHEIRO");
   const [formData, setFormData] = useState({
@@ -82,6 +83,33 @@ export default function ClientsPage() {
       setClients([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRemoveOrderItem = async (orderId: string, orderItemId: string) => {
+    if (!selectedClient) return;
+
+    const confirmed = confirm("Remover este item do pedido? O estoque será devolvido e o saldo pendente será recalculado.");
+    if (!confirmed) return;
+
+    try {
+      setRemovingOrderItemId(orderItemId);
+      const updated = await apiPatch(`/api/clients/${selectedClient.id}`, {
+        action: "remove_order_item",
+        orderId,
+        orderItemId,
+      });
+      setSelectedClient({ ...updated, pendingOrders: updated.pendingOrders || [] });
+      toast({ title: "Item removido com sucesso" });
+      fetchClients();
+    } catch (error) {
+      toast({
+        title: "Erro ao remover item",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setRemovingOrderItemId(null);
     }
   };
 
@@ -550,11 +578,24 @@ export default function ClientsPage() {
                           {order.items && order.items.length > 0 && (
                             <div className="pt-1">
                               <p className="text-xs font-medium text-gray-700">Itens comprados:</p>
-                              <ul className="text-xs text-gray-600 list-disc pl-4 space-y-0.5">
+                              <ul className="text-xs text-gray-600 space-y-1">
                                 {order.items.map((item) => (
-                                  <li key={item.id}>
-                                    {item.quantity}x {item.productName || "Produto removido"}
-                                    {item.size ? ` (${item.size})` : ""}
+                                  <li key={item.id} className="flex items-center justify-between gap-2">
+                                    <span>
+                                      • {item.quantity}x {item.productName || "Produto removido"}
+                                      {item.size ? ` (${item.size})` : ""}
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-red-500"
+                                      title="Remover item"
+                                      disabled={removingOrderItemId === item.id}
+                                      onClick={() => handleRemoveOrderItem(order.id, item.id)}
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </Button>
                                   </li>
                                 ))}
                               </ul>
