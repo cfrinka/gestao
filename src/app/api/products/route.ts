@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
-      const { name, sku, costPrice, salePrice, stock, sizes, plusSized } = body;
+      const { name, sku, costPrice, salePrice, stock, sizes, plusSized, image } = body;
 
       if (!name || !sku || costPrice === undefined || salePrice === undefined) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
         salePrice: parseFloat(salePrice),
         stock: parseInt(stock) || 0,
         sizes: sizes || [],
+        image: image || undefined,
       });
 
       if ((product.stock || 0) > 0) {

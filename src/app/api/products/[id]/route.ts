@@ -31,7 +31,7 @@ export async function PUT(
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
-      const { name, sku, costPrice, salePrice, stock, sizes, plusSized } = body;
+      const { name, sku, costPrice, salePrice, stock, sizes, plusSized, image } = body;
 
       const existingProduct = await getProduct(params.id);
 
@@ -57,6 +57,7 @@ export async function PUT(
         salePrice: salePrice !== undefined ? parseFloat(salePrice) : existingProduct.salePrice,
         stock: nextStock,
         sizes: sizes !== undefined ? sizes : existingProduct.sizes,
+        image: image !== undefined ? image : existingProduct.image,
       });
 
       const stockIncrease = Math.max(0, (nextStock || 0) - (existingProduct.stock || 0));
