@@ -227,6 +227,9 @@ export async function applyFiadoPayment(
     }
 
     const movementRef = adminDb.collection("financialMovements").doc();
+    const orderDate = order.createdAt instanceof Date ? order.createdAt : new Date();
+    const orderDateStr = orderDate.toLocaleDateString("pt-BR");
+    const description = `Pagamento compra ${orderDateStr} de ${clientName}`;
     tx.set(movementRef, {
       type: "FIADO_PAYMENT",
       direction: "IN",
@@ -239,6 +242,8 @@ export async function applyFiadoPayment(
       metadata: {
         clientId,
         clientName,
+        description,
+        orderDate: orderDateStr,
         receivedByUserId: safeReceivedByUserId || null,
         cashRegisterId,
       },

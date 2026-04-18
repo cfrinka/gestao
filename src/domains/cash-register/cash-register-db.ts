@@ -228,7 +228,7 @@ export async function getCashRegisterOrders(registerId: string): Promise<Order[]
     .map((movement) => {
       const metadata = movement.metadata as Record<string, unknown> | undefined;
       const amount = Number(movement.amount || 0);
-      const clientName = String(metadata?.clientName || "Cliente").trim() || "Cliente";
+      const description = String(metadata?.description || "Pagamento").trim();
       const paymentMethod = mapFinancialToOrderPaymentMethod(
         movement.paymentMethod as FinancialMovementPaymentMethod | undefined
       );
@@ -240,7 +240,7 @@ export async function getCashRegisterOrders(registerId: string): Promise<Order[]
         discount: 0,
         totalAmount: amount,
         payments: [{ method: paymentMethod, amount }],
-        clientName: `pagamento ${clientName}`,
+        clientName: description,
         createdAt: occurredAt,
       } as Order;
     });
