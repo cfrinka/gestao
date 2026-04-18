@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { apiGet } from "@/lib/api-client";
+import { apiGet, apiPost } from "@/lib/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -11,9 +11,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Boxes, TrendingUp } from "lucide-react";
+import { Boxes, TrendingUp, Settings2 } from "lucide-react";
 
 interface ProductSize {
   size: string;
@@ -34,6 +45,11 @@ export default function InventoryPage() {
   const { toast } = useToast();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
+  const [adjustDelta, setAdjustDelta] = useState("");
+  const [adjustReason, setAdjustReason] = useState("");
+  const [sizeDeltas, setSizeDeltas] = useState<Record<string, string>>({});
+  const [submittingAdjust, setSubmittingAdjust] = useState(false);
 
   useEffect(() => {
     fetchProducts();
@@ -47,6 +63,60 @@ export default function InventoryPage() {
       toast({ title: "Erro ao carregar produtos", variant: "destructive" });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openAdjust = (product: Product) => {
+    setAdjustingProduct(product);
+    setAdjustDelta("");
+    setAdjustReason("");
+    setSizeDeltas({});
+  };
+
+  const closeAdjust = () => {
+    setAdjustingProduct(null);
+    setAdjustDelta("");
+    setAdjustReason("");
+    setSizeDeltas({});
+  };
+
+  const submitAdjustment = async () => {
+    if (!adjustingProduct) return;
+    const hasSizes = Array.isArray(adjustingProduct.sizes) && adjustingProduct.sizes.length > 0;
+    const sizeAdjustments = Object.entries(sizeDeltas)
+      .map(([size, value]) => ({ size, delta: Math.trunc(Number(value) || 0) }))
+      .filter((s) => s.delta !== 0);
+    const totalSizeDelta = sizeAdjustments.reduce((sum, s) => sum + s.delta, 0);
+    const delta = hasSizes ? totalSizeDelta : Math.trunc(Number(adjustDelta) || 0);
+
+    if (!adjustReason.trim()) {
+      toast({ title: "Motivo obrigatório", description: "Informe o motivo do ajuste.", variant: "destructive" });
+      return;
+    }
+    if (delta === 0) {
+      toast({ title: "Ajuste inválido", description: "Informe um valor diferente de zero.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      setSubmittingAdjust(true);
+      await apiPost("/api/stock-adjustments", {
+        productId: adjustingProduct.id,
+        delta,
+        reason: adjustReason.trim(),
+        sizeAdjustments: hasSizes ? sizeAdjustments : [],
+      });
+      toast({ title: "Ajuste aplicado" });
+      closeAdjust();
+      await fetchProducts();
+    } catch (error) {
+      toast({
+        title: "Erro ao aplicar ajuste",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingAdjust(false);
     }
   };
 
@@ -113,6 +183,7 @@ export default function InventoryPage() {
                   <TableHead className="text-right">Valor Total</TableHead>
                   <TableHead className="text-right">Receita Projetada</TableHead>
                   <TableHead className="text-right">Lucro Projetado</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -167,6 +238,16 @@ export default function InventoryPage() {
                     <TableCell className="text-right font-medium text-emerald-600">
                       {formatCurrency(product.stock * (product.salePrice - product.costPrice))}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openAdjust(product)}
+                      >
+                        <Settings2 className="h-3.5 w-3.5 mr-1" />
+                        Ajustar
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -174,6 +255,80 @@ export default function InventoryPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!adjustingProduct} onOpenChange={(open) => !open && closeAdjust()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ajuste de Estoque</DialogTitle>
+          </DialogHeader>
+          {adjustingProduct && (
+            <div className="space-y-4">
+              <div className="rounded-md bg-gray-50 p-3 text-sm">
+                <p className="font-medium">{adjustingProduct.name}</p>
+                <p className="text-xs text-gray-500">SKU: {adjustingProduct.sku}</p>
+                <p className="text-xs text-gray-500">Estoque atual: {adjustingProduct.stock}</p>
+              </div>
+
+              <p className="text-xs text-gray-500">
+                Use valores positivos para aumentar e negativos para reduzir. Ajustes não afetam o relatório de entradas nem o financeiro.
+              </p>
+
+              {adjustingProduct.sizes && adjustingProduct.sizes.length > 0 ? (
+                <div className="space-y-2">
+                  <Label>Ajuste por tamanho</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {adjustingProduct.sizes.map((s) => (
+                      <div key={s.size} className="flex items-center gap-2">
+                        <span className="text-xs w-20 text-gray-600">
+                          {s.size} ({s.stock})
+                        </span>
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          value={sizeDeltas[s.size] || ""}
+                          onChange={(e) =>
+                            setSizeDeltas((prev) => ({ ...prev, [s.size]: e.target.value }))
+                          }
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="delta">Variação (positiva ou negativa)</Label>
+                  <Input
+                    id="delta"
+                    type="number"
+                    placeholder="Ex: -3 ou 5"
+                    value={adjustDelta}
+                    onChange={(e) => setAdjustDelta(e.target.value)}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="reason">Motivo</Label>
+                <Textarea
+                  id="reason"
+                  placeholder="Ex: Contagem física, perda, dano..."
+                  value={adjustReason}
+                  onChange={(e) => setAdjustReason(e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={closeAdjust} disabled={submittingAdjust}>
+              Cancelar
+            </Button>
+            <Button onClick={submitAdjustment} disabled={submittingAdjust}>
+              {submittingAdjust ? "Aplicando..." : "Aplicar Ajuste"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

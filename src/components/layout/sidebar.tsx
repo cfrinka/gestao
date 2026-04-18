@@ -32,6 +32,7 @@ const navigation = [
   { name: "Vendas Mensais", href: "/sales-month", icon: BarChart3, roles: ["ADMIN"] },
   { name: "Trocas", href: "/exchanges", icon: ClipboardList, roles: ["ADMIN", "CASHIER"] },
   { name: "Estoque", href: "/inventory", icon: Boxes, roles: ["ADMIN"] },
+  { name: "Entradas de Estoque", href: "/stock-entries", icon: Boxes, roles: ["ADMIN"] },
   { name: "Clientes", href: "/clients", icon: UserCheck, roles: ["ADMIN"] },
   { name: "Fornecedores", href: "/suppliers", icon: Truck, roles: ["ADMIN"] },
   { name: "Contas", href: "/bills", icon: Receipt, roles: ["ADMIN"] },
