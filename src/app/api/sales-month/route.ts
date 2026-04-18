@@ -49,29 +49,41 @@ export async function GET(request: NextRequest) {
       const defaultStart = startDate || new Date(now.getFullYear(), now.getMonth(), 1);
       const defaultEnd = endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-      // Get all orders in the period
-      const ordersSnapshot = await adminDb
-        .collection("orders")
-        .where("createdAt", ">=", Timestamp.fromDate(defaultStart))
-        .where("createdAt", "<=", Timestamp.fromDate(defaultEnd))
-        .where("isCancelled", "!=", true)
-        .orderBy("createdAt", "asc")
-        .get();
+      // Get all orders in the period (isCancelled filtered in memory to avoid composite index)
+      let ordersDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      try {
+        const ordersSnapshot = await adminDb
+          .collection("orders")
+          .where("createdAt", ">=", Timestamp.fromDate(defaultStart))
+          .where("createdAt", "<=", Timestamp.fromDate(defaultEnd))
+          .orderBy("createdAt", "asc")
+          .get();
+        ordersDocs = ordersSnapshot.docs;
+      } catch (err) {
+        console.error("[sales-month] orders query failed:", err);
+        throw err;
+      }
 
-      // Get FIADO payments in the period
-      const fiadoPaymentsSnapshot = await adminDb
-        .collection("financialMovements")
-        .where("type", "==", "FIADO_PAYMENT")
-        .where("occurredAt", ">=", Timestamp.fromDate(defaultStart))
-        .where("occurredAt", "<=", Timestamp.fromDate(defaultEnd))
-        .orderBy("occurredAt", "asc")
-        .get();
+      // Get FIADO payments in the period. Avoid composite index by filtering type in memory.
+      let fiadoDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      try {
+        const fiadoPaymentsSnapshot = await adminDb
+          .collection("financialMovements")
+          .where("occurredAt", ">=", Timestamp.fromDate(defaultStart))
+          .where("occurredAt", "<=", Timestamp.fromDate(defaultEnd))
+          .orderBy("occurredAt", "asc")
+          .get();
+        fiadoDocs = fiadoPaymentsSnapshot.docs.filter((d) => d.data()?.type === "FIADO_PAYMENT");
+      } catch (err) {
+        console.error("[sales-month] fiado query failed:", err);
+        fiadoDocs = [];
+      }
 
       // Process orders
       const ordersByDay = new Map<string, OrderInfo[]>();
       let monthTotal = 0;
 
-      ordersSnapshot.docs.forEach((doc) => {
+      ordersDocs.forEach((doc) => {
         const orderData = doc.data();
         const order = {
           id: doc.id,
@@ -102,7 +114,7 @@ export async function GET(request: NextRequest) {
       });
 
       // Process FIADO payments
-      fiadoPaymentsSnapshot.docs.forEach((doc) => {
+      fiadoDocs.forEach((doc) => {
         const movementData = doc.data();
         const movement = {
           id: doc.id,
