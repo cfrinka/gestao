@@ -565,15 +565,21 @@ export default function ClientsPage() {
                     {selectedClient.pendingOrders.map((order) => {
                       const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
                       const paid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
+                      const isFullyPaid = remaining <= 0;
                       return (
-                      <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div key={order.id} className={`flex items-center justify-between p-3 rounded-lg ${isFullyPaid ? 'bg-green-50 border border-green-200' : 'bg-gray-50'}`}>
                         <div className="space-y-1">
-                          <p className="text-sm font-medium">Pedido #{order.id.slice(-6).toUpperCase()}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium">Pedido #{order.id.slice(-6).toUpperCase()}</p>
+                            {isFullyPaid && (
+                              <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Pago</span>
+                            )}
+                          </div>
                           <p className="text-xs text-gray-500">
                             {new Date(order.createdAt).toLocaleDateString("pt-BR")}
                           </p>
                           <p className="text-xs text-gray-600">
-                            Pago: {formatCurrency(paid)} | Restante: {formatCurrency(remaining)}
+                            Pago: {formatCurrency(paid)} {isFullyPaid ? '' : `| Restante: ${formatCurrency(remaining)}`}
                           </p>
                           {order.items && order.items.length > 0 && (
                             <div className="pt-1">
@@ -582,7 +588,7 @@ export default function ClientsPage() {
                                 {order.items.map((item) => (
                                   <li key={item.id} className="flex items-center justify-between gap-2">
                                     <span>
-                                      • {item.quantity}x {item.productName || "Produto removido"}
+                                      {item.quantity}x {item.productName || "Produto removido"}
                                       {item.size ? ` (${item.size})` : ""}
                                     </span>
                                     <Button
@@ -591,7 +597,7 @@ export default function ClientsPage() {
                                       size="icon"
                                       className="h-6 w-6 text-red-500"
                                       title="Remover item"
-                                      disabled={removingOrderItemId === item.id}
+                                      disabled={removingOrderItemId === item.id || isFullyPaid}
                                       onClick={() => handleRemoveOrderItem(order.id, item.id)}
                                     >
                                       <X className="h-3.5 w-3.5" />
@@ -603,10 +609,14 @@ export default function ClientsPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="font-bold text-red-600">{formatCurrency(remaining)}</span>
-                          <Button size="sm" onClick={() => openPayDialog(order)}>
-                            Receber
-                          </Button>
+                          <span className={`font-bold ${isFullyPaid ? 'text-green-600' : 'text-red-600'}`}>
+                            {isFullyPaid ? formatCurrency(paid) : formatCurrency(remaining)}
+                          </span>
+                          {!isFullyPaid && (
+                            <Button size="sm" onClick={() => openPayDialog(order)}>
+                              Receber
+                            </Button>
+                          )}
                         </div>
                       </div>
                       );

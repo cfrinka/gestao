@@ -97,8 +97,8 @@ export async function getClientPendingOrders(clientId: string): Promise<Order[]>
   }));
 
   const pendingOrders = orders.filter((order) => {
-    if (typeof order.remainingAmount === "number") return order.remainingAmount > 0;
-    return !order.paidAt;
+    if (typeof order.remainingAmount === "number") return order.remainingAmount >= 0;
+    return true;
   });
 
   return Promise.all(
