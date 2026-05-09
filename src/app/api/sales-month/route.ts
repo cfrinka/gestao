@@ -60,8 +60,12 @@ export async function GET(request: NextRequest) {
           .get();
         ordersDocs = ordersSnapshot.docs;
       } catch (err) {
-        console.error("[sales-month] orders query failed:", err);
-        throw err;
+        console.error("[sales-month] orders query failed:", {
+          message: (err as Error)?.message,
+          code: (err as { code?: unknown })?.code,
+          stack: (err as Error)?.stack,
+        });
+        ordersDocs = [];
       }
 
       // Get FIADO payments in the period. Avoid composite index by filtering type in memory.

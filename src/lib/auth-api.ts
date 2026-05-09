@@ -6,6 +6,7 @@ interface AuthUser {
   email: string;
   role: string;
   authTime?: number;
+  isDemo?: boolean;
 }
 
 export async function verifyAuth(request: NextRequest): Promise<AuthUser | null> {
@@ -34,6 +35,7 @@ export async function verifyAuth(request: NextRequest): Promise<AuthUser | null>
       email: decodedToken.email || "",
       role: normalizedRole,
       authTime: typeof decodedToken.auth_time === "number" ? decodedToken.auth_time : undefined,
+      isDemo: userData?.isDemo === true,
     };
   } catch (error) {
     console.error("Auth verification failed:", error);

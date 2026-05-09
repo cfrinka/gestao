@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Eye, EyeOff, Plus, Settings } from "lucide-react";
+import { Eye, EyeOff, Plus, Settings, UserCog } from "lucide-react";
 
 interface User {
   id: string;
@@ -58,6 +58,27 @@ export default function UsersPage() {
     role: "CASHIER",
   });
   const [roleEdits, setRoleEdits] = useState<Record<string, string>>({});
+  const [provisioningDemo, setProvisioningDemo] = useState(false);
+
+  const handleProvisionDemo = async () => {
+    try {
+      setProvisioningDemo(true);
+      const result = await apiPost("/api/users/demo", {});
+      toast({
+        title: "Usuário demonstrativo pronto",
+        description: result?.message || "teste@teste.com / Teste@123",
+      });
+      fetchUsers();
+    } catch (error) {
+      toast({
+        title: "Erro ao provisionar usuário demonstrativo",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setProvisioningDemo(false);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -176,6 +197,16 @@ export default function UsersPage() {
           <h1 className="text-3xl font-bold text-gray-900">Usuários</h1>
           <p className="text-gray-500">Gerencie os usuários do sistema</p>
         </div>
+        <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          onClick={handleProvisionDemo}
+          disabled={provisioningDemo}
+          title="Cria ou redefine a conta teste@teste.com (Teste@123) como usuário demonstrativo"
+        >
+          <UserCog className="h-4 w-4 mr-2" />
+          {provisioningDemo ? "Provisionando..." : "Provisionar Demo"}
+        </Button>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -267,6 +298,7 @@ export default function UsersPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card>

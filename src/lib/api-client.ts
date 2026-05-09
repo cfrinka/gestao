@@ -1,4 +1,22 @@
 import { auth } from "./firebase";
+import { toast } from "@/components/ui/use-toast";
+
+let lastDemoToastAt = 0;
+
+function maybeNotifyDemo(payload: unknown) {
+  if (!payload || typeof payload !== "object") return;
+  const data = payload as { demo?: boolean; message?: string };
+  if (data.demo !== true) return;
+
+  const now = Date.now();
+  if (now - lastDemoToastAt < 1500) return;
+  lastDemoToastAt = now;
+
+  toast({
+    title: "Modo demonstrativo",
+    description: data.message || "Suas alterações não foram salvas no banco de dados.",
+  });
+}
 
 async function getAuthHeaders(): Promise<HeadersInit> {
   const user = auth.currentUser;
@@ -34,7 +52,9 @@ export async function apiPost(url: string, data: unknown) {
     const error = await res.json().catch(() => ({ error: "Request failed" }));
     throw new Error(error.error || "Request failed");
   }
-  return res.json();
+  const json = await res.json();
+  maybeNotifyDemo(json);
+  return json;
 }
 
 export async function apiPut(url: string, data: unknown) {
@@ -48,7 +68,9 @@ export async function apiPut(url: string, data: unknown) {
     const error = await res.json().catch(() => ({ error: "Request failed" }));
     throw new Error(error.error || "Request failed");
   }
-  return res.json();
+  const json = await res.json();
+  maybeNotifyDemo(json);
+  return json;
 }
 
 export async function apiDelete(url: string) {
@@ -61,7 +83,9 @@ export async function apiDelete(url: string) {
     const error = await res.json().catch(() => ({ error: "Request failed" }));
     throw new Error(error.error || "Request failed");
   }
-  return res.json();
+  const json = await res.json();
+  maybeNotifyDemo(json);
+  return json;
 }
 
 export async function apiPatch(url: string, data: unknown) {
@@ -75,5 +99,7 @@ export async function apiPatch(url: string, data: unknown) {
     const error = await res.json().catch(() => ({ error: "Request failed" }));
     throw new Error(error.error || "Request failed");
   }
-  return res.json();
+  const json = await res.json();
+  maybeNotifyDemo(json);
+  return json;
 }

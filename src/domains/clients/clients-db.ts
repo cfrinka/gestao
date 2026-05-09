@@ -136,6 +136,124 @@ export async function markOrderAsPaid(orderId: string): Promise<void> {
   });
 }
 
+export async function applyCascadingFiadoPayment(
+  clientId: string,
+  paymentAmount: number,
+  method: PaymentMethod["method"],
+  receivedByUserId?: string
+) {
+  const { applyCascadingFiadoPayment: applyCascadingPayment } = await import("./fiado-payment");
+  return applyCascadingPayment(clientId, paymentAmount, method, receivedByUserId);
+}
+
+export async function correctClientDebt(
+  clientId: string,
+  correctionAmount: number,
+  adminPassword: string,
+  reason: string
+): Promise<void> {
+  if (!correctionAmount || correctionAmount === 0) {
+    throw new Error("Correction amount must be different from zero");
+  }
+  
+  if (!reason || reason.trim().length === 0) {
+    throw new Error("Reason for correction is required");
+  }
+
+  // Verify admin password
+  const settingsDoc = await adminDb.collection("settings").doc("general").get();
+  const settings = settingsDoc.data();
+  if (!settings || settings.adminPassword !== adminPassword) {
+    throw new Error("Invalid admin password");
+  }
+
+  const clientRef = adminDb.collection("clients").doc(clientId);
+  const now = new Date();
+  const nowTs = Timestamp.fromDate(now);
+
+  await adminDb.runTransaction(async (tx) => {
+    const clientSnap = await tx.get(clientRef);
+    if (!clientSnap.exists) {
+      throw new Error("Client not found");
+    }
+
+    const clientData = clientSnap.data();
+    const currentBalance = Number(clientData?.balance || 0);
+    const newBalance = currentBalance + correctionAmount;
+
+    // Don't allow correction that would leave negative balance (unless it's actually reducing debt)
+    if (correctionAmount > 0 && newBalance < 0) {
+      throw new Error("Correction would result in invalid negative balance");
+    }
+
+    // Update client balance
+    tx.update(clientRef, {
+      balance: FieldValue.increment(correctionAmount),
+      updatedAt: nowTs,
+    });
+
+    // Create audit record for the correction
+    const auditRef = adminDb.collection("debtCorrections").doc();
+    tx.set(auditRef, {
+      clientId,
+      clientName: clientData?.name || "Cliente",
+      correctionAmount,
+      previousBalance: currentBalance,
+      newBalance: currentBalance + correctionAmount,
+      reason: reason.trim(),
+      adminPassword: "***", // Store masked version for security
+      createdAt: nowTs,
+      competencyMonth: now.toISOString().slice(0, 7),
+    });
+
+    // If correcting debt (reducing balance), also update the oldest pending orders
+    if (correctionAmount < 0) {
+      const ordersQuery = adminDb
+        .collection("orders")
+        .where("clientId", "==", clientId)
+        .where("isPaidLater", "==", true)
+        .where("isCancelled", "==", false)
+        .where("remainingAmount", ">", 0)
+        .orderBy("createdAt", "asc");
+      
+      const ordersSnap = await tx.get(ordersQuery);
+      let remainingToCorrect = Math.abs(correctionAmount);
+
+      for (const orderDoc of ordersSnap.docs) {
+        if (remainingToCorrect <= 0) break;
+
+        const order = convertTimestamp<Order>(orderDoc.data()!);
+        const currentRemaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
+
+        if (currentRemaining <= 0) continue;
+
+        const correctionToOrder = Math.min(remainingToCorrect, currentRemaining);
+        const newRemaining = currentRemaining - correctionToOrder;
+        const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
+        const newPaid = currentPaid + correctionToOrder;
+        const isFullyPaid = newRemaining <= 0;
+
+        // Add correction record to payment history
+        const correctionRecord = {
+          id: `correction_${Date.now()}_${orderDoc.id}`,
+          amount: correctionToOrder,
+          method: "CORRECAO_ADMIN" as const,
+          createdAt: nowTs,
+        };
+
+        tx.update(orderDoc.ref, {
+          amountPaid: newPaid,
+          remainingAmount: newRemaining,
+          paymentHistory: FieldValue.arrayUnion(correctionRecord),
+          ...(isFullyPaid ? { paidAt: nowTs } : {}),
+        });
+
+        remainingToCorrect -= correctionToOrder;
+      }
+    }
+  });
+}
+
 export async function applyFiadoPayment(
   clientId: string,
   orderId: string,

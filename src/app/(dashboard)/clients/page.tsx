@@ -43,6 +43,22 @@ interface OrderItem {
   quantity: number;
 }
 
+interface PaymentAllocation {
+  orderId: string;
+  orderDate: string;
+  orderTotalAmount: number;
+  remainingBefore: number;
+  appliedAmount: number;
+  remainingAfter: number;
+  isFullyPaid: boolean;
+}
+
+interface FiadoPaymentResult {
+  allocations: PaymentAllocation[];
+  totalApplied: number;
+  overpayment: number;
+}
+
 interface Client {
   id: string;
   name: string;
@@ -67,6 +83,12 @@ export default function ClientsPage() {
   const [removingOrderItemId, setRemovingOrderItemId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<"DINHEIRO" | "DEBITO" | "CREDITO" | "PIX">("DINHEIRO");
+  const [cascadingPaymentDialogOpen, setCascadingPaymentDialogOpen] = useState(false);
+  const [lastPaymentResult, setLastPaymentResult] = useState<FiadoPaymentResult | null>(null);
+  const [debtCorrectionDialogOpen, setDebtCorrectionDialogOpen] = useState(false);
+  const [correctionAmount, setCorrectionAmount] = useState<string>("");
+  const [correctionReason, setCorrectionReason] = useState<string>("");
+  const [adminPassword, setAdminPassword] = useState<string>("");
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -291,6 +313,109 @@ export default function ClientsPage() {
     setPaymentAmount(remaining.toFixed(2));
     setPaymentMethod("DINHEIRO");
     setPaymentDialogOpen(true);
+  };
+
+  const openCascadingPaymentDialog = () => {
+    if (!selectedClient) return;
+    setPaymentAmount(selectedClient.balance > 0 ? selectedClient.balance.toFixed(2) : "");
+    setPaymentMethod("DINHEIRO");
+    setCascadingPaymentDialogOpen(true);
+  };
+
+  const openDebtCorrectionDialog = () => {
+    if (!selectedClient) return;
+    setCorrectionAmount(selectedClient.balance > 0 ? selectedClient.balance.toFixed(2) : "");
+    setCorrectionReason("");
+    setAdminPassword("");
+    setDebtCorrectionDialogOpen(true);
+  };
+
+  const handleConfirmDebtCorrection = async () => {
+    if (!selectedClient) return;
+
+    const parsedAmount = parseFloat(correctionAmount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount === 0) {
+      toast({ title: "Informe um valor válido diferente de zero", variant: "destructive" });
+      return;
+    }
+
+    if (!correctionReason.trim()) {
+      toast({ title: "Informe o motivo da correção", variant: "destructive" });
+      return;
+    }
+
+    if (!adminPassword.trim()) {
+      toast({ title: "Informe a senha de administrador", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const updated = await apiPatch(`/api/clients/${selectedClient.id}`, {
+        action: "correct_debt",
+        amount: parsedAmount,
+        reason: correctionReason.trim(),
+        adminPassword: adminPassword.trim(),
+      });
+      setSelectedClient({ ...updated, pendingOrders: updated.pendingOrders || [] });
+      
+      const isReduction = parsedAmount < 0;
+      toast({ 
+        title: `Correção aplicada com sucesso!`,
+        description: isReduction 
+          ? `Débito reduzido em ${formatCurrency(Math.abs(parsedAmount))}` 
+          : `Saldo ajustado em ${formatCurrency(parsedAmount)}`
+      });
+      
+      setDebtCorrectionDialogOpen(false);
+      fetchClients();
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("Senha de administrador inválida")) {
+        toast({ title: "Senha de administrador inválida", variant: "destructive" });
+      } else {
+        toast({ title: "Erro ao aplicar correção", variant: "destructive" });
+      }
+    }
+  };
+
+  const handleConfirmCascadingPayment = async () => {
+    if (!selectedClient) return;
+
+    const parsed = parseFloat(paymentAmount);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      toast({ title: "Informe um valor válido", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const updated = await apiPatch(`/api/clients/${selectedClient.id}`, {
+        action: "pay_cascading",
+        amount: parsed,
+        method: paymentMethod,
+      });
+      setSelectedClient({ ...updated, pendingOrders: updated.pendingOrders || [] });
+      setLastPaymentResult(updated.paymentResult);
+      
+      // Build detailed success message
+      const result = updated.paymentResult as FiadoPaymentResult;
+      let message = `Pagamento de ${formatCurrency(result.totalApplied)} aplicado com sucesso!`;
+      
+      if (result.allocations.length > 1) {
+        message += ` Distribuído em ${result.allocations.length} pedidos.`;
+      } else if (result.allocations.length === 1) {
+        const allocation = result.allocations[0];
+        message += allocation.isFullyPaid ? " Pedido quitado." : " Pagamento parcial registrado.";
+      }
+      
+      if (result.overpayment > 0) {
+        message += ` Sobra: ${formatCurrency(result.overpayment)}`;
+      }
+      
+      toast({ title: message });
+      setCascadingPaymentDialogOpen(false);
+      fetchClients();
+    } catch {
+      toast({ title: "Erro ao registrar pagamento", variant: "destructive" });
+    }
   };
 
   const handleConfirmPayment = async () => {
@@ -551,14 +676,32 @@ export default function ClientsPage() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-gray-700">Pedidos Pendentes</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => printClientDebtDetails(selectedClient)}
-                  >
-                    <Printer className="h-4 w-4 mr-2" />
-                    Imprimir 80mm
-                  </Button>
+                  <div className="flex gap-2">
+                    {selectedClient.balance > 0 && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={openCascadingPaymentDialog}
+                      >
+                        Pagar Tudo
+                      </Button>
+                    )}
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={openDebtCorrectionDialog}
+                    >
+                      Corrigir Débito
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => printClientDebtDetails(selectedClient)}
+                    >
+                      <Printer className="h-4 w-4 mr-2" />
+                      Imprimir 80mm
+                    </Button>
+                  </div>
                 </div>
                 {selectedClient.pendingOrders && selectedClient.pendingOrders.length > 0 ? (
                   <div className="space-y-2">
@@ -566,13 +709,18 @@ export default function ClientsPage() {
                       const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
                       const paid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
                       const isFullyPaid = remaining <= 0;
+                      const hasPartialPayment = paid > 0 && !isFullyPaid;
                       return (
-                      <div key={order.id} className={`flex items-center justify-between p-3 rounded-lg ${isFullyPaid ? 'bg-green-50 border border-green-200' : 'bg-gray-50'}`}>
+                      <div key={order.id} className={`flex items-center justify-between p-3 rounded-lg ${isFullyPaid ? 'bg-green-50 border border-green-200' : hasPartialPayment ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-50'}`}>
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-medium">Pedido #{order.id.slice(-6).toUpperCase()}</p>
-                            {isFullyPaid && (
+                            {isFullyPaid ? (
                               <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Pago</span>
+                            ) : hasPartialPayment ? (
+                              <span className="text-xs font-semibold text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">Parcial</span>
+                            ) : (
+                              <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">Pendente</span>
                             )}
                           </div>
                           <p className="text-xs text-gray-500">
@@ -666,6 +814,190 @@ export default function ClientsPage() {
                 Cancelar
               </Button>
               <Button onClick={handleConfirmPayment}>Confirmar</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cascadingPaymentDialogOpen} onOpenChange={setCascadingPaymentDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pagamento Cascata</DialogTitle>
+            <p className="text-sm text-gray-500">
+              O pagamento será aplicado automaticamente aos pedidos mais antigos, quitando-os completamente antes de passar para os próximos.
+            </p>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cascadingPayAmount">Valor a Pagar</Label>
+              <Input
+                id="cascadingPayAmount"
+                type="number"
+                step="0.01"
+                min="0"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder={selectedClient ? `Saldo total: ${formatCurrency(selectedClient.balance)}` : ""}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Forma de Pagamento</Label>
+              <select
+                className="w-full p-2 border rounded-md"
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
+              >
+                <option value="DINHEIRO">Dinheiro</option>
+                <option value="DEBITO">Débito</option>
+                <option value="CREDITO">Crédito</option>
+                <option value="PIX">PIX</option>
+              </select>
+            </div>
+            {selectedClient && selectedClient.pendingOrders && selectedClient.pendingOrders.length > 1 && (
+              <div className="bg-blue-50 p-3 rounded-md">
+                <p className="text-sm text-blue-800">
+                  <strong>Atenção:</strong> Este cliente tem {selectedClient.pendingOrders.length} pedidos pendentes. 
+                  O pagamento será distribuído automaticamente começando pelo pedido mais antigo.
+                </p>
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCascadingPaymentDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleConfirmCascadingPayment}>
+                Confirmar Pagamento
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {lastPaymentResult && (
+        <Dialog open={!!lastPaymentResult} onOpenChange={() => setLastPaymentResult(null)}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Detalhes do Pagamento</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="bg-green-50 p-4 rounded-lg">
+                <p className="text-green-800 font-medium">
+                  Total aplicado: {formatCurrency(lastPaymentResult.totalApplied)}
+                </p>
+                {lastPaymentResult.overpayment > 0 && (
+                  <p className="text-yellow-600 text-sm mt-1">
+                    Sobra a ser devolvida: {formatCurrency(lastPaymentResult.overpayment)}
+                  </p>
+                )}
+              </div>
+              
+              <div className="space-y-2">
+                <h4 className="font-medium text-gray-700">Distribuição do Pagamento:</h4>
+                {lastPaymentResult.allocations.map((allocation) => (
+                  <div key={allocation.orderId} className="border rounded-lg p-3 bg-gray-50">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium text-sm">
+                          Pedido #{allocation.orderId.slice(-6).toUpperCase()}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {allocation.orderDate} • {formatCurrency(allocation.orderTotalAmount)}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Restava: {formatCurrency(allocation.remainingBefore)} → 
+                          Aplicado: {formatCurrency(allocation.appliedAmount)} → 
+                          {allocation.isFullyPaid ? 
+                            <span className="text-green-600 font-medium"> Quitado</span> : 
+                            <span> Resta: {formatCurrency(allocation.remainingAfter)}</span>
+                          }
+                        </p>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full ${
+                        allocation.isFullyPaid 
+                          ? 'bg-green-100 text-green-700' 
+                          : 'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {allocation.isFullyPaid ? 'Pago' : 'Parcial'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="flex justify-end">
+                <Button onClick={() => setLastPaymentResult(null)}>
+                  Entendido
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      <Dialog open={debtCorrectionDialogOpen} onOpenChange={setDebtCorrectionDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Correção de Débito</DialogTitle>
+            <p className="text-sm text-gray-500">
+              Use esta função para corrigir erros de lançamento. Esta operação não afeta o caixa ou relatórios financeiros.
+            </p>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-red-50 border border-red-200 p-3 rounded-md">
+              <p className="text-sm text-red-800">
+                <strong>⚠️ Atenção:</strong> Esta é uma função administrativa para correção de erros. 
+                Ela não registra movimentos financeiros nem afeta o caixa.
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="correctionAmount">Valor da Correção</Label>
+              <Input
+                id="correctionAmount"
+                type="number"
+                step="0.01"
+                value={correctionAmount}
+                onChange={(e) => setCorrectionAmount(e.target.value)}
+                placeholder="Use valor negativo para reduzir débito"
+              />
+              <p className="text-xs text-gray-500">
+                Valores negativos reduzem o débito, positivos aumentam o saldo
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="correctionReason">Motivo da Correção</Label>
+              <Textarea
+                id="correctionReason"
+                value={correctionReason}
+                onChange={(e) => setCorrectionReason(e.target.value)}
+                placeholder="Descreva o motivo da correção..."
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="adminPassword">Senha de Administrador</Label>
+              <Input
+                id="adminPassword"
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Senha admin para confirmar"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDebtCorrectionDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleConfirmDebtCorrection}
+                disabled={!correctionAmount || !correctionReason.trim() || !adminPassword.trim()}
+              >
+                Aplicar Correção
+              </Button>
             </div>
           </div>
         </DialogContent>

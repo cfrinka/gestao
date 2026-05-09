@@ -16,6 +16,7 @@ import {
   Barcode,
   Receipt,
   Truck,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ const navigation = [
   { name: "Fornecedores", href: "/suppliers", icon: Truck, roles: ["ADMIN"] },
   { name: "Contas", href: "/bills", icon: Receipt, roles: ["ADMIN"] },
   { name: "Relatórios", href: "/reports", icon: BarChart3, roles: ["ADMIN"] },
+  { name: "Correções de Débito", href: "/debt-corrections", icon: FileText, roles: ["ADMIN"] },
   { name: "Códigos de Barras", href: "/barcodes", icon: Barcode, roles: ["ADMIN"] },
   { name: "Usuários", href: "/users", icon: Store, roles: ["ADMIN"] },
   { name: "Configurações", href: "/settings", icon: Settings, roles: ["ADMIN"] },

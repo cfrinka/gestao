@@ -7,6 +7,8 @@ import {
   updateClientBalance,
   markOrderAsPaid,
   applyFiadoPayment,
+  applyCascadingFiadoPayment,
+  correctClientDebt,
   removeFiadoOrderItem,
 } from "@/lib/db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
@@ -91,7 +93,51 @@ export async function PATCH(
       }
 
       const body = await authorizedRequest.json();
-      const { action, orderId, orderItemId, amount, method } = body;
+      const { action, orderId, orderItemId, amount, method, adminPassword, reason } = body;
+
+      if (action === "correct_debt" && amount !== undefined && adminPassword && reason) {
+        const correctionAmount = typeof amount === "number" ? amount : parseFloat(amount);
+        
+        if (!Number.isFinite(correctionAmount) || correctionAmount === 0) {
+          return NextResponse.json({ error: "Invalid correction amount" }, { status: 400 });
+        }
+
+        try {
+          await correctClientDebt(params.id, correctionAmount, adminPassword, reason);
+          const updatedClient = await getClient(params.id);
+          const refreshedPending = await getClientPendingOrders(params.id);
+          
+          return NextResponse.json({ 
+            ...updatedClient, 
+            pendingOrders: refreshedPending
+          });
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("Invalid admin password")) {
+            return NextResponse.json({ error: "Senha de administrador inválida" }, { status: 401 });
+          }
+          return NextResponse.json({ error: error instanceof Error ? error.message : "Erro ao corrigir débito" }, { status: 400 });
+        }
+      }
+
+      if (action === "pay_cascading" && amount) {
+        const paymentAmount = typeof amount === "number" ? amount : parseFloat(amount);
+        const finalAmount = Number.isFinite(paymentAmount) && paymentAmount > 0 ? paymentAmount : 0;
+        const finalMethod = method || "DINHEIRO";
+
+        if (finalAmount <= 0) {
+          return NextResponse.json({ error: "Invalid payment amount" }, { status: 400 });
+        }
+
+        const result = await applyCascadingFiadoPayment(params.id, finalAmount, finalMethod, user.uid);
+        const updatedClient = await getClient(params.id);
+        const refreshedPending = await getClientPendingOrders(params.id);
+        
+        return NextResponse.json({ 
+          ...updatedClient, 
+          pendingOrders: refreshedPending,
+          paymentResult: result
+        });
+      }
 
       if (action === "pay_order" && orderId) {
         const pendingOrders = await getClientPendingOrders(params.id);

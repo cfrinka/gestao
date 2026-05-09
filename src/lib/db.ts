@@ -15,6 +15,8 @@ import type {
 } from "@/lib/db-types";
 import {
   applyFiadoPayment as applyFiadoPaymentDomain,
+  applyCascadingFiadoPayment as applyCascadingFiadoPaymentDomain,
+  correctClientDebt as correctClientDebtDomain,
   createClient as createClientDomain,
   deleteClient as deleteClientDomain,
   getClient as getClientDomain,
@@ -330,6 +332,24 @@ export async function getClientPendingOrders(clientId: string): Promise<Order[]>
 
 export async function markOrderAsPaid(orderId: string): Promise<void> {
   return markOrderAsPaidDomain(orderId);
+}
+
+export async function applyCascadingFiadoPayment(
+  clientId: string,
+  paymentAmount: number,
+  method: PaymentMethod["method"],
+  receivedByUserId?: string
+) {
+  return applyCascadingFiadoPaymentDomain(clientId, paymentAmount, method, receivedByUserId);
+}
+
+export async function correctClientDebt(
+  clientId: string,
+  correctionAmount: number,
+  adminPassword: string,
+  reason: string
+): Promise<void> {
+  return correctClientDebtDomain(clientId, correctionAmount, adminPassword, reason);
 }
 
 export async function applyFiadoPayment(
