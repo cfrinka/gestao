@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { apiGet, apiPost } from "@/lib/api-client";
+import { apiGet, apiPost, apiPatch } from "@/lib/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { ClipboardList, Minus, Plus, Search, ShoppingCart, Trash2 } from "lucide-react";
+import { ClipboardList, Minus, Plus, Search, ShoppingCart, Trash2, Banknote } from "lucide-react";
 
 type ExchangeDirection = "IN" | "OUT";
 type ExchangePaymentMethod = "cash" | "pix" | "credit" | "debit";
@@ -47,6 +47,7 @@ interface ExchangeRecord {
   totalOutValue: number;
   discountAmount?: number;
   difference: number;
+  addedToCashRegisterSales?: boolean;
   createdByName: string;
   createdAt: string;
 }
@@ -66,7 +67,8 @@ export default function ExchangesPage() {
   const [customerName, setCustomerName] = useState("");
   const [notes, setNotes] = useState("");
   const [discountAmount, setDiscountAmount] = useState("");
-  const [differencePaymentMethod, setDifferencePaymentMethod] = useState<ExchangePaymentMethod | "">("");
+  const [differencePaymentMethod, setDifferencePaymentMethod] = useState<ExchangePaymentMethod | "">("")
+  const [addingToRegister, setAddingToRegister] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAll();
@@ -184,6 +186,26 @@ export default function ExchangesPage() {
   const numericDiscountAmount = Math.max(0, Number(discountAmount || 0));
   const appliedDiscountAmount = Math.min(numericDiscountAmount, Math.max(0, grossDifference));
   const totalDifference = grossDifference - appliedDiscountAmount;
+
+  const handleAddToRegister = async (exchangeId: string) => {
+    setAddingToRegister(exchangeId);
+    try {
+      await apiPatch("/api/exchanges", {
+        action: "add_to_register",
+        exchangeId,
+      });
+      toast({ title: "Diferença incluída nas vendas do caixa" });
+      await fetchAll();
+    } catch (error) {
+      toast({
+        title: "Erro ao incluir no caixa",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setAddingToRegister(null);
+    }
+  };
 
   const registerExchange = async () => {
     if (cart.length === 0) {
@@ -536,6 +558,7 @@ export default function ExchangesPage() {
                   <TableHead className="text-right">Desconto</TableHead>
                   <TableHead className="text-right">Diferença</TableHead>
                   <TableHead>Operador</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -555,6 +578,22 @@ export default function ExchangesPage() {
                     <TableCell className="text-right text-amber-600">{formatCurrency(exchange.discountAmount || 0)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(exchange.difference || 0)}</TableCell>
                     <TableCell>{exchange.createdByName || "-"}</TableCell>
+                    <TableCell>
+                      {exchange.difference > 0 && !exchange.addedToCashRegisterSales && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={addingToRegister === exchange.id}
+                          onClick={() => handleAddToRegister(exchange.id)}
+                        >
+                          <Banknote className="h-4 w-4 mr-1" />
+                          {addingToRegister === exchange.id ? "Incluindo..." : "Incluir no Caixa"}
+                        </Button>
+                      )}
+                      {exchange.addedToCashRegisterSales && (
+                        <span className="text-xs text-green-600 font-medium">Incluído no caixa</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

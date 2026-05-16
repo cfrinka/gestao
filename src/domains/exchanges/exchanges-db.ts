@@ -244,6 +244,72 @@ export async function createExchange(input: {
   return result;
 }
 
+export async function addExchangeDifferenceToCashRegisterSales(
+  exchangeId: string,
+  userId: string
+): Promise<ExchangeRecord> {
+  const exchangeRef = adminDb.collection("exchanges").doc(exchangeId);
+
+  const result = await adminDb.runTransaction(async (tx) => {
+    const exchangeSnap = await tx.get(exchangeRef);
+    if (!exchangeSnap.exists) {
+      throw new Error("Troca não encontrada");
+    }
+
+    const exchangeData = exchangeSnap.data()!;
+    const difference = Number(exchangeData.difference || 0);
+    const paymentMethod = exchangeData.paymentMethod as FinancialMovementPaymentMethod | undefined;
+
+    if (difference <= 0) {
+      throw new Error("Esta troca não possui diferença positiva para incluir no caixa");
+    }
+
+    if (exchangeData.addedToCashRegisterSales === true) {
+      throw new Error("Esta troca já foi incluída nas vendas do caixa");
+    }
+
+    // Find open cash register for user
+    const openRegisterQuery = adminDb
+      .collection("cashRegisters")
+      .where("userId", "==", userId)
+      .where("status", "==", "OPEN")
+      .limit(1);
+    const openRegisterSnap = await tx.get(openRegisterQuery);
+
+    if (openRegisterSnap.empty) {
+      throw new Error("Nenhum caixa aberto encontrado. Abra um caixa primeiro.");
+    }
+
+    const registerDoc = openRegisterSnap.docs[0];
+    const nowTs = Timestamp.fromDate(new Date());
+
+    // Add to totalSales and salesCount
+    tx.update(registerDoc.ref, {
+      totalSales: FieldValue.increment(difference),
+      salesCount: FieldValue.increment(1),
+    });
+
+    // Mark exchange as added to cash register sales
+    tx.update(exchangeRef, {
+      addedToCashRegisterSales: true,
+      addedToCashRegisterSalesAt: nowTs,
+      addedToCashRegisterId: registerDoc.id,
+    });
+
+    return {
+      id: exchangeSnap.id,
+      ...convertTimestamp<Omit<ExchangeRecord, "id">>({
+        ...exchangeData,
+        addedToCashRegisterSales: true,
+        addedToCashRegisterSalesAt: nowTs,
+      }),
+      paymentMethod,
+    } as ExchangeRecord;
+  });
+
+  return result;
+}
+
 export async function getExchanges(
   limitCount: number = 100,
   startDate?: Date,

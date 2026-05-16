@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { Save, Store, Receipt, Percent, Search, X } from "lucide-react";
+import { Save, Store, Receipt, Percent, Search, X, Key } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -218,6 +218,8 @@ export default function SettingsPage() {
   const [billMonthsAhead, setBillMonthsAhead] = useState<string>("12");
   const [billFirstDueDate, setBillFirstDueDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [billInstallmentsCount, setBillInstallmentsCount] = useState<string>("3");
+  const [adminPassword, setAdminPassword] = useState<string>("");
+  const [adminPasswordSaving, setAdminPasswordSaving] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -324,6 +326,24 @@ export default function SettingsPage() {
       toast({ title: "Erro ao salvar configurações", variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSetAdminPassword = async () => {
+    if (!adminPassword.trim() || adminPassword.length < 4) {
+      toast({ title: "A senha deve ter pelo menos 4 caracteres", variant: "destructive" });
+      return;
+    }
+
+    setAdminPasswordSaving(true);
+    try {
+      await apiPost("/api/admin/set-password", { adminPassword: adminPassword.trim() });
+      toast({ title: "Senha de administrador definida com sucesso!" });
+      setAdminPassword("");
+    } catch {
+      toast({ title: "Erro ao definir senha", variant: "destructive" });
+    } finally {
+      setAdminPasswordSaving(false);
     }
   };
 
@@ -753,6 +773,51 @@ export default function SettingsPage() {
             <Button onClick={handleCreateBill} disabled={billSaving}>
               {billSaving ? "Salvando..." : "Adicionar Conta"}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Key className="h-5 w-5 text-[#355444]" />
+            Senha de Administrador
+          </CardTitle>
+          <CardDescription>
+            Configure a senha para correções administrativas de débito e outras funções restritas
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md">
+              <p className="text-sm text-yellow-800">
+                <strong>⚠️ Importante:</strong> Esta senha é necessária para realizar correções de débito e outras operações administrativas sensíveis.
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="adminPassword">Nova Senha de Administrador</Label>
+              <Input
+                id="adminPassword"
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Digite a nova senha (mín. 4 caracteres)"
+              />
+              <p className="text-xs text-gray-500">
+                A senha deve ter pelo menos 4 caracteres
+              </p>
+            </div>
+
+            <div className="flex justify-end">
+              <Button 
+                onClick={handleSetAdminPassword} 
+                disabled={adminPasswordSaving || !adminPassword.trim() || adminPassword.length < 4}
+                variant="outline"
+              >
+                {adminPasswordSaving ? "Salvando..." : "Definir Senha"}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

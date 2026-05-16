@@ -245,12 +245,41 @@ export async function getCashRegisterOrders(registerId: string): Promise<Order[]
       } as Order;
     });
 
+  // Fetch exchange differences added to this cash register
+  const exchangeDiffSnapshot = await adminDb
+    .collection("exchanges")
+    .where("addedToCashRegisterId", "==", registerId)
+    .where("addedToCashRegisterSales", "==", true)
+    .get();
+
+  const exchangeDiffEntries: Order[] = exchangeDiffSnapshot.docs.map((doc) => {
+    const data = convertTimestamp<Record<string, unknown>>(doc.data());
+    const difference = Number(data.difference || 0);
+    const paymentMethod = data.paymentMethod as string | undefined;
+    const mappedMethod = mapFinancialToOrderPaymentMethod(
+      paymentMethod as FinancialMovementPaymentMethod | undefined
+    );
+    const addedAt = data.addedToCashRegisterSalesAt instanceof Date
+      ? data.addedToCashRegisterSalesAt
+      : new Date();
+
+    return {
+      id: `exchange-diff-${doc.id}`,
+      subtotal: difference,
+      discount: 0,
+      totalAmount: difference,
+      payments: [{ method: mappedMethod, amount: difference }],
+      clientName: "Diferença de troca",
+      createdAt: addedAt,
+    } as Order;
+  });
+
   const orders = snapshot.docs.map((doc) => ({
     id: doc.id,
     ...convertTimestamp<Omit<Order, "id">>(doc.data()),
   }));
 
-  return [...orders, ...fiadoPaymentEntries].sort(
+  return [...orders, ...fiadoPaymentEntries, ...exchangeDiffEntries].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 }

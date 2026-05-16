@@ -149,6 +149,8 @@ export interface ExchangeRecord {
   discountAmount: number;
   difference: number;
   cashInAmount?: number;
+  addedToCashRegisterSales?: boolean;
+  addedToCashRegisterSalesAt?: Date;
   createdById: string;
   createdByName: string;
   createdAt: Date;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { ExchangesService } from "@/domains/exchanges/exchanges-service";
 import { FirestoreExchangesRepository } from "@/domains/exchanges/firestore-exchanges-repository";
+import { addExchangeDifferenceToCashRegisterSales } from "@/domains/exchanges/exchanges-db";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(exchanges);
     },
     { operationName: "Exchanges GET" }
+  );
+}
+
+export async function PATCH(request: NextRequest) {
+  return withAuthorizedRoute(
+    request,
+    async ({ request: authorizedRequest, user }) => {
+      const body = await authorizedRequest.json();
+      const { action, exchangeId } = body;
+
+      if (action === "add_to_register" && exchangeId) {
+        try {
+          const updated = await addExchangeDifferenceToCashRegisterSales(exchangeId, user.uid);
+          return NextResponse.json(updated);
+        } catch (error) {
+          return NextResponse.json(
+            { error: error instanceof Error ? error.message : "Erro ao incluir no caixa" },
+            { status: 400 }
+          );
+        }
+      }
+
+      return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
+    },
+    { operationName: "Exchanges PATCH" }
   );
 }
 
