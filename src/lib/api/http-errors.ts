@@ -13,5 +13,5 @@ export class HttpError extends Error {
 export function toHttpError(error: unknown): HttpError {
   if (error instanceof HttpError) return error;
   const message = error instanceof Error ? error.message : "Internal server error";
-  return new HttpError(500, message, false);
+  return new HttpError(500, message, true);
 }

@@ -52,6 +52,7 @@ export async function cancelOrder(input: {
   const orderRef = adminDb.collection("orders").doc(input.orderId);
 
   return adminDb.runTransaction(async (tx) => {
+    // ── ALL READS FIRST ──
     const orderSnap = await tx.get(orderRef);
     if (!orderSnap.exists) {
       throw new Error("Order not found");
@@ -65,6 +66,24 @@ export async function cancelOrder(input: {
       throw new Error("Fiado sales cannot be cancelled in this screen");
     }
 
+    const saleMovementQuery = adminDb
+      .collection("financialMovements")
+      .where("type", "==", "SALE_REVENUE")
+      .where("relatedEntity.id", "==", input.orderId)
+      .limit(1);
+    const saleMovementSnapshot = await tx.get(saleMovementQuery);
+
+    const cogsMovementQuery = adminDb
+      .collection("financialMovements")
+      .where("type", "==", "COGS")
+      .where("relatedEntity.id", "==", input.orderId)
+      .limit(1);
+    const cogsMovementSnapshot = await tx.get(cogsMovementQuery);
+
+    const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
+    const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
+
+    // ── ALL WRITES AFTER ──
     const now = new Date();
     const nowTs = Timestamp.fromDate(now);
     const currentTotal = Math.max(0, Number(order.totalAmount || 0));
@@ -81,12 +100,6 @@ export async function cancelOrder(input: {
       updatedAt: nowTs,
     });
 
-    const saleMovementQuery = adminDb
-      .collection("financialMovements")
-      .where("type", "==", "SALE_REVENUE")
-      .where("relatedEntity.id", "==", input.orderId)
-      .limit(1);
-    const saleMovementSnapshot = await tx.get(saleMovementQuery);
     if (!saleMovementSnapshot.empty) {
       tx.update(saleMovementSnapshot.docs[0].ref, {
         amount: 0,
@@ -100,12 +113,6 @@ export async function cancelOrder(input: {
       });
     }
 
-    const cogsMovementQuery = adminDb
-      .collection("financialMovements")
-      .where("type", "==", "COGS")
-      .where("relatedEntity.id", "==", input.orderId)
-      .limit(1);
-    const cogsMovementSnapshot = await tx.get(cogsMovementQuery);
     if (!cogsMovementSnapshot.empty) {
       tx.update(cogsMovementSnapshot.docs[0].ref, {
         amount: 0,
@@ -118,8 +125,6 @@ export async function cancelOrder(input: {
       });
     }
 
-    const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
-    const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
     if (matchingRegister && currentTotal > 0) {
       const currentByMethod = paymentAmountByMethod(currentPayments);
       tx.update(matchingRegister.ref, {
@@ -148,6 +153,7 @@ export async function cancelOrder(input: {
 
     return {
       ...order,
+      id: input.orderId,
       isCancelled: true,
       cancelledAt: now,
       cancelledBy: input.actorId,
@@ -188,6 +194,7 @@ export async function updateOrder(input: {
   const orderRef = adminDb.collection("orders").doc(input.orderId);
 
   return adminDb.runTransaction(async (tx) => {
+    // ── ALL READS FIRST ──
     const orderSnap = await tx.get(orderRef);
     if (!orderSnap.exists) {
       throw new Error("Order not found");
@@ -208,6 +215,17 @@ export async function updateOrder(input: {
       ...itemDoc.data(),
     })) as OrderItem[];
 
+    const saleMovementQuery = adminDb
+      .collection("financialMovements")
+      .where("type", "==", "SALE_REVENUE")
+      .where("relatedEntity.id", "==", input.orderId)
+      .limit(1);
+    const saleMovementSnapshot = await tx.get(saleMovementQuery);
+
+    const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
+    const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
+
+    // ── VALIDATION ──
     const subtotal = items.reduce((sum, item) => sum + Number(item.totalRevenue || 0), 0);
     if (safeDiscount > subtotal) {
       throw new Error("Discount cannot be greater than subtotal");
@@ -219,6 +237,7 @@ export async function updateOrder(input: {
       throw new Error("Payment total must match order total");
     }
 
+    // ── ALL WRITES AFTER ──
     const now = new Date();
     const nowTs = Timestamp.fromDate(now);
 
@@ -229,12 +248,6 @@ export async function updateOrder(input: {
       updatedAt: nowTs,
     });
 
-    const saleMovementQuery = adminDb
-      .collection("financialMovements")
-      .where("type", "==", "SALE_REVENUE")
-      .where("relatedEntity.id", "==", input.orderId)
-      .limit(1);
-    const saleMovementSnapshot = await tx.get(saleMovementQuery);
     if (!saleMovementSnapshot.empty) {
       const saleMovementRef = saleMovementSnapshot.docs[0].ref;
       tx.update(saleMovementRef, {
@@ -252,9 +265,6 @@ export async function updateOrder(input: {
         },
       });
     }
-
-    const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
-    const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
 
     if (matchingRegister) {
       const previousByMethod = paymentAmountByMethod((order.payments || []) as Array<{

@@ -97,14 +97,20 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const cancelledOrder = await cancelOrder({
-        orderId,
-        reason: String(body.reason || "").trim(),
-        actorId: user.uid,
-        actorRole: user.role,
-      });
+      try {
+        const cancelledOrder = await cancelOrder({
+          orderId,
+          reason: String(body.reason || "").trim(),
+          actorId: user.uid,
+          actorRole: user.role,
+        });
 
-      return NextResponse.json(cancelledOrder);
+        return NextResponse.json(cancelledOrder);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Erro ao cancelar venda";
+        console.error("cancelOrder failed:", err);
+        return NextResponse.json({ error: message }, { status: 400 });
+      }
     },
     { roles: ["ADMIN"], operationName: "Orders POST Cancel" }
   );
