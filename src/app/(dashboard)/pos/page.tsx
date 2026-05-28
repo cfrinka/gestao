@@ -177,6 +177,7 @@ export default function POSPage() {
   const [showPayLater, setShowPayLater] = useState(false);
   
   // Cash register state
+  const pendingCheckoutAction = useRef<"checkout" | "payLater" | null>(null);
   const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
   const [showOpenRegisterModal, setShowOpenRegisterModal] = useState(false);
   const [showCloseRegisterModal, setShowCloseRegisterModal] = useState(false);
@@ -295,6 +296,20 @@ export default function POSPage() {
       console.error("Error fetching store settings:", error);
     }
   };
+
+  // Resume pending checkout after cash register is opened
+  useEffect(() => {
+    if (cashRegister?.status === "OPEN" && pendingCheckoutAction.current) {
+      const action = pendingCheckoutAction.current;
+      pendingCheckoutAction.current = null;
+      if (action === "checkout") {
+        handleCheckout();
+      } else if (action === "payLater") {
+        handlePayLater();
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cashRegister]);
 
   // Re-focus search input after interactions (for continuous scanning)
   useEffect(() => {
@@ -898,6 +913,13 @@ export default function POSPage() {
       return;
     }
 
+    if (!cashRegister || cashRegister.status !== "OPEN") {
+      pendingCheckoutAction.current = "payLater";
+      openRegisterModal();
+      toast({ title: "Caixa fechado", description: "Abra o caixa para finalizar a venda.", variant: "destructive" });
+      return;
+    }
+
     setProcessing(true);
     const idempotencyKey = crypto.randomUUID();
     
@@ -954,6 +976,13 @@ export default function POSPage() {
 
     if (payments.length === 0) {
       toast({ title: "Selecione uma forma de pagamento", variant: "destructive" });
+      return;
+    }
+
+    if (!cashRegister || cashRegister.status !== "OPEN") {
+      pendingCheckoutAction.current = "checkout";
+      openRegisterModal();
+      toast({ title: "Caixa fechado", description: "Abra o caixa para finalizar a venda.", variant: "destructive" });
       return;
     }
 
@@ -1549,6 +1578,7 @@ export default function POSPage() {
                   setShowOpenRegisterModal(false);
                   setOpeningDenominations(createEmptyDenominationCounts());
                   setOpeningBalance(0);
+                  pendingCheckoutAction.current = null;
                 }}
               >
                 Cancelar
