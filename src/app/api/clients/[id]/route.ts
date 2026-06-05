@@ -113,7 +113,7 @@ export async function PATCH(
           });
         } catch (error) {
           if (error instanceof Error && error.message.includes("Invalid admin password")) {
-            return NextResponse.json({ error: "Senha de administrador inválida" }, { status: 401 });
+            return NextResponse.json({ error: "Senha de administrador inválida" }, { status: 403 });
           }
           return NextResponse.json({ error: error instanceof Error ? error.message : "Erro ao corrigir débito" }, { status: 400 });
         }

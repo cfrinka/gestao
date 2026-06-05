@@ -97,7 +97,7 @@ export async function getClientPendingOrders(clientId: string): Promise<Order[]>
   }));
 
   const pendingOrders = orders.filter((order) => {
-    if (typeof order.remainingAmount === "number") return order.remainingAmount >= 0;
+    if (typeof order.remainingAmount === "number") return order.remainingAmount > 0;
     return true;
   });
 
@@ -122,9 +122,22 @@ export async function getClientPendingOrders(clientId: string): Promise<Order[]>
         })
       );
 
+      const paymentHistory: FiadoPayment[] = Array.isArray(order.paymentHistory)
+        ? (order.paymentHistory as unknown as Array<{ id: string; amount: number; method: PaymentMethod["method"]; createdAt: unknown }>).map((entry) => ({
+            id: entry.id,
+            amount: entry.amount,
+            method: entry.method,
+            createdAt:
+              entry.createdAt && typeof entry.createdAt === "object" && "toDate" in (entry.createdAt as object)
+                ? (entry.createdAt as { toDate: () => Date }).toDate()
+                : new Date(String(entry.createdAt || "")),
+          }))
+        : [];
+
       return {
         ...order,
         items: itemsWithProductName,
+        paymentHistory,
       };
     })
   );
@@ -171,7 +184,15 @@ export async function correctClientDebt(
   const now = new Date();
   const nowTs = Timestamp.fromDate(now);
 
+  // Build the orders query outside the transaction (equality filters only, no composite index needed)
+  const ordersQuery = adminDb
+    .collection("orders")
+    .where("clientId", "==", clientId)
+    .where("isPaidLater", "==", true)
+    .where("isCancelled", "==", false);
+
   await adminDb.runTransaction(async (tx) => {
+    // ALL READS FIRST
     const clientSnap = await tx.get(clientRef);
     if (!clientSnap.exists) {
       throw new Error("Client not found");
@@ -186,43 +207,31 @@ export async function correctClientDebt(
       throw new Error("Correction would result in invalid negative balance");
     }
 
-    // Update client balance
-    tx.update(clientRef, {
-      balance: FieldValue.increment(correctionAmount),
-      updatedAt: nowTs,
-    });
+    let ordersToUpdate: Array<{
+      ref: FirebaseFirestore.DocumentReference;
+      currentRemaining: number;
+      currentPaid: number;
+      correctionToOrder: number;
+      newRemaining: number;
+      newPaid: number;
+      isFullyPaid: boolean;
+    }> = [];
 
-    // Create audit record for the correction
-    const auditRef = adminDb.collection("debtCorrections").doc();
-    tx.set(auditRef, {
-      clientId,
-      clientName: clientData?.name || "Cliente",
-      correctionAmount,
-      previousBalance: currentBalance,
-      newBalance: currentBalance + correctionAmount,
-      reason: reason.trim(),
-      adminPassword: "***", // Store masked version for security
-      createdAt: nowTs,
-      competencyMonth: now.toISOString().slice(0, 7),
-    });
-
-    // If correcting debt (reducing balance), also update the oldest pending orders
     if (correctionAmount < 0) {
-      const ordersQuery = adminDb
-        .collection("orders")
-        .where("clientId", "==", clientId)
-        .where("isPaidLater", "==", true)
-        .where("isCancelled", "==", false)
-        .where("remainingAmount", ">", 0)
-        .orderBy("createdAt", "asc");
-      
       const ordersSnap = await tx.get(ordersQuery);
       let remainingToCorrect = Math.abs(correctionAmount);
 
-      for (const orderDoc of ordersSnap.docs) {
+      const sortedDocs = ordersSnap.docs
+        .map((doc) => ({ doc, data: convertTimestamp<Order>(doc.data()!) }))
+        .sort((a, b) => {
+          const dateA = a.data.createdAt ? new Date(a.data.createdAt).getTime() : 0;
+          const dateB = b.data.createdAt ? new Date(b.data.createdAt).getTime() : 0;
+          return dateA - dateB;
+        });
+
+      for (const { doc: orderDoc, data: order } of sortedDocs) {
         if (remainingToCorrect <= 0) break;
 
-        const order = convertTimestamp<Order>(orderDoc.data()!);
         const currentRemaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
 
         if (currentRemaining <= 0) continue;
@@ -233,23 +242,53 @@ export async function correctClientDebt(
         const newPaid = currentPaid + correctionToOrder;
         const isFullyPaid = newRemaining <= 0;
 
-        // Add correction record to payment history
-        const correctionRecord = {
-          id: `correction_${Date.now()}_${orderDoc.id}`,
-          amount: correctionToOrder,
-          method: "CORRECAO_ADMIN" as const,
-          createdAt: nowTs,
-        };
-
-        tx.update(orderDoc.ref, {
-          amountPaid: newPaid,
-          remainingAmount: newRemaining,
-          paymentHistory: FieldValue.arrayUnion(correctionRecord),
-          ...(isFullyPaid ? { paidAt: nowTs } : {}),
+        ordersToUpdate.push({
+          ref: orderDoc.ref,
+          currentRemaining,
+          currentPaid,
+          correctionToOrder,
+          newRemaining,
+          newPaid,
+          isFullyPaid,
         });
 
         remainingToCorrect -= correctionToOrder;
       }
+    }
+
+    // ALL WRITES AFTER ALL READS
+    tx.update(clientRef, {
+      balance: FieldValue.increment(correctionAmount),
+      updatedAt: nowTs,
+    });
+
+    const auditRef = adminDb.collection("debtCorrections").doc();
+    tx.set(auditRef, {
+      clientId,
+      clientName: clientData?.name || "Cliente",
+      correctionAmount,
+      previousBalance: currentBalance,
+      newBalance: currentBalance + correctionAmount,
+      reason: reason.trim(),
+      adminPassword: "***",
+      createdAt: nowTs,
+      competencyMonth: now.toISOString().slice(0, 7),
+    });
+
+    for (const order of ordersToUpdate) {
+      const correctionRecord = {
+        id: `correction_${Date.now()}_${order.ref.id}`,
+        amount: order.correctionToOrder,
+        method: "CORRECAO_ADMIN" as const,
+        createdAt: nowTs,
+      };
+
+      tx.update(order.ref, {
+        amountPaid: order.newPaid,
+        remainingAmount: order.newRemaining,
+        paymentHistory: FieldValue.arrayUnion(correctionRecord),
+        ...(order.isFullyPaid ? { paidAt: nowTs } : {}),
+      });
     }
   });
 }
