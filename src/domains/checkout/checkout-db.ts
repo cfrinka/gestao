@@ -106,6 +106,7 @@ export async function processCheckout(
     totalAmount,
     cogsTotal,
     payments,
+    createdById,
     ...(clientId && { clientId }),
     ...(clientName && { clientName }),
     ...(isPaidLater && {

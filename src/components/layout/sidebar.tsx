@@ -17,6 +17,7 @@ import {
   Receipt,
   Truck,
   FileText,
+  Percent,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ const navigation = [
   { name: "Produtos", href: "/products", icon: Package, roles: ["ADMIN"] },
   { name: "Vendas", href: "/sales", icon: ClipboardList, roles: ["ADMIN", "CASHIER"] },
   { name: "Vendas Mensais", href: "/sales-month", icon: BarChart3, roles: ["ADMIN"] },
+  { name: "Comissão", href: "/comission", icon: Percent, roles: ["ADMIN", "CASHIER"] },
   { name: "Trocas", href: "/exchanges", icon: ClipboardList, roles: ["ADMIN", "CASHIER"] },
   { name: "Estoque", href: "/inventory", icon: Boxes, roles: ["ADMIN"] },
   { name: "Entradas de Estoque", href: "/stock-entries", icon: Boxes, roles: ["ADMIN"] },

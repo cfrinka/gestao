@@ -128,15 +128,22 @@ export async function PATCH(
           return NextResponse.json({ error: "Invalid payment amount" }, { status: 400 });
         }
 
-        const result = await applyCascadingFiadoPayment(params.id, finalAmount, finalMethod, user.uid);
-        const updatedClient = await getClient(params.id);
-        const refreshedPending = await getClientPendingOrders(params.id);
-        
-        return NextResponse.json({ 
-          ...updatedClient, 
-          pendingOrders: refreshedPending,
-          paymentResult: result
-        });
+        try {
+          const result = await applyCascadingFiadoPayment(params.id, finalAmount, finalMethod, user.uid);
+          const updatedClient = await getClient(params.id);
+          const refreshedPending = await getClientPendingOrders(params.id);
+          
+          return NextResponse.json({ 
+            ...updatedClient, 
+            pendingOrders: refreshedPending,
+            paymentResult: result
+          });
+        } catch (error) {
+          return NextResponse.json(
+            { error: error instanceof Error ? error.message : "Erro ao registrar pagamento" },
+            { status: 400 }
+          );
+        }
       }
 
       if (action === "pay_order" && orderId) {

@@ -72,37 +72,57 @@ export async function applyCascadingFiadoPayment(
 
   let remainingToApply = paymentAmount;
 
+  const safeReceivedByUserId = String(receivedByUserId || "").trim();
+
   await adminDb.runTransaction(async (tx) => {
-    // Get client info
+    // ===== ALL READS FIRST =====
     const clientSnap = await tx.get(clientRef);
     if (!clientSnap.exists) {
       throw new Error("Client not found");
     }
     const clientName = String(clientSnap.data()?.name || "Cliente").trim();
 
-    // Get all pending fiado orders sorted by date (oldest first)
     const ordersQuery = adminDb
       .collection("orders")
       .where("clientId", "==", clientId)
-      .where("isPaidLater", "==", true)
-      .where("isCancelled", "==", false)
-      .orderBy("createdAt", "asc");
+      .where("isPaidLater", "==", true);
     const ordersSnap = await tx.get(ordersQuery);
 
     if (ordersSnap.empty) {
       throw new Error("No pending fiado orders found");
     }
 
+    // Read cash register upfront if needed
+    let registerDoc: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData> | null = null;
+    if (safeReceivedByUserId) {
+      const openRegisterQuery = adminDb
+        .collection("cashRegisters")
+        .where("userId", "==", safeReceivedByUserId)
+        .where("status", "==", "OPEN")
+        .limit(1);
+      const openRegisterSnapshot = await tx.get(openRegisterQuery);
+      if (!openRegisterSnapshot.empty) {
+        registerDoc = openRegisterSnapshot.docs[0];
+      }
+    }
+
+    // ===== PROCESS DATA =====
+    const sortedOrderDocs = ordersSnap.docs
+      .map((doc) => ({ doc, data: convertTimestamp<Order>(doc.data()!) }))
+      .filter(({ data }) => data.isCancelled !== true)
+      .sort((a, b) => {
+        const dateA = a.data.createdAt ? new Date(a.data.createdAt).getTime() : 0;
+        const dateB = b.data.createdAt ? new Date(b.data.createdAt).getTime() : 0;
+        return dateA - dateB;
+      });
+
     let totalClientBalanceReduction = 0;
 
-    // Process each order until payment is exhausted
-    for (const orderDoc of ordersSnap.docs) {
+    for (const { doc: orderDoc, data: order } of sortedOrderDocs) {
       if (remainingToApply <= 0) break;
 
-      const order = convertTimestamp<Order>(orderDoc.data()!);
       const currentRemaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
-
-      if (currentRemaining <= 0) continue; // Skip already paid orders
+      if (currentRemaining <= 0) continue;
 
       const appliedToOrder = Math.min(remainingToApply, currentRemaining);
       const newRemaining = currentRemaining - appliedToOrder;
@@ -110,7 +130,6 @@ export async function applyCascadingFiadoPayment(
       const orderDate = order.createdAt instanceof Date ? order.createdAt : new Date();
       const orderDateStr = orderDate.toLocaleDateString("pt-BR");
 
-      // Update order
       const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
       const newPaid = currentPaid + appliedToOrder;
 
@@ -121,6 +140,7 @@ export async function applyCascadingFiadoPayment(
         createdAt: nowTs,
       };
 
+      // Queue order write
       tx.update(orderDoc.ref, {
         amountPaid: newPaid,
         remainingAmount: newRemaining,
@@ -128,7 +148,6 @@ export async function applyCascadingFiadoPayment(
         ...(isFullyPaid ? { paidAt: nowTs } : {}),
       });
 
-      // Record allocation
       result.allocations.push({
         orderId: orderDoc.id,
         orderDate: orderDateStr,
@@ -144,36 +163,22 @@ export async function applyCascadingFiadoPayment(
       result.totalApplied += appliedToOrder;
     }
 
-    // Update client balance
+    // ===== ALL WRITES AFTER ALL READS =====
     tx.update(clientRef, {
       balance: FieldValue.increment(-totalClientBalanceReduction),
       updatedAt: nowTs,
     });
 
-    // Update cash register if user provided
-    let cashRegisterId: string | null = null;
-    const safeReceivedByUserId = String(receivedByUserId || "").trim();
-    if (safeReceivedByUserId) {
-      const openRegisterQuery = adminDb
-        .collection("cashRegisters")
-        .where("userId", "==", safeReceivedByUserId)
-        .where("status", "==", "OPEN")
-        .limit(1);
-      const openRegisterSnapshot = await tx.get(openRegisterQuery);
-      if (!openRegisterSnapshot.empty) {
-        const registerDoc = openRegisterSnapshot.docs[0];
-        const paymentField = mapOrderPaymentMethodToCashRegisterField(method);
-        cashRegisterId = registerDoc.id;
-
-        tx.update(registerDoc.ref, {
-          totalSales: FieldValue.increment(result.totalApplied),
-          [paymentField]: FieldValue.increment(result.totalApplied),
-          salesCount: FieldValue.increment(result.allocations.length),
-        });
-      }
+    const cashRegisterId = registerDoc ? registerDoc.id : null;
+    if (registerDoc) {
+      const paymentField = mapOrderPaymentMethodToCashRegisterField(method);
+      tx.update(registerDoc.ref, {
+        totalSales: FieldValue.increment(result.totalApplied),
+        [paymentField]: FieldValue.increment(result.totalApplied),
+        salesCount: FieldValue.increment(result.allocations.length),
+      });
     }
 
-    // Create financial movements - one per order paid
     for (const allocation of result.allocations) {
       const movementRef = adminDb.collection("financialMovements").doc();
       const description = allocation.isFullyPaid

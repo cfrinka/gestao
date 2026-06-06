@@ -408,8 +408,9 @@ export default function ClientsPage() {
       toast({ title: message });
       setPaymentDialogOpen(false);
       fetchClients();
-    } catch {
-      toast({ title: "Erro ao registrar pagamento", variant: "destructive" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao registrar pagamento";
+      toast({ title: message, variant: "destructive" });
     }
   };
 

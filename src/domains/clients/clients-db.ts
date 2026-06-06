@@ -207,7 +207,7 @@ export async function correctClientDebt(
       throw new Error("Correction would result in invalid negative balance");
     }
 
-    let ordersToUpdate: Array<{
+    const ordersToUpdate: Array<{
       ref: FirebaseFirestore.DocumentReference;
       currentRemaining: number;
       currentPaid: number;
