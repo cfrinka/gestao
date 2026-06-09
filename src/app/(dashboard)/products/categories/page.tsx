@@ -16,6 +16,8 @@ const PRODUCT_CATEGORIES = [
   "Calças",
   "Saias",
   "Conjuntos",
+  "Acessórios",
+  "Vestidos"
 ] as const;
 
 interface Product {
