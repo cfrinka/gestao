@@ -51,6 +51,7 @@ interface Product {
   stock: number;
   sizes: ProductSize[];
   image?: string;
+  imageSource?: "uploaded" | "random" | "none";
 }
 
 const DEFAULT_SIZES = ["TU", "P", "M", "G", "GG", "XG"];
@@ -220,7 +221,7 @@ export default function ProductsPage() {
         ? normalizeProductSizes(product.sizes)
         : (product.plusSized === true ? PLUS_SIZES : DEFAULT_SIZES).map(size => ({ size, stock: 0 })),
       image: product.image || "",
-      imageSource: (product as any).imageSource || "none",
+      imageSource: product.imageSource || "none",
     });
     setDialogOpen(true);
   };
