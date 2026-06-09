@@ -125,6 +125,7 @@ export default function ProductsPage() {
     stock: "0",
     sizes: DEFAULT_SIZES.map(size => ({ size, stock: 0 })),
     image: "",
+    imageSource: "none" as "uploaded" | "random" | "none",
   });
 
   useEffect(() => {
@@ -219,6 +220,7 @@ export default function ProductsPage() {
         ? normalizeProductSizes(product.sizes)
         : (product.plusSized === true ? PLUS_SIZES : DEFAULT_SIZES).map(size => ({ size, stock: 0 })),
       image: product.image || "",
+      imageSource: (product as any).imageSource || "none",
     });
     setDialogOpen(true);
   };
@@ -235,6 +237,7 @@ export default function ProductsPage() {
       stock: "0",
       sizes: DEFAULT_SIZES.map(size => ({ size, stock: 0 })),
       image: "",
+      imageSource: "none",
     });
   };
 
@@ -256,7 +259,7 @@ export default function ProductsPage() {
       const query = formData.name || "fashion clothing";
       const response = await apiGet(`/api/images/random?query=${encodeURIComponent(query)}`);
       if (response?.url) {
-        setFormData(prev => ({ ...prev, image: response.url }));
+        setFormData(prev => ({ ...prev, image: response.url, imageSource: "random" }));
       }
     } catch {
       toast({ title: "Erro ao buscar imagem", variant: "destructive" });
@@ -309,7 +312,7 @@ export default function ProductsPage() {
 
       const data = await response.json();
       if (data?.url) {
-        setFormData(prev => ({ ...prev, image: data.url }));
+        setFormData(prev => ({ ...prev, image: data.url, imageSource: "uploaded" }));
         toast({ title: "Imagem enviada com sucesso!" });
       }
     } catch (error) {

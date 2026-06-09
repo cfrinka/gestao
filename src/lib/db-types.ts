@@ -17,6 +17,8 @@ export const PRODUCT_CATEGORIES = [
 
 export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
 
+export type ProductImageSource = "uploaded" | "random" | "none";
+
 export interface Product {
   id: string;
   name: string;
@@ -29,6 +31,7 @@ export interface Product {
   stock: number;
   sizes: ProductSize[];
   image?: string;
+  imageSource?: ProductImageSource;
   createdAt: Date;
   updatedAt: Date;
 }
