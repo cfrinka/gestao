@@ -28,6 +28,7 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  image?: string;
 }
 
 interface ExchangeCartItem {
@@ -50,6 +51,24 @@ interface ExchangeRecord {
   addedToCashRegisterSales?: boolean;
   createdByName: string;
   createdAt: string;
+}
+
+function ProductImage({ src, name, className = "w-12 h-12" }: { src?: string; name: string; className?: string }) {
+  const [error, setError] = useState(false);
+  const seed = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const fallbackSrc = `https://picsum.photos/seed/${seed}/100/100`;
+  const imageSrc = error || !src ? fallbackSrc : src;
+
+  return (
+    <div className={`rounded overflow-hidden bg-gray-100 flex-shrink-0 ${className}`}>
+      <img
+        src={imageSrc}
+        alt={name}
+        className="w-full h-full object-cover"
+        onError={() => setError(true)}
+      />
+    </div>
+  );
 }
 
 export default function ExchangesPage() {
@@ -603,33 +622,42 @@ export default function ExchangesPage() {
       </Card>
 
       <Dialog open={!!selectedProduct} onOpenChange={() => setSelectedProduct(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Selecione o tamanho</DialogTitle>
-          </DialogHeader>
+        <DialogContent className="sm:max-w-5xl p-0 overflow-hidden">
           {selectedProduct && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-500">
-                {selectedProduct.name} - {formatCurrency(selectedProduct.salePrice)}
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {selectedProduct.sizes?.map((sizeData) => {
-                  const disabled = addDirection === "OUT" && sizeData.stock <= 0;
-                  return (
-                    <Button
-                      key={sizeData.size}
-                      variant={disabled ? "ghost" : "outline"}
-                      disabled={disabled}
-                      className={`h-12 ${disabled ? "opacity-50" : ""}`}
-                      onClick={() => addToCart(selectedProduct, sizeData.size, addDirection)}
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-bold">{sizeData.size}</span>
-                        <span className="text-xs text-gray-500">({sizeData.stock})</span>
-                      </div>
-                    </Button>
-                  );
-                })}
+            <div className="grid grid-cols-1 md:grid-cols-2 h-[70vh]">
+              {/* Left column - large product image */}
+              <div className="bg-gray-50 flex items-center justify-center p-6">
+                <ProductImage
+                  src={selectedProduct.image}
+                  name={selectedProduct.name}
+                  className="w-full h-full max-h-[60vh] rounded-lg shadow-sm"
+                />
+              </div>
+              {/* Right column - sizes */}
+              <div className="p-6 flex flex-col">
+                <DialogHeader className="mb-4">
+                  <DialogTitle className="text-xl">{selectedProduct.name}</DialogTitle>
+                  <p className="text-lg font-semibold text-green-600">{formatCurrency(selectedProduct.salePrice)}</p>
+                </DialogHeader>
+                <div className="grid grid-cols-3 gap-3">
+                  {selectedProduct.sizes?.map((sizeData) => {
+                    const disabled = addDirection === "OUT" && sizeData.stock <= 0;
+                    return (
+                      <Button
+                        key={sizeData.size}
+                        variant={disabled ? "ghost" : "outline"}
+                        disabled={disabled}
+                        className={`h-16 text-lg ${disabled ? "opacity-50" : "hover:bg-gray-100"}`}
+                        onClick={() => addToCart(selectedProduct, sizeData.size, addDirection)}
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-bold">{sizeData.size}</span>
+                          <span className="text-xs text-gray-500">({sizeData.stock})</span>
+                        </div>
+                      </Button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
