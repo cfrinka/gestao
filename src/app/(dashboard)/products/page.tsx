@@ -30,11 +30,22 @@ interface ProductSize {
   stock: number;
 }
 
+const PRODUCT_CATEGORIES = [
+  "Blusas",
+  "Regatas",
+  "Camisetas",
+  "Shorts",
+  "Calças",
+  "Saias",
+  "Conjuntos",
+] as const;
+
 interface Product {
   id: string;
   name: string;
   sku: string;
   plusSized?: boolean;
+  category?: string;
   costPrice: number;
   salePrice: number;
   stock: number;
@@ -108,6 +119,7 @@ export default function ProductsPage() {
     name: "",
     sku: "",
     plusSized: false,
+    category: "",
     costPrice: "",
     salePrice: "",
     stock: "0",
@@ -199,6 +211,7 @@ export default function ProductsPage() {
       name: product.name,
       sku: product.sku,
       plusSized: product.plusSized === true,
+      category: product.category || "",
       costPrice: product.costPrice.toString(),
       salePrice: product.salePrice.toString(),
       stock: product.stock.toString(),
@@ -216,6 +229,7 @@ export default function ProductsPage() {
       name: "",
       sku: "",
       plusSized: false,
+      category: "",
       costPrice: "",
       salePrice: "",
       stock: "0",
@@ -365,14 +379,32 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={formData.plusSized}
-                  onChange={(e) => setFormData({ ...formData, plusSized: e.target.checked })}
-                />
-                Plus Size
-              </label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="category">Categoria</Label>
+                  <select
+                    id="category"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <option value="">Sem categoria</option>
+                    {PRODUCT_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-sm pb-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.plusSized}
+                      onChange={(e) => setFormData({ ...formData, plusSized: e.target.checked })}
+                    />
+                    Plus Size
+                  </label>
+                </div>
+              </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
@@ -542,6 +574,7 @@ export default function ProductsPage() {
                   <TableHead className="w-16">Imagem</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead>SKU</TableHead>
+                  <TableHead>Categoria</TableHead>
                   <TableHead>Plus</TableHead>
                   <TableHead className="text-right">Custo</TableHead>
                   <TableHead className="text-right">Venda</TableHead>
@@ -557,6 +590,15 @@ export default function ProductsPage() {
                     </TableCell>
                     <TableCell className="font-medium">{product.name}</TableCell>
                     <TableCell>{product.sku}</TableCell>
+                    <TableCell>
+                      {product.category ? (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                          {product.category}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       {product.plusSized ? (
                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#355444] text-white">

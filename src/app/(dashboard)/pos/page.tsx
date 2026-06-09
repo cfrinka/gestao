@@ -25,11 +25,22 @@ interface ProductSize {
   stock: number;
 }
 
+const PRODUCT_CATEGORIES = [
+  "Blusas",
+  "Regatas",
+  "Camisetas",
+  "Shorts",
+  "Calças",
+  "Saias",
+  "Conjuntos",
+] as const;
+
 interface Product {
   id: string;
   name: string;
   sku: string;
   plusSized?: boolean;
+  category?: string;
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
@@ -163,6 +174,7 @@ export default function POSPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -503,11 +515,13 @@ export default function POSPage() {
     doc.save(`fechamento-caixa-${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
-  const filteredProducts = products.filter(
-    (p) =>
+  const filteredProducts = products.filter((p) => {
+    const matchesSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.sku.toLowerCase().includes(search.toLowerCase())
-  );
+      p.sku.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = !selectedCategory || p.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   const addToCart = (product: Product, size: string) => {
     // Check size-specific stock
@@ -1087,6 +1101,28 @@ export default function POSPage() {
               ✓ Escaneado: {lastScanned}
             </div>
           )}
+        </div>
+
+        <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
+          <Button
+            variant={selectedCategory === "" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setSelectedCategory("")}
+            className="whitespace-nowrap"
+          >
+            Todos
+          </Button>
+          {PRODUCT_CATEGORIES.map((cat) => (
+            <Button
+              key={cat}
+              variant={selectedCategory === cat ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedCategory(selectedCategory === cat ? "" : cat)}
+              className="whitespace-nowrap"
+            >
+              {cat}
+            </Button>
+          ))}
         </div>
 
         <div className="flex-1 overflow-y-auto">

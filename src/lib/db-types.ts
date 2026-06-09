@@ -5,12 +5,25 @@ export interface ProductSize {
   stock: number;
 }
 
+export const PRODUCT_CATEGORIES = [
+  "Blusas",
+  "Regatas",
+  "Camisetas",
+  "Shorts",
+  "Calças",
+  "Saias",
+  "Conjuntos",
+] as const;
+
+export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
+
 export interface Product {
   id: string;
   name: string;
   sku: string;
   ownerId?: string;
   plusSized?: boolean;
+  category?: ProductCategory;
   costPrice: number;
   salePrice: number;
   stock: number;

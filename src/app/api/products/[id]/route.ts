@@ -31,7 +31,7 @@ export async function PUT(
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
-      const { name, sku, costPrice, salePrice, stock, sizes, plusSized, image } = body;
+      const { name, sku, costPrice, salePrice, stock, sizes, plusSized, image, category } = body;
 
       const existingProduct = await getProduct(params.id);
 
@@ -53,6 +53,7 @@ export async function PUT(
         name: name || existingProduct.name,
         sku: sku || existingProduct.sku,
         plusSized: plusSized === undefined ? existingProduct.plusSized === true : plusSized === true,
+        category: category !== undefined ? (category || undefined) : existingProduct.category,
         costPrice: nextCostPrice,
         salePrice: salePrice !== undefined ? parseFloat(salePrice) : existingProduct.salePrice,
         stock: nextStock,

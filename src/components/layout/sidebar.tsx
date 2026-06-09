@@ -18,6 +18,7 @@ import {
   Truck,
   FileText,
   Percent,
+  Tags,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,7 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["ADMIN", "CASHIER"] },
   { name: "PDV", href: "/pos", icon: ShoppingCart, roles: ["ADMIN", "CASHIER"] },
   { name: "Produtos", href: "/products", icon: Package, roles: ["ADMIN"] },
+  { name: "Categorias", href: "/products/categories", icon: Tags, roles: ["ADMIN"] },
   { name: "Vendas", href: "/sales", icon: ClipboardList, roles: ["ADMIN", "CASHIER"] },
   { name: "Vendas Mensais", href: "/sales-month", icon: BarChart3, roles: ["ADMIN"] },
   { name: "Comissão", href: "/comission", icon: Percent, roles: ["ADMIN", "CASHIER"] },
@@ -67,7 +69,12 @@ export function Sidebar({ mobile = false, onNavigate }: SidebarProps) {
         <div className="mt-8 flex-grow flex flex-col">
           <nav className="flex-1 px-2 space-y-1">
             {filteredNavigation.map((item) => {
-              const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+              const hasChildRoute = filteredNavigation.some(
+                (other) => other.href !== item.href && other.href.startsWith(item.href + "/")
+              );
+              const isActive = hasChildRoute
+                ? pathname === item.href
+                : pathname === item.href || pathname.startsWith(item.href + "/");
               return (
                 <Link
                   key={item.name}
