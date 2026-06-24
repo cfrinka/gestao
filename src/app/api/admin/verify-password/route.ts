@@ -1,42 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { adminDb } from "@/lib/firebase-admin";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  return withAuthorizedRoute(
-    request,
-    async ({ request: authorizedRequest }) => {
-      const body = await authorizedRequest.json();
-      const { adminUid } = body;
+  try {
+    const body = await request.json();
+    const { adminPassword } = body;
 
-      if (!adminUid || typeof adminUid !== "string") {
-        return NextResponse.json({ error: "Admin UID is required" }, { status: 400 });
-      }
+    if (!adminPassword) {
+      return NextResponse.json({ error: "Admin password is required" }, { status: 400 });
+    }
 
-      try {
-        // Verify that the provided UID belongs to an admin user
-        const userDoc = await adminDb.collection("users").doc(adminUid).get();
-        
-        if (!userDoc.exists) {
-          return NextResponse.json({ error: "Admin user not found" }, { status: 404 });
-        }
+    // Verify admin password using the same method as debt corrections
+    const settingsDoc = await adminDb.collection("settings").doc("general").get();
+    const settings = settingsDoc.data();
+    
+    if (!settings || settings.adminPassword !== adminPassword) {
+      return NextResponse.json({ error: "Invalid admin password" }, { status: 403 });
+    }
 
-        const userData = userDoc.data();
-        if (userData?.role !== "ADMIN") {
-          return NextResponse.json({ error: "User is not an admin" }, { status: 403 });
-        }
-
-        return NextResponse.json({ 
-          success: true,
-          isAdmin: true 
-        });
-      } catch (error) {
-        console.error("Admin verification error:", error);
-        return NextResponse.json({ error: "Verification failed" }, { status: 500 });
-      }
-    },
-    { operationName: "Admin Verify Password" }
-  );
+    return NextResponse.json({ 
+      success: true
+    });
+  } catch (error) {
+    console.error("Admin verification error:", error);
+    return NextResponse.json({ error: "Verification failed" }, { status: 500 });
+  }
 }

@@ -184,7 +184,6 @@ export default function POSPage() {
   const [discount, setDiscount] = useState<number>(0);
   const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
-  const [adminEmail, setAdminEmail] = useState("");
   const [verifyingAdmin, setVerifyingAdmin] = useState(false);
   
   // Pay later state
@@ -685,7 +684,6 @@ export default function POSPage() {
     setSelectedClientId("");
     setShowPayLater(false);
     setAdminPassword("");
-    setAdminEmail("");
     setShowPaymentModal(true);
   };
 
@@ -704,38 +702,32 @@ export default function POSPage() {
   };
 
   const handleAdminVerification = async () => {
-    if (!adminEmail || !adminPassword) {
-      toast({ title: "Preencha email e senha", variant: "destructive" });
+    if (!adminPassword) {
+      toast({ title: "Informe a senha de administrador", variant: "destructive" });
       return;
     }
 
     setVerifyingAdmin(true);
     try {
-      // Re-authenticate with admin credentials
-      const { signInWithEmailAndPassword } = await import("firebase/auth");
-      const { auth } = await import("@/lib/firebase");
+      // Verify admin password using the same method as debt corrections
+      const response = await apiPost("/api/admin/verify-password", { 
+        adminPassword: adminPassword.trim() 
+      });
       
-      const userCredential = await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
-      const adminUid = userCredential.user.uid;
-
-      // Verify this is an admin
-      const response = await apiPost("/api/admin/verify-password", { adminUid });
-      
-      if (response.isAdmin) {
+      if (response.success) {
         toast({ title: "Autorização confirmada" });
         setShowAdminPasswordModal(false);
         setAdminPassword("");
-        setAdminEmail("");
         // Discount is already set, just close the modal
       } else {
-        toast({ title: "Usuário não é administrador", variant: "destructive" });
+        toast({ title: response.error || "Senha de administrador inválida", variant: "destructive" });
         // Reset discount to max allowed for cashier
         setDiscount(maxCashierDiscount);
       }
     } catch {
       toast({ 
         title: "Erro na verificação", 
-        description: "Email ou senha incorretos",
+        description: "Senha de administrador inválida",
         variant: "destructive" 
       });
       // Reset discount to max allowed for cashier
@@ -1576,23 +1568,13 @@ export default function POSPage() {
               Para aplicar desconto acima de 10%, é necessário a autorização de um administrador.
             </p>
             <div className="space-y-2">
-              <Label htmlFor="admin-email">Email do Administrador</Label>
-              <Input
-                id="admin-email"
-                type="email"
-                value={adminEmail}
-                onChange={(e) => setAdminEmail(e.target.value)}
-                placeholder="admin@loja.com"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="admin-password">Senha</Label>
+              <Label htmlFor="admin-password">Senha de Administrador</Label>
               <Input
                 id="admin-password"
                 type="password"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="Senha admin para confirmar"
               />
             </div>
             <div className="flex gap-2 pt-2">
@@ -1602,7 +1584,6 @@ export default function POSPage() {
                 onClick={() => {
                   setShowAdminPasswordModal(false);
                   setAdminPassword("");
-                  setAdminEmail("");
                   setDiscount(0); // Reset discount if cancelled
                 }}
               >
