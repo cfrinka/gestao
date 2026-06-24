@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, generateSku } from "@/lib/utils";
-import { Plus, Pencil, Trash2, Package, RefreshCw, Upload, Loader2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, RefreshCw, Upload, Loader2, Download } from "lucide-react";
 
 interface ProductSize {
   size: string;
@@ -329,6 +329,27 @@ export default function ProductsPage() {
     }
   };
 
+  const handleDownloadJson = async () => {
+    try {
+      const data = await apiGet("/api/products");
+      if (Array.isArray(data)) {
+        const jsonString = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `products-${new Date().toISOString().split("T")[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast({ title: "Produtos exportados com sucesso!" });
+      }
+    } catch {
+      toast({ title: "Erro ao exportar produtos", variant: "destructive" });
+    }
+  };
+
   const normalizedSearch = search.trim().toLowerCase();
   const filteredProducts = normalizedSearch
     ? products.filter((p) => {
@@ -346,6 +367,10 @@ export default function ProductsPage() {
           <p className="text-gray-500">Gerencie os produtos da loja</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleDownloadJson}>
+            <Download className="h-4 w-4 mr-2" />
+            Exportar JSON
+          </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={openNewDialog}>

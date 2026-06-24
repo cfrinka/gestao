@@ -17,6 +17,7 @@ export interface CheckoutCommand {
   clientId?: string;
   payLater?: boolean;
   idempotencyKey: string;
+  subtotal?: number;
 }
 
 export type IdempotencyReservation =

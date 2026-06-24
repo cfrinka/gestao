@@ -88,6 +88,18 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(fakeOrder, { status: 201 });
       }
 
+      // Calculate subtotal for discount validation
+      const items = Array.isArray(body.items) ? body.items : [];
+      const products = await Promise.all(
+        items.map(async (item) => {
+          const product = await getProduct(item.productId).catch(() => null);
+          const salePrice = Number(product?.salePrice || 0);
+          const quantity = Number(item.quantity || 0);
+          return salePrice * quantity;
+        })
+      );
+      const subtotal = products.reduce((sum, price) => sum + price, 0);
+
       const service = new CheckoutService(new FirestoreCheckoutRepository());
       const result = await service.execute({
         userId: user.uid,
@@ -98,6 +110,7 @@ export async function POST(request: NextRequest) {
         clientId: body.clientId,
         payLater: body.payLater,
         idempotencyKey: body.idempotencyKey,
+        subtotal: subtotal,
       });
 
       return NextResponse.json(result.body, { status: result.status });

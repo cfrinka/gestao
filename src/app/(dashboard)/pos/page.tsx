@@ -182,6 +182,10 @@ export default function POSPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [payments, setPayments] = useState<PaymentMethod[]>([]);
   const [discount, setDiscount] = useState<number>(0);
+  const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [verifyingAdmin, setVerifyingAdmin] = useState(false);
   
   // Pay later state
   const [clients, setClients] = useState<Client[]>([]);
@@ -667,8 +671,9 @@ export default function POSPage() {
   const totalDiscount = totalAutoDiscount + discount; // manual discount added on top
   const total = Math.max(0, subtotal - totalDiscount);
 
-  const canApplyDiscount = userData?.role === "ADMIN";
+  const canApplyDiscount = userData?.role === "ADMIN" || userData?.role === "CASHIER";
   const canUsePayLater = userData?.role === "ADMIN";
+  const maxCashierDiscount = subtotal * 0.10;
 
   const openPaymentModal = () => {
     if (cart.length === 0) {
@@ -679,7 +684,66 @@ export default function POSPage() {
     setDiscount(0);
     setSelectedClientId("");
     setShowPayLater(false);
+    setAdminPassword("");
+    setAdminEmail("");
     setShowPaymentModal(true);
+  };
+
+  const handleDiscountChange = (value: number) => {
+    const isAdmin = userData?.role === "ADMIN";
+    const isCashier = userData?.role === "CASHIER";
+
+    if (isCashier && value > maxCashierDiscount) {
+      // Cashier trying to apply discount > 10%, require admin authorization
+      // Store the requested discount value for after verification
+      setDiscount(value);
+      setShowAdminPasswordModal(true);
+      return;
+    }
+
+    setDiscount(value);
+  };
+
+  const handleAdminVerification = async () => {
+    if (!adminEmail || !adminPassword) {
+      toast({ title: "Preencha email e senha", variant: "destructive" });
+      return;
+    }
+
+    setVerifyingAdmin(true);
+    try {
+      // Re-authenticate with admin credentials
+      const { signInWithEmailAndPassword } = await import("firebase/auth");
+      const { auth } = await import("@/lib/firebase");
+      
+      const userCredential = await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
+      const adminUid = userCredential.user.uid;
+
+      // Verify this is an admin
+      const response = await apiPost("/api/admin/verify-password", { adminUid });
+      
+      if (response.isAdmin) {
+        toast({ title: "Autorização confirmada" });
+        setShowAdminPasswordModal(false);
+        setAdminPassword("");
+        setAdminEmail("");
+        // Discount is already set, just close the modal
+      } else {
+        toast({ title: "Usuário não é administrador", variant: "destructive" });
+        // Reset discount to max allowed for cashier
+        setDiscount(maxCashierDiscount);
+      }
+    } catch (error) {
+      toast({ 
+        title: "Erro na verificação", 
+        description: "Email ou senha incorretos",
+        variant: "destructive" 
+      });
+      // Reset discount to max allowed for cashier
+      setDiscount(maxCashierDiscount);
+    } finally {
+      setVerifyingAdmin(false);
+    }
   };
 
   const addPaymentMethod = (method: PaymentMethod["method"]) => {
@@ -1316,17 +1380,29 @@ export default function POSPage() {
 
             {canApplyDiscount && (
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Desconto Adicional (R$)</Label>
+                <Label className="text-sm font-medium">
+                  Desconto Adicional (R$)
+                  {userData?.role === "CASHIER" && (
+                    <span className="text-xs text-gray-500 ml-2">
+                      (Máximo: {formatCurrency(maxCashierDiscount)})
+                    </span>
+                  )}
+                </Label>
                 <Input
                   type="number"
                   step="0.01"
                   min="0"
                   max={subtotal - totalAutoDiscount}
                   value={discount || ""}
-                  onChange={(e) => setDiscount(Math.min(subtotal - totalAutoDiscount, parseFloat(e.target.value) || 0))}
+                  onChange={(e) => handleDiscountChange(Math.min(subtotal - totalAutoDiscount, parseFloat(e.target.value) || 0))}
                   placeholder="0,00"
                   className="text-right"
                 />
+                {userData?.role === "CASHIER" && discount > maxCashierDiscount && (
+                  <p className="text-xs text-orange-600">
+                    ⚠️ Desconto acima de 10% requer autorização de administrador
+                  </p>
+                )}
               </div>
             )}
 
@@ -1485,6 +1561,61 @@ export default function POSPage() {
                   {processing ? "Processando..." : "Confirmar Venda"}
                 </Button>
               )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin Password Verification Modal */}
+      <Dialog open={showAdminPasswordModal} onOpenChange={setShowAdminPasswordModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Autorização de Administrador</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Para aplicar desconto acima de 10%, é necessário a autorização de um administrador.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="admin-email">Email do Administrador</Label>
+              <Input
+                id="admin-email"
+                type="email"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="admin@loja.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="admin-password">Senha</Label>
+              <Input
+                id="admin-password"
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setShowAdminPasswordModal(false);
+                  setAdminPassword("");
+                  setAdminEmail("");
+                  setDiscount(0); // Reset discount if cancelled
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleAdminVerification}
+                disabled={verifyingAdmin}
+              >
+                {verifyingAdmin ? "Verificando..." : "Autorizar"}
+              </Button>
             </div>
           </div>
         </DialogContent>

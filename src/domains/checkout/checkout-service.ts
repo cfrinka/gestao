@@ -32,7 +32,18 @@ export class CheckoutService {
       throw new HttpError(400, "clientId is required for pay later");
     }
 
-    const allowedDiscount = canUseAdvancedFeatures ? Number(command.discount || 0) : 0;
+    const subtotal = Number(command.subtotal || 0);
+    const requestedDiscount = Number(command.discount || 0);
+    let allowedDiscount = 0;
+
+    if (canUseAdvancedFeatures) {
+      // Admins can apply any discount
+      allowedDiscount = requestedDiscount;
+    } else if (command.userRole === "CASHIER") {
+      // Cashiers can apply up to 10% discount
+      const maxDiscount = subtotal * 0.10;
+      allowedDiscount = Math.min(requestedDiscount, maxDiscount);
+    }
     const normalizedPayments = payLater ? [] : command.payments || [];
 
     let clientName: string | undefined;
