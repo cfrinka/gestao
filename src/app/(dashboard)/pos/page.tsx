@@ -690,7 +690,6 @@ export default function POSPage() {
   };
 
   const handleDiscountChange = (value: number) => {
-    const isAdmin = userData?.role === "ADMIN";
     const isCashier = userData?.role === "CASHIER";
 
     if (isCashier && value > maxCashierDiscount) {
@@ -733,7 +732,7 @@ export default function POSPage() {
         // Reset discount to max allowed for cashier
         setDiscount(maxCashierDiscount);
       }
-    } catch (error) {
+    } catch {
       toast({ 
         title: "Erro na verificação", 
         description: "Email ou senha incorretos",
