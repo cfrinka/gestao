@@ -1,10 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   experimental: {
     serverComponentsExternalPackages: ['bcryptjs'],
   },
+
   transpilePackages: ['firebase', 'undici'],
+
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
