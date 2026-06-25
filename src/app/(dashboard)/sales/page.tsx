@@ -955,7 +955,7 @@ export default function SalesPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {selectedOrder.items.map((item) => (
+                    {selectedOrder.items?.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell>{item.product?.name || "Produto removido"}</TableCell>
                         <TableCell className="text-right">

@@ -66,6 +66,28 @@ export async function cancelOrder(input: {
       throw new Error("Fiado sales cannot be cancelled in this screen");
     }
 
+    // Get order items to restore stock
+    const itemsQuery = adminDb.collection("orderItems").where("orderId", "==", input.orderId);
+    const itemsSnapshot = await tx.get(itemsQuery);
+    const items = itemsSnapshot.docs.map((itemDoc) => ({
+      id: itemDoc.id,
+      ...itemDoc.data(),
+    })) as OrderItem[];
+
+    // Get product documents for stock restoration
+    const productRefs = new Map<string, FirebaseFirestore.DocumentReference>();
+    const productData = new Map<string, any>();
+    for (const item of items) {
+      if (!productRefs.has(item.productId)) {
+        const productRef = adminDb.collection("products").doc(item.productId);
+        productRefs.set(item.productId, productRef);
+        const productSnap = await tx.get(productRef);
+        if (productSnap.exists) {
+          productData.set(item.productId, productSnap.data());
+        }
+      }
+    }
+
     const saleMovementQuery = adminDb
       .collection("financialMovements")
       .where("type", "==", "SALE_REVENUE")
@@ -91,6 +113,41 @@ export async function cancelOrder(input: {
       method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX";
       amount: number;
     }>);
+
+    // Restore stock for each item
+    for (const item of items) {
+      const productRef = productRefs.get(item.productId);
+      const product = productData.get(item.productId);
+      
+      if (productRef && product) {
+        const quantity = Number(item.quantity || 0);
+        const size = String(item.size || "").trim();
+        const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+        
+        if (size && sizes.length > 0) {
+          // Product with sizes - restore to specific size
+          const sizeIndex = sizes.findIndex((s: any) => s.size === size);
+          if (sizeIndex >= 0) {
+            const updatedSizes = sizes.map((s: any, idx: number) =>
+              idx === sizeIndex ? { ...s, stock: Number(s.stock || 0) + quantity } : s
+            );
+            // Recalculate total stock from sizes
+            const newStock = updatedSizes.reduce((sum: number, s: any) => sum + Number(s.stock || 0), 0);
+            tx.update(productRef, {
+              stock: newStock,
+              sizes: updatedSizes,
+              updatedAt: nowTs,
+            });
+          }
+        } else {
+          // Product without sizes - restore to total stock
+          tx.update(productRef, {
+            stock: FieldValue.increment(quantity),
+            updatedAt: nowTs,
+          });
+        }
+      }
+    }
 
     tx.update(orderRef, {
       isCancelled: true,
@@ -154,6 +211,7 @@ export async function cancelOrder(input: {
     return {
       ...order,
       id: input.orderId,
+      items,
       isCancelled: true,
       cancelledAt: now,
       cancelledBy: input.actorId,

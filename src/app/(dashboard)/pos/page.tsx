@@ -185,6 +185,7 @@ export default function POSPage() {
   const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [verifyingAdmin, setVerifyingAdmin] = useState(false);
+  const [adminAuthorized, setAdminAuthorized] = useState(false);
   
   // Pay later state
   const [clients, setClients] = useState<Client[]>([]);
@@ -196,10 +197,13 @@ export default function POSPage() {
   const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
   const [showOpenRegisterModal, setShowOpenRegisterModal] = useState(false);
   const [showCloseRegisterModal, setShowCloseRegisterModal] = useState(false);
+  const [openingRegister, setOpeningRegister] = useState(false);
+  const [closingRegister, setClosingRegister] = useState(false);
   const [showCashAdjustmentModal, setShowCashAdjustmentModal] = useState(false);
   const [cashAdjustmentType, setCashAdjustmentType] = useState<"supply" | "withdrawal">("supply");
   const [cashAdjustmentAmount, setCashAdjustmentAmount] = useState<string>("");
   const [cashAdjustmentNote, setCashAdjustmentNote] = useState<string>("");
+  const [processingCashAdjustment, setProcessingCashAdjustment] = useState(false);
   const [showClosingReport, setShowClosingReport] = useState(false);
   const [openingBalance, setOpeningBalance] = useState<number>(0);
   const [closingBalance, setClosingBalance] = useState<number>(0);
@@ -262,6 +266,7 @@ export default function POSPage() {
       return;
     }
 
+    setProcessingCashAdjustment(true);
     try {
       const data = await apiPost("/api/cash-register", {
         action: cashAdjustmentType,
@@ -281,6 +286,8 @@ export default function POSPage() {
         description: error instanceof Error ? error.message : "Erro desconhecido",
         variant: "destructive",
       });
+    } finally {
+      setProcessingCashAdjustment(false);
     }
   };
   
@@ -394,6 +401,7 @@ export default function POSPage() {
   };
 
   const handleOpenRegister = async () => {
+    setOpeningRegister(true);
     try {
       const data = await apiPost("/api/cash-register", {
         action: "open",
@@ -406,10 +414,13 @@ export default function POSPage() {
       toast({ title: "Caixa aberto com sucesso!" });
     } catch {
       toast({ title: "Erro ao abrir caixa", variant: "destructive" });
+    } finally {
+      setOpeningRegister(false);
     }
   };
 
   const handleCloseRegister = async () => {
+    setClosingRegister(true);
     try {
       const data = await apiPost("/api/cash-register", {
         action: "close",
@@ -423,6 +434,8 @@ export default function POSPage() {
       setClosingDenominations(createEmptyDenominationCounts());
     } catch {
       toast({ title: "Erro ao fechar caixa", variant: "destructive" });
+    } finally {
+      setClosingRegister(false);
     }
   };
 
@@ -684,15 +697,15 @@ export default function POSPage() {
     setSelectedClientId("");
     setShowPayLater(false);
     setAdminPassword("");
+    setAdminAuthorized(false);
     setShowPaymentModal(true);
   };
 
   const handleDiscountChange = (value: number) => {
     const isCashier = userData?.role === "CASHIER";
 
-    if (isCashier && value > maxCashierDiscount) {
+    if (isCashier && value > maxCashierDiscount && !adminAuthorized) {
       // Cashier trying to apply discount > 10%, require admin authorization
-      // Store the requested discount value for after verification
       setDiscount(value);
       setShowAdminPasswordModal(true);
       return;
@@ -716,6 +729,7 @@ export default function POSPage() {
       
       if (response.success) {
         toast({ title: "Autorização confirmada" });
+        setAdminAuthorized(true);
         setShowAdminPasswordModal(false);
         setAdminPassword("");
         // Discount is already set, just close the modal
@@ -1003,6 +1017,7 @@ export default function POSPage() {
         clientId: selectedClientId,
         payLater: true,
         idempotencyKey,
+        adminAuthorized: adminAuthorized,
       });
       
       const selectedClient = clients.find(c => c.id === selectedClientId);
@@ -1070,6 +1085,7 @@ export default function POSPage() {
         payments: paymentsSnapshot,
         discount: effectiveDiscount,
         idempotencyKey,
+        adminAuthorized: adminAuthorized,
       });
       
       printReceipt(order.id, {
@@ -1629,11 +1645,11 @@ export default function POSPage() {
               />
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowCashAdjustmentModal(false)}>
+              <Button variant="outline" className="flex-1" onClick={() => setShowCashAdjustmentModal(false)} disabled={processingCashAdjustment}>
                 Cancelar
               </Button>
-              <Button className="flex-1" onClick={handleCashAdjustment}>
-                Confirmar
+              <Button className="flex-1" onClick={handleCashAdjustment} disabled={processingCashAdjustment}>
+                {processingCashAdjustment ? "Processando..." : "Confirmar"}
               </Button>
             </div>
           </div>
@@ -1739,9 +1755,9 @@ export default function POSPage() {
               >
                 Cancelar
               </Button>
-              <Button className="flex-1" onClick={handleOpenRegister}>
+              <Button className="flex-1" onClick={handleOpenRegister} disabled={openingRegister}>
                 <Unlock className="h-4 w-4 mr-2" />
-                Abrir Caixa
+                {openingRegister ? "Abrindo..." : "Abrir Caixa"}
               </Button>
             </div>
           </div>
@@ -1843,9 +1859,9 @@ export default function POSPage() {
               >
                 Cancelar
               </Button>
-              <Button variant="destructive" className="flex-1" onClick={handleCloseRegister}>
+              <Button variant="destructive" className="flex-1" onClick={handleCloseRegister} disabled={closingRegister}>
                 <Lock className="h-4 w-4 mr-2" />
-                Fechar Caixa
+                {closingRegister ? "Fechando..." : "Fechar Caixa"}
               </Button>
             </div>
           </div>

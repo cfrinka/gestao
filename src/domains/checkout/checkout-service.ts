@@ -40,9 +40,13 @@ export class CheckoutService {
       // Admins can apply any discount
       allowedDiscount = requestedDiscount;
     } else if (command.userRole === "CASHIER") {
-      // Cashiers can apply up to 10% discount
-      const maxDiscount = subtotal * 0.10;
-      allowedDiscount = Math.min(requestedDiscount, maxDiscount);
+      // Cashiers can apply up to 10% discount, unless authorized by admin
+      if (command.adminAuthorized) {
+        allowedDiscount = requestedDiscount;
+      } else {
+        const maxDiscount = subtotal * 0.10;
+        allowedDiscount = Math.min(requestedDiscount, maxDiscount);
+      }
     }
     const normalizedPayments = payLater ? [] : command.payments || [];
 
