@@ -11,7 +11,8 @@ const DEFAULT_DISCOUNT_SETTINGS: DiscountSettings = {
   progressiveDiscountEnabled: false,
   progressiveDiscount1Item: 0,
   progressiveDiscount2Items: 0,
-  progressiveDiscount3PlusItems: 0,
+  progressiveDiscount3PlusItems: 40,
+  progressiveDiscount4PlusItems: 60,
   productDiscountsEnabled: false,
   productDiscounts: [],
 };

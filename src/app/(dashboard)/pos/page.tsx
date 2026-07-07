@@ -102,6 +102,7 @@ interface DiscountSettings {
   progressiveDiscount1Item: number;
   progressiveDiscount2Items: number;
   progressiveDiscount3PlusItems: number;
+  progressiveDiscount4PlusItems: number;
   productDiscountsEnabled: boolean;
   productDiscounts: ProductDiscount[];
 }
@@ -228,6 +229,7 @@ export default function POSPage() {
       progressiveDiscount1Item: 0,
       progressiveDiscount2Items: 0,
       progressiveDiscount3PlusItems: 0,
+      progressiveDiscount4PlusItems: 60,
       productDiscountsEnabled: false,
       productDiscounts: [],
     },
@@ -310,6 +312,7 @@ export default function POSPage() {
           progressiveDiscount1Item: data.discounts?.progressiveDiscount1Item ?? 0,
           progressiveDiscount2Items: data.discounts?.progressiveDiscount2Items ?? 0,
           progressiveDiscount3PlusItems: data.discounts?.progressiveDiscount3PlusItems ?? 0,
+          progressiveDiscount4PlusItems: data.discounts?.progressiveDiscount4PlusItems ?? 60,
           productDiscountsEnabled: data.discounts?.productDiscountsEnabled ?? false,
           productDiscounts: data.discounts?.productDiscounts ?? [],
         },
@@ -650,7 +653,9 @@ export default function POSPage() {
     // Progressive discount based on item count
     if (storeSettings.discounts.progressiveDiscountEnabled) {
       let progressivePercent = 0;
-      if (totalItems >= 3) {
+      if (totalItems >= 4) {
+        progressivePercent = storeSettings.discounts.progressiveDiscount4PlusItems;
+      } else if (totalItems === 3) {
         progressivePercent = storeSettings.discounts.progressiveDiscount3PlusItems;
       } else if (totalItems === 2) {
         progressivePercent = storeSettings.discounts.progressiveDiscount2Items;
@@ -660,7 +665,8 @@ export default function POSPage() {
       if (progressivePercent > 0) {
         const progressiveValue = (subtotal * progressivePercent) / 100;
         autoDiscount += progressiveValue;
-        details.push({ label: `Desconto ${totalItems >= 3 ? "3+" : totalItems} ${totalItems === 1 ? "item" : "itens"} (${progressivePercent}%)`, value: progressiveValue });
+        const countLabel = totalItems >= 4 ? "4+" : totalItems.toString();
+        details.push({ label: `Desconto ${countLabel} ${totalItems === 1 ? "item" : "itens"} (${progressivePercent}%)`, value: progressiveValue });
       }
     }
 
@@ -1312,11 +1318,22 @@ export default function POSPage() {
                   <span className="text-gray-600">Subtotal:</span>
                   <span>{formatCurrency(subtotal)}</span>
                 </div>
-                {totalAutoDiscount > 0 && (
+                {autoDiscountDetails.length > 0 && autoDiscountDetails.map((d, i) => (
+                  <div key={i} className="flex justify-between items-center text-green-600 text-sm">
+                    <span className="text-sm">{d.label}:</span>
+                    <span className="font-medium">-{formatCurrency(d.value)}</span>
+                  </div>
+                ))}
+                {pixDiscount > 0 && (
                   <div className="flex justify-between items-center text-green-600 text-sm">
-                    <span className="text-sm">Descontos ativos:</span>
-                    <span>Descontos ativos:</span>
-                    <span>-{formatCurrency(totalAutoDiscount)}</span>
+                    <span className="text-sm">Desconto PIX ({storeSettings.discounts.pixDiscountPercent}%):</span>
+                    <span className="font-medium">-{formatCurrency(pixDiscount)}</span>
+                  </div>
+                )}
+                {discount > 0 && (
+                  <div className="flex justify-between items-center text-red-600 text-sm">
+                    <span className="text-sm">Desconto manual:</span>
+                    <span className="font-medium">-{formatCurrency(discount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between items-center text-lg font-bold pt-1 border-t">

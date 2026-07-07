@@ -170,6 +170,7 @@ interface DiscountSettings {
   progressiveDiscount1Item: number;
   progressiveDiscount2Items: number;
   progressiveDiscount3PlusItems: number;
+  progressiveDiscount4PlusItems: number;
   productDiscountsEnabled: boolean;
   productDiscounts: ProductDiscount[];
 }
@@ -204,7 +205,8 @@ export default function SettingsPage() {
       progressiveDiscountEnabled: false,
       progressiveDiscount1Item: 0,
       progressiveDiscount2Items: 0,
-      progressiveDiscount3PlusItems: 0,
+      progressiveDiscount3PlusItems: 40,
+      progressiveDiscount4PlusItems: 60,
       productDiscountsEnabled: false,
       productDiscounts: [],
     },
@@ -243,7 +245,8 @@ export default function SettingsPage() {
           progressiveDiscountEnabled: data.discounts?.progressiveDiscountEnabled ?? false,
           progressiveDiscount1Item: data.discounts?.progressiveDiscount1Item ?? 0,
           progressiveDiscount2Items: data.discounts?.progressiveDiscount2Items ?? 0,
-          progressiveDiscount3PlusItems: data.discounts?.progressiveDiscount3PlusItems ?? 0,
+          progressiveDiscount3PlusItems: data.discounts?.progressiveDiscount3PlusItems ?? 40,
+          progressiveDiscount4PlusItems: data.discounts?.progressiveDiscount4PlusItems ?? 60,
           productDiscountsEnabled: data.discounts?.productDiscountsEnabled ?? false,
           productDiscounts: data.discounts?.productDiscounts ?? [],
         },
@@ -628,7 +631,7 @@ export default function SettingsPage() {
                   <span className="text-gray-500">%</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Label className="w-24 whitespace-nowrap">3+ itens:</Label>
+                  <Label className="w-24 whitespace-nowrap">3 itens:</Label>
                   <Input
                     type="number"
                     min="0"
@@ -639,6 +642,24 @@ export default function SettingsPage() {
                       setSettings({
                         ...settings,
                         discounts: { ...settings.discounts, progressiveDiscount3PlusItems: parseFloat(e.target.value) || 0 },
+                      })
+                    }
+                    className="w-20"
+                  />
+                  <span className="text-gray-500">%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="w-24 whitespace-nowrap">4+ itens:</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={settings.discounts.progressiveDiscount4PlusItems}
+                    onChange={(e) =>
+                      setSettings({
+                        ...settings,
+                        discounts: { ...settings.discounts, progressiveDiscount4PlusItems: parseFloat(e.target.value) || 0 },
                       })
                     }
                     className="w-20"

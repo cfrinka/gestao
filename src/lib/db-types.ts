@@ -243,6 +243,7 @@ export interface DiscountSettings {
   progressiveDiscount1Item: number;
   progressiveDiscount2Items: number;
   progressiveDiscount3PlusItems: number;
+  progressiveDiscount4PlusItems: number;
   productDiscountsEnabled: boolean;
   productDiscounts: ProductDiscount[];
 }
