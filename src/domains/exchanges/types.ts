@@ -1,5 +1,7 @@
 import type { ExchangeRecord } from "@/lib/db-types";
 
+export type { IdempotencyReservation } from "@/domains/shared/idempotency";
+
 export type ExchangePaymentMethod = "cash" | "pix" | "credit" | "debit";
 
 export interface ExchangeItemCommand {
@@ -21,12 +23,6 @@ export interface CreateExchangeCommand {
   items: ExchangeItemCommand[];
   idempotencyKey: string;
 }
-
-export type IdempotencyReservation =
-  | { type: "new" }
-  | { type: "completed"; response: unknown }
-  | { type: "in_progress" }
-  | { type: "conflict" };
 
 export interface ExchangeExecutionResult {
   status: 200 | 201 | 409;

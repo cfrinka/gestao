@@ -1,25 +1,15 @@
 import type { Order, PaymentMethod } from "@/lib/db-types";
-import { adminDb } from "@/lib/firebase-admin";
 import { getClient, updateClientBalance } from "@/domains/clients/clients-db";
 import { getOpenCashRegister, updateCashRegisterSales } from "@/domains/cash-register/cash-register-db";
 import { processCheckout } from "@/domains/checkout/checkout-db";
 import { consumeDiscountAuthorization } from "@/lib/discount-authorization";
+import { markIdempotencyCompleted, markIdempotencyFailed, reserveIdempotency } from "@/domains/shared/idempotency";
 import type { CheckoutRepository } from "@/domains/checkout/repository";
 import type { CheckoutCartItem, IdempotencyReservation } from "@/domains/checkout/types";
 
-type IdempotencyDoc = {
-  requestHash?: string;
-  status?: "PROCESSING" | "COMPLETED" | "FAILED";
-  response?: unknown;
-  errorMessage?: string;
-  retries?: number;
-};
+const SCOPE = "checkout";
 
 export class FirestoreCheckoutRepository implements CheckoutRepository {
-  private idempotencyRef(ownerId: string, idempotencyKey: string) {
-    return adminDb.collection("idempotencyKeys").doc(`checkout:${ownerId}:${idempotencyKey}`);
-  }
-
   async getClientNameById(clientId: string): Promise<string | null> {
     const client = await getClient(clientId);
     return client?.name || null;
@@ -30,46 +20,7 @@ export class FirestoreCheckoutRepository implements CheckoutRepository {
     idempotencyKey: string;
     requestHash: string;
   }): Promise<IdempotencyReservation> {
-    const ref = this.idempotencyRef(input.ownerId, input.idempotencyKey);
-
-    return adminDb.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-
-      if (!snap.exists) {
-        tx.create(ref, {
-          scope: "checkout",
-          ownerId: input.ownerId,
-          key: input.idempotencyKey,
-          requestHash: input.requestHash,
-          status: "PROCESSING",
-          retries: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-        return { type: "new" };
-      }
-
-      const data = snap.data() as IdempotencyDoc;
-      if (String(data.requestHash || "") !== input.requestHash) {
-        return { type: "conflict" };
-      }
-
-      if (data.status === "COMPLETED") {
-        return { type: "completed", response: data.response };
-      }
-
-      if (data.status === "PROCESSING") {
-        return { type: "in_progress" };
-      }
-
-      tx.update(ref, {
-        status: "PROCESSING",
-        errorMessage: null,
-        retries: Number(data.retries || 0) + 1,
-        updatedAt: new Date(),
-      });
-      return { type: "new" };
-    });
+    return reserveIdempotency(SCOPE, input.ownerId, input.idempotencyKey, input.requestHash);
   }
 
   async markIdempotencyCompleted(input: {
@@ -77,16 +28,7 @@ export class FirestoreCheckoutRepository implements CheckoutRepository {
     idempotencyKey: string;
     response: unknown;
   }): Promise<void> {
-    const ref = this.idempotencyRef(input.ownerId, input.idempotencyKey);
-    await ref.set(
-      {
-        status: "COMPLETED",
-        completedAt: new Date(),
-        updatedAt: new Date(),
-        response: JSON.parse(JSON.stringify(input.response)),
-      },
-      { merge: true }
-    );
+    await markIdempotencyCompleted(SCOPE, input.ownerId, input.idempotencyKey, input.response);
   }
 
   async markIdempotencyFailed(input: {
@@ -94,16 +36,7 @@ export class FirestoreCheckoutRepository implements CheckoutRepository {
     idempotencyKey: string;
     errorMessage: string;
   }): Promise<void> {
-    const ref = this.idempotencyRef(input.ownerId, input.idempotencyKey);
-    await ref.set(
-      {
-        status: "FAILED",
-        errorMessage: input.errorMessage,
-        failedAt: new Date(),
-        updatedAt: new Date(),
-      },
-      { merge: true }
-    );
+    await markIdempotencyFailed(SCOPE, input.ownerId, input.idempotencyKey, input.errorMessage);
   }
 
   async processCheckout(input: {

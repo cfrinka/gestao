@@ -1,5 +1,7 @@
 import type { Order, PaymentMethod } from "@/lib/db-types";
 
+export type { IdempotencyReservation } from "@/domains/shared/idempotency";
+
 export type UserRole = "ADMIN" | "CASHIER" | string;
 
 export interface CheckoutCartItem {
@@ -20,12 +22,6 @@ export interface CheckoutCommand {
   idempotencyKey: string;
   subtotal?: number;
 }
-
-export type IdempotencyReservation =
-  | { type: "new" }
-  | { type: "completed"; response: unknown }
-  | { type: "in_progress" }
-  | { type: "conflict" };
 
 export interface CheckoutExecutionResult {
   status: 200 | 201 | 409;
