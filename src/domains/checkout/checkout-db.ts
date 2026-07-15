@@ -111,6 +111,7 @@ export async function processCheckout(
       orderItems.push({
         orderId: "",
         productId: product.id,
+        productName: product.name,
         ...(product.ownerId ? { ownerId: product.ownerId } : {}),
         size: item.size,
         quantity,

@@ -168,6 +168,23 @@ function calculateDenominationTotal(counts: DenominationCounts): number {
   return Number(total.toFixed(2));
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+interface ReceiptOrderItem {
+  productName?: string;
+  size?: string;
+  quantity: number;
+  totalRevenue?: number;
+  lineTotal?: number;
+}
+
 export default function POSPage() {
   const { userData } = useAuth();
   const { toast } = useToast();
@@ -789,19 +806,19 @@ export default function POSPage() {
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remaining = total - totalPaid;
   const effectiveManualDiscount = canApplyDiscount ? discount : 0;
-  const effectiveDiscount = totalAutoDiscount + effectiveManualDiscount;
 
   const printReceipt = (
     orderId: string,
     options: {
       isTest?: boolean;
-      items: CartItem[];
+      items: ReceiptOrderItem[];
       payments: PaymentMethod[];
+      subtotal: number;
       totalAmount: number;
       discount: number;
     }
   ) => {
-    const { isTest = false, items, payments, totalAmount, discount } = options;
+    const { isTest = false, items, payments, subtotal, totalAmount, discount } = options;
     const receiptWindow = window.open('', '_blank', 'width=420,height=700');
     if (!receiptWindow) {
       toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
@@ -815,7 +832,6 @@ export default function POSPage() {
     const exchangeDeadline = new Date(now);
     exchangeDeadline.setDate(exchangeDeadline.getDate() + exchangeDays);
     const exchangeDeadlineStr = exchangeDeadline.toLocaleDateString('pt-BR');
-    const subtotal = items.reduce((sum, item) => sum + item.product.salePrice * item.quantity, 0);
 
     const paymentLabel: Record<PaymentMethod["method"], string> = {
       DINHEIRO: "Dinheiro",
@@ -826,14 +842,25 @@ export default function POSPage() {
 
     const itemsRows = items
       .map((item) => {
-        const itemName = `${item.product.name}${item.size ? ` (${item.size})` : ""}`;
-        const itemTotal = item.product.salePrice * item.quantity;
+        const itemName = escapeHtml(`${item.productName || "Produto"}${item.size ? ` (${item.size})` : ""}`);
+        const itemTotal = item.totalRevenue ?? item.lineTotal ?? 0;
         return `<tr><td>${item.quantity}x ${itemName}</td><td class="right">${formatCurrency(itemTotal)}</td></tr>`;
       })
       .join("");
 
     const paymentsRows = payments
       .map((payment) => `<tr><td>${paymentLabel[payment.method] || payment.method}</td><td class="right">${formatCurrency(payment.amount)}</td></tr>`)
+      .join("");
+
+    const storeName = escapeHtml(storeSettings.storeName.toUpperCase());
+    const storeAddress = escapeHtml(storeSettings.address);
+    const storePhone = escapeHtml(storeSettings.phone);
+    const storeCnpj = escapeHtml(storeSettings.cnpj);
+    const operatorName = cashRegister ? escapeHtml(cashRegister.userName) : "";
+    const documentLabel = isTest ? "TESTE-80MM" : `#${escapeHtml(orderId.slice(-6).toUpperCase())}`;
+    const footerLines = storeSettings.footerMessage
+      .split("\n")
+      .map((line) => `<div class="line">${escapeHtml(line)}</div>`)
       .join("");
 
     receiptWindow.document.write(`
@@ -899,10 +926,10 @@ export default function POSPage() {
       <body>
         <div class="receipt">
           <div class="center">
-            <div class="bold store-name line">${storeSettings.storeName.toUpperCase()}</div>
-            ${storeSettings.address ? `<div class="line">${storeSettings.address}</div>` : ''}
-            ${storeSettings.phone ? `<div class="line">Tel: ${storeSettings.phone}</div>` : ''}
-            ${storeSettings.cnpj ? `<div class="line">CNPJ: ${storeSettings.cnpj}</div>` : ''}
+            <div class="bold store-name line">${storeName}</div>
+            ${storeAddress ? `<div class="line">${storeAddress}</div>` : ''}
+            ${storePhone ? `<div class="line">Tel: ${storePhone}</div>` : ''}
+            ${storeCnpj ? `<div class="line">CNPJ: ${storeCnpj}</div>` : ''}
           </div>
 
           <div class="divider"></div>
@@ -912,8 +939,8 @@ export default function POSPage() {
           <div class="section muted">
             <div class="meta"><strong>Data:</strong> ${dateStr}</div>
             <div class="meta"><strong>Hora:</strong> ${timeStr}</div>
-            <div class="meta"><strong>Documento:</strong> ${isTest ? "TESTE-80MM" : `#${orderId.slice(-6).toUpperCase()}`}</div>
-            ${cashRegister ? `<div class="meta"><strong>Operador:</strong> ${cashRegister.userName}</div>` : ''}
+            <div class="meta"><strong>Documento:</strong> ${documentLabel}</div>
+            ${operatorName ? `<div class="meta"><strong>Operador:</strong> ${operatorName}</div>` : ''}
           </div>
 
           <div class="divider"></div>
@@ -942,9 +969,9 @@ export default function POSPage() {
 
         <div class="receipt">
           <div class="center">
-            <div class="bold store-name line">${storeSettings.storeName.toUpperCase()}</div>
-            ${storeSettings.address ? `<div class="line">${storeSettings.address}</div>` : ''}
-            ${storeSettings.phone ? `<div class="line">Tel: ${storeSettings.phone}</div>` : ''}
+            <div class="bold store-name line">${storeName}</div>
+            ${storeAddress ? `<div class="line">${storeAddress}</div>` : ''}
+            ${storePhone ? `<div class="line">Tel: ${storePhone}</div>` : ''}
           </div>
 
           <div class="divider"></div>
@@ -952,8 +979,8 @@ export default function POSPage() {
           <div class="section muted">
             <div class="meta"><strong>Data:</strong> ${dateStr}</div>
             <div class="meta"><strong>Hora:</strong> ${timeStr}</div>
-            <div class="meta"><strong>Documento:</strong> ${isTest ? "TESTE-80MM" : `#${orderId.slice(-6).toUpperCase()}`}</div>
-            ${cashRegister ? `<div class="meta"><strong>Operador:</strong> ${cashRegister.userName}</div>` : ''}
+            <div class="meta"><strong>Documento:</strong> ${documentLabel}</div>
+            ${operatorName ? `<div class="meta"><strong>Operador:</strong> ${operatorName}</div>` : ''}
           </div>
 
           <div class="divider"></div>
@@ -972,7 +999,7 @@ export default function POSPage() {
           ${storeSettings.footerMessage
             ? `<div class="divider"></div>
                <div class="center section muted">
-                 ${storeSettings.footerMessage.split('\n').map(line => `<div class="line">${line}</div>`).join('')}
+                 ${footerLines}
                </div>`
             : ''}
 
@@ -1077,10 +1104,9 @@ export default function POSPage() {
     }
 
     setProcessing(true);
-    const cartSnapshot = [...cart];
     const paymentsSnapshot = payments.filter(p => p.amount > 0);
     const idempotencyKey = crypto.randomUUID();
-    
+
     try {
       const order = await apiPost("/api/checkout", {
         items: cart.map((item) => ({
@@ -1095,10 +1121,11 @@ export default function POSPage() {
       });
       
       printReceipt(order.id, {
-        items: cartSnapshot,
+        items: Array.isArray(order.items) ? order.items : [],
         payments: paymentsSnapshot,
+        subtotal: order.subtotal,
         totalAmount: order.totalAmount,
-        discount: effectiveDiscount,
+        discount: order.discount,
       });
       
       toast({
