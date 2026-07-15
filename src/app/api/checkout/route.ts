@@ -5,6 +5,8 @@ import { CheckoutService } from "@/domains/checkout/checkout-service";
 import { FirestoreCheckoutRepository } from "@/domains/checkout/firestore-checkout-repository";
 import { HttpError } from "@/lib/api/http-errors";
 import { getProduct } from "@/lib/db";
+import { getStoreSettings } from "@/domains/settings/settings-db";
+import { calculateAutoDiscount } from "@/domains/checkout/discount-calculator";
 
 export const dynamic = "force-dynamic";
 
@@ -48,10 +50,12 @@ async function buildDemoOrder(body: CheckoutBody, userId: string) {
   );
 
   const subtotal = products.reduce((sum, p) => sum + p.lineTotal, 0);
-  const discount = Number(body.discount || 0) + Number(body.promoDiscount || 0);
+  const payments = Array.isArray(body.payments) ? body.payments : [];
+  const storeSettings = await getStoreSettings();
+  const promoDiscount = calculateAutoDiscount(products, subtotal, storeSettings.discounts, payments);
+  const discount = Number(body.discount || 0) + promoDiscount;
   const totalAmount = Math.max(0, subtotal - discount);
   const cogsTotal = products.reduce((sum, p) => sum + p.lineCost, 0);
-  const payments = Array.isArray(body.payments) ? body.payments : [];
 
   const now = new Date();
   const fakeId = `demo-${now.getTime().toString(36)}`;
@@ -90,17 +94,22 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(fakeOrder, { status: 201 });
       }
 
-      // Calculate subtotal for discount validation
+      // Calculate subtotal (and per-item pricing for discount validation) from real product data.
+      // Never trust client-supplied prices, subtotal, or promo discount values.
       const items = Array.isArray(body.items) ? body.items : [];
-      const products = await Promise.all(
+      const lineItems = await Promise.all(
         items.map(async (item) => {
           const product = await getProduct(item.productId).catch(() => null);
           const salePrice = Number(product?.salePrice || 0);
           const quantity = Number(item.quantity || 0);
-          return salePrice * quantity;
+          return { productId: item.productId, quantity, salePrice };
         })
       );
-      const subtotal = products.reduce((sum, price) => sum + price, 0);
+      const subtotal = lineItems.reduce((sum, item) => sum + item.salePrice * item.quantity, 0);
+
+      const storeSettings = await getStoreSettings();
+      const normalizedPayments = Array.isArray(body.payments) ? body.payments : [];
+      const promoDiscount = calculateAutoDiscount(lineItems, subtotal, storeSettings.discounts, normalizedPayments);
 
       const service = new CheckoutService(new FirestoreCheckoutRepository());
       const result = await service.execute({
@@ -109,7 +118,7 @@ export async function POST(request: NextRequest) {
         items: body.items,
         payments: body.payments,
         discount: body.discount,
-        promoDiscount: body.promoDiscount,
+        promoDiscount,
         clientId: body.clientId,
         payLater: body.payLater,
         idempotencyKey: body.idempotencyKey,
