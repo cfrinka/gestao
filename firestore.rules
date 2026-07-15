@@ -5,52 +5,42 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     // Helper function to get user data
     function getUserData() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
-    
+
     // Helper function to check if user is admin
     function isAdmin() {
       return isAuthenticated() && getUserData().role == 'ADMIN';
     }
-    
+
     // Users collection - only admins can read all, users can read their own
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
       allow write: if isAdmin();
     }
-    
-    // Owners collection - authenticated users can read, only admins can write
-    match /owners/{ownerId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-    
+
     // Products collection - authenticated users can read, only admins can write
     match /products/{productId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
     }
-    
-    // Orders collection - authenticated users can read and create
+
+    // Orders collection - all writes (checkout, cancellation, edits) go through the
+    // Admin SDK in server-side API routes, which apply stock checks, discount limits,
+    // and idempotency. The client SDK must never be able to create/modify an order
+    // directly, since that would bypass all of that.
     match /orders/{orderId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
+      allow write: if false;
     }
-    
-    // Order items subcollection
-    match /orders/{orderId}/items/{itemId} {
+
+    // Order line items - same reasoning as orders: server-only writes.
+    match /orderItems/{itemId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
-    }
-    
-    // Owner ledgers collection - authenticated users can read, system can write
-    match /ownerLedgers/{ledgerId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow write: if false;
     }
   }
 }
