@@ -166,16 +166,29 @@ export async function correctClientDebt(
   adminPassword: string,
   reason: string
 ): Promise<void> {
+  if (!(await verifyAdminPassword(adminPassword))) {
+    throw new Error("Invalid admin password");
+  }
+
+  return applyClientDebtCorrection(clientId, correctionAmount, reason);
+}
+
+/**
+ * The transactional core of a debt correction, split out from correctClientDebt so the admin
+ * password check (a separate concern) doesn't need to be re-verified or bypassed to exercise
+ * this logic directly (e.g. from tests).
+ */
+export async function applyClientDebtCorrection(
+  clientId: string,
+  correctionAmount: number,
+  reason: string
+): Promise<void> {
   if (!correctionAmount || correctionAmount === 0) {
     throw new Error("Correction amount must be different from zero");
   }
-  
+
   if (!reason || reason.trim().length === 0) {
     throw new Error("Reason for correction is required");
-  }
-
-  if (!(await verifyAdminPassword(adminPassword))) {
-    throw new Error("Invalid admin password");
   }
 
   const clientRef = adminDb.collection("clients").doc(clientId);
@@ -213,6 +226,7 @@ export async function correctClientDebt(
       newRemaining: number;
       newPaid: number;
       isFullyPaid: boolean;
+      revenueMovementRef?: FirebaseFirestore.DocumentReference;
     }> = [];
 
     if (correctionAmount < 0) {
@@ -252,6 +266,20 @@ export async function correctClientDebt(
 
         remainingToCorrect -= correctionToOrder;
       }
+
+      // A debt write-off means this revenue will never be collected — find each affected
+      // order's SALE_REVENUE movement now (still within the read phase) so it can be reduced
+      // below, otherwise commission keeps being paid on money that was formally forgiven.
+      for (const item of ordersToUpdate) {
+        const revenueMovementSnap = await tx.get(
+          adminDb
+            .collection("financialMovements")
+            .where("type", "==", "SALE_REVENUE")
+            .where("relatedEntity.id", "==", item.ref.id)
+            .limit(1)
+        );
+        item.revenueMovementRef = revenueMovementSnap.docs[0]?.ref;
+      }
     }
 
     // ALL WRITES AFTER ALL READS
@@ -287,6 +315,14 @@ export async function correctClientDebt(
         paymentHistory: FieldValue.arrayUnion(correctionRecord),
         ...(order.isFullyPaid ? { paidAt: nowTs } : {}),
       });
+
+      if (order.revenueMovementRef) {
+        tx.update(order.revenueMovementRef, {
+          amount: FieldValue.increment(-order.correctionToOrder),
+          "metadata.writtenOffAmount": FieldValue.increment(order.correctionToOrder),
+          "metadata.lastDebtCorrectionAt": nowTs,
+        });
+      }
     }
   });
 }
