@@ -219,7 +219,7 @@ This document describes the features currently implemented in the system, their 
 - `GET /api/clients/[id]` includes pending orders.
 - `PATCH /api/clients/[id]` supports actions:
   - `pay_order`: applies partial or full fiado payment
-  - `adjust_balance`: manual balance correction
+  - `correct_debt`: audited manual balance correction (requires admin password + reason, see `applyClientDebtCorrection`)
 - Payment updates order payment fields and client balance consistently.
 
 ### Improvement ideas

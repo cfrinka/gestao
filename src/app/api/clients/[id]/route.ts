@@ -171,12 +171,6 @@ export async function PATCH(
         return NextResponse.json({ ...updatedClient, pendingOrders: refreshedPending });
       }
 
-      if (action === "adjust_balance" && amount !== undefined) {
-        await updateClientBalance(params.id, amount);
-        const updatedClient = await getClient(params.id);
-        return NextResponse.json(updatedClient);
-      }
-
       if (action === "remove_order_item" && orderId && orderItemId) {
         await removeFiadoOrderItem(params.id, orderId, orderItemId);
         const updatedClient = await getClient(params.id);
