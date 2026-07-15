@@ -4,7 +4,7 @@ import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { CheckoutService } from "@/domains/checkout/checkout-service";
 import { FirestoreCheckoutRepository } from "@/domains/checkout/firestore-checkout-repository";
 import { HttpError } from "@/lib/api/http-errors";
-import { getProduct } from "@/lib/db";
+import { getProduct } from "@/domains/products/products-db";
 import { getStoreSettings } from "@/domains/settings/settings-db";
 import { calculateAutoDiscount } from "@/domains/checkout/discount-calculator";
 

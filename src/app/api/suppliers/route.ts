@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
-import { createSupplier, getSuppliers } from "@/lib/db";
+import { createSupplier, getSuppliers } from "@/domains/suppliers/suppliers-db";
 
 export const dynamic = "force-dynamic";
 

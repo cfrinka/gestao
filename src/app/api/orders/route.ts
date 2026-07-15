@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cancelOrder, getOrders, getProduct, updateOrder } from "@/lib/db";
+import { cancelOrder, getOrders, updateOrder } from "@/domains/orders/orders-db";
+import { getProduct } from "@/domains/products/products-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 const RECENT_AUTH_WINDOW_SECONDS = 5 * 60;

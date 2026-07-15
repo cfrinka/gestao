@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { 
+import {
   applyCashRegisterAdjustment,
-  getOpenCashRegister, 
-  openCashRegister, 
-  closeCashRegister, 
+  getOpenCashRegister,
+  openCashRegister,
+  closeCashRegister,
   getCashRegisterOrders,
-  getUser 
-} from "@/lib/db";
+} from "@/domains/cash-register/cash-register-db";
+import { getUser } from "@/domains/users/users-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";

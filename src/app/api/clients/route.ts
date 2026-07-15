@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClients, createClient } from "@/lib/db";
+import { getClients, createClient } from "@/domains/clients/clients-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";

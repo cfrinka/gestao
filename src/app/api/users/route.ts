@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUsers } from "@/lib/db";
+import { getUsers } from "@/domains/users/users-db";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";

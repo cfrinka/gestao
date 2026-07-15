@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStoreSettings, updateStoreSettings } from "@/lib/db";
+import { getStoreSettings, updateStoreSettings } from "@/domains/settings/settings-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";

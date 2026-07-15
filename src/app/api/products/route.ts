@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProducts, getProductBySku, createProduct, createStockPurchaseEntry } from "@/lib/db";
+import { getProducts, getProductBySku, createProduct, createStockPurchaseEntry } from "@/domains/products/products-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";

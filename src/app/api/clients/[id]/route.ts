@@ -10,7 +10,7 @@ import {
   applyCascadingFiadoPayment,
   correctClientDebt,
   removeFiadoOrderItem,
-} from "@/lib/db";
+} from "@/domains/clients/clients-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 
 export const dynamic = "force-dynamic";

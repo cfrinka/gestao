@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
-import { createFinancialAuditLog } from "@/lib/db";
+import { createFinancialAuditLog } from "@/domains/financial/financial-db";
 
 export const dynamic = "force-dynamic";
 
