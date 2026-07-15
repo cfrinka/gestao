@@ -163,9 +163,16 @@ export async function applyCascadingFiadoPayment(
       result.totalApplied += appliedToOrder;
     }
 
+    // Any amount left over after paying off every pending order is an overpayment: the
+    // cash was actually received, so it must land in the register, and the client should
+    // be credited for it (a negative balance = store credit toward a future purchase)
+    // instead of the excess silently vanishing from both the drawer and the client record.
+    const overpayment = Math.max(0, remainingToApply);
+    result.overpayment = overpayment;
+
     // ===== ALL WRITES AFTER ALL READS =====
     tx.update(clientRef, {
-      balance: FieldValue.increment(-totalClientBalanceReduction),
+      balance: FieldValue.increment(-(totalClientBalanceReduction + overpayment)),
       updatedAt: nowTs,
     });
 
@@ -173,8 +180,8 @@ export async function applyCascadingFiadoPayment(
     if (registerDoc) {
       const paymentField = mapOrderPaymentMethodToCashRegisterField(method);
       tx.update(registerDoc.ref, {
-        totalSales: FieldValue.increment(result.totalApplied),
-        [paymentField]: FieldValue.increment(result.totalApplied),
+        totalSales: FieldValue.increment(paymentAmount),
+        [paymentField]: FieldValue.increment(paymentAmount),
         salesCount: FieldValue.increment(result.allocations.length),
       });
     }
@@ -208,8 +215,6 @@ export async function applyCascadingFiadoPayment(
         },
       });
     }
-
-    result.overpayment = Math.max(0, remainingToApply);
   });
 
   return result;
