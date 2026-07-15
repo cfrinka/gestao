@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
+import { setAdminPassword } from "@/lib/admin-password";
 
 export const dynamic = "force-dynamic";
 
@@ -17,12 +17,7 @@ export async function POST(
       }
 
       try {
-        // Set admin password in settings/general document
-        await adminDb.collection("settings").doc("general").set({
-          adminPassword,
-          updatedAt: new Date(),
-        }, { merge: true });
-
+        await setAdminPassword(adminPassword);
         return NextResponse.json({ success: true, message: "Senha de administrador definida com sucesso" });
       } catch (error) {
         console.error("Error setting admin password:", error);

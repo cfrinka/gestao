@@ -2,6 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { Client, FiadoPayment, Order, OrderItem, PaymentMethod } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { verifyAdminPassword } from "@/lib/admin-password";
 
 function toCompetencyMonth(date: Date): string {
   const year = date.getFullYear();
@@ -173,10 +174,7 @@ export async function correctClientDebt(
     throw new Error("Reason for correction is required");
   }
 
-  // Verify admin password
-  const settingsDoc = await adminDb.collection("settings").doc("general").get();
-  const settings = settingsDoc.data();
-  if (!settings || settings.adminPassword !== adminPassword) {
+  if (!(await verifyAdminPassword(adminPassword))) {
     throw new Error("Invalid admin password");
   }
 
