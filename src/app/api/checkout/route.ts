@@ -18,6 +18,7 @@ interface CheckoutBody {
   items: CartItem[];
   payments?: PaymentMethod[];
   discount?: number;
+  promoDiscount?: number;
   clientId?: string;
   payLater?: boolean;
   idempotencyKey?: string;
@@ -47,7 +48,7 @@ async function buildDemoOrder(body: CheckoutBody, userId: string) {
   );
 
   const subtotal = products.reduce((sum, p) => sum + p.lineTotal, 0);
-  const discount = Number(body.discount || 0);
+  const discount = Number(body.discount || 0) + Number(body.promoDiscount || 0);
   const totalAmount = Math.max(0, subtotal - discount);
   const cogsTotal = products.reduce((sum, p) => sum + p.lineCost, 0);
   const payments = Array.isArray(body.payments) ? body.payments : [];
@@ -108,6 +109,7 @@ export async function POST(request: NextRequest) {
         items: body.items,
         payments: body.payments,
         discount: body.discount,
+        promoDiscount: body.promoDiscount,
         clientId: body.clientId,
         payLater: body.payLater,
         idempotencyKey: body.idempotencyKey,

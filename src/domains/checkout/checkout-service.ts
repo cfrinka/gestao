@@ -34,20 +34,25 @@ export class CheckoutService {
 
     const subtotal = Number(command.subtotal || 0);
     const requestedDiscount = Number(command.discount || 0);
-    let allowedDiscount = 0;
+    // Store promotions (progressive discount, PIX discount, product discounts, etc.)
+    // are not subject to the cashier's manual discount limit below.
+    const promoDiscount = Number(command.promoDiscount || 0);
+    let allowedManualDiscount = 0;
 
     if (canUseAdvancedFeatures) {
       // Admins can apply any discount
-      allowedDiscount = requestedDiscount;
+      allowedManualDiscount = requestedDiscount;
     } else if (command.userRole === "CASHIER") {
       // Cashiers can apply up to 10% discount, unless authorized by admin
       if (command.adminAuthorized) {
-        allowedDiscount = requestedDiscount;
+        allowedManualDiscount = requestedDiscount;
       } else {
         const maxDiscount = subtotal * 0.10;
-        allowedDiscount = Math.min(requestedDiscount, maxDiscount);
+        allowedManualDiscount = Math.min(requestedDiscount, maxDiscount);
       }
     }
+
+    const allowedDiscount = promoDiscount + allowedManualDiscount;
     const normalizedPayments = payLater ? [] : command.payments || [];
 
     let clientName: string | undefined;

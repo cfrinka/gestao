@@ -14,6 +14,7 @@ export interface CheckoutCommand {
   items: CheckoutCartItem[];
   payments?: PaymentMethod[];
   discount?: number;
+  promoDiscount?: number;
   clientId?: string;
   payLater?: boolean;
   idempotencyKey: string;
