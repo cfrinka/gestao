@@ -182,7 +182,14 @@ export async function cancelOrder(input: {
       });
     }
 
-    if (matchingRegister && currentTotal > 0) {
+    // A CLOSED register has already been reconciled and reported on — its totals are a
+    // frozen record of what was physically counted that day. Only an OPEN register's
+    // running totals are safe to adjust; a cancellation against an already-closed
+    // register is still recorded (via the audit log below) but doesn't rewrite it.
+    const registerStatus = matchingRegister?.data()?.status;
+    const canAdjustRegister = Boolean(matchingRegister) && registerStatus === "OPEN";
+
+    if (canAdjustRegister && matchingRegister && currentTotal > 0) {
       const currentByMethod = paymentAmountByMethod(currentPayments);
       tx.update(matchingRegister.ref, {
         totalSales: FieldValue.increment(-currentTotal),
@@ -205,6 +212,9 @@ export async function cancelOrder(input: {
         reason: safeReason || "Sem motivo informado",
         originalTotalAmount: currentTotal,
         originalPayments: currentPayments,
+        matchingRegisterId: matchingRegister?.id || null,
+        registerAdjusted: canAdjustRegister,
+        registerAlreadyClosed: Boolean(matchingRegister) && !canAdjustRegister,
       },
     });
 
