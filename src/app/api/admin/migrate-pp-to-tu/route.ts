@@ -298,21 +298,6 @@ async function runMigration(apply: boolean, limitPerCollection: number): Promise
   return result;
 }
 
-export async function GET(request: NextRequest) {
-  return withAuthorizedRoute(
-    request,
-    async ({ request: authorizedRequest }) => {
-      const { searchParams } = new URL(authorizedRequest.url);
-      const apply = parseApply(searchParams.get("apply"));
-      const limitPerCollection = parseLimit(searchParams.get("limitPerCollection"));
-
-      const result = await runMigration(apply, limitPerCollection);
-      return NextResponse.json({ apply, limitPerCollection, ...result });
-    },
-    { roles: ["ADMIN"], operationName: "admin migrate-pp-to-tu get" }
-  );
-}
-
 export async function POST(request: NextRequest) {
   return withAuthorizedRoute(
     request,

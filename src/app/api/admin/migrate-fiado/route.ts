@@ -13,16 +13,6 @@ type MigrateResult = {
   sampleUpdatedIds: string[];
 };
 
-function parseLimit(value: string | null): number {
-  const n = value ? parseInt(value, 10) : NaN;
-  if (!Number.isFinite(n) || n <= 0) return 200;
-  return Math.min(500, n);
-}
-
-function parseApply(value: string | null): boolean {
-  return value === "true" || value === "1";
-}
-
 async function runMigration(apply: boolean, limit: number): Promise<MigrateResult> {
   const snapshot = await adminDb
     .collection("orders")
@@ -101,21 +91,6 @@ async function runMigration(apply: boolean, limit: number): Promise<MigrateResul
   await commitBatch();
 
   return result;
-}
-
-export async function GET(request: NextRequest) {
-  return withAuthorizedRoute(
-    request,
-    async ({ request: authorizedRequest }) => {
-      const { searchParams } = new URL(authorizedRequest.url);
-      const apply = parseApply(searchParams.get("apply"));
-      const limit = parseLimit(searchParams.get("limit"));
-
-      const result = await runMigration(apply, limit);
-      return NextResponse.json({ apply, limit, ...result });
-    },
-    { roles: ["ADMIN"], operationName: "admin migrate-fiado get" }
-  );
 }
 
 export async function POST(request: NextRequest) {
