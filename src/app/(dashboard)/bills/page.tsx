@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -72,7 +72,7 @@ export default function BillsPage() {
   const [firstDueDate, setFirstDueDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [installmentsCount, setInstallmentsCount] = useState<string>("3");
 
-  const fetchBills = async () => {
+  const fetchBills = useCallback(async () => {
     setLoading(true);
     try {
       const data = await apiGet(`/api/bills?month=${encodeURIComponent(month)}&status=${encodeURIComponent(status)}`);
@@ -83,9 +83,9 @@ export default function BillsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [month, status, toast]);
 
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async () => {
     setReportLoading(true);
     try {
       if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -106,14 +106,14 @@ export default function BillsPage() {
     } finally {
       setReportLoading(false);
     }
-  };
+  }, [month, toast]);
 
   useEffect(() => {
     if (userData?.role === "ADMIN") {
       fetchBills();
       fetchReport();
     }
-  }, [month, status, userData?.role]);
+  }, [month, status, userData?.role, fetchBills, fetchReport]);
 
   const totals = useMemo(() => {
     const pending = bills.filter((b) => b.status === "PENDING").reduce((s, b) => s + (b.amount || 0), 0);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiGet, apiPost, apiPatch } from "@/lib/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -89,11 +89,7 @@ export default function ExchangesPage() {
   const [differencePaymentMethod, setDifferencePaymentMethod] = useState<ExchangePaymentMethod | "">("")
   const [addingToRegister, setAddingToRegister] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
-
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
       const [productsData, exchangesData] = await Promise.all([
@@ -107,7 +103,11 @@ export default function ExchangesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
 
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();

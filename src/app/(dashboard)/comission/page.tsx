@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { apiGet, apiPost } from "@/lib/api-client";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
@@ -49,11 +49,7 @@ export default function CommissionPage() {
   const [commissionData, setCommissionData] = useState<CommissionResponse | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
 
-  useEffect(() => {
-    fetchCommissionData();
-  }, []);
-
-  async function fetchCommissionData() {
+  const fetchCommissionData = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiGet("/api/comission") as CommissionResponse;
@@ -69,7 +65,11 @@ export default function CommissionPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchCommissionData();
+  }, [fetchCommissionData]);
 
   async function handleSync() {
     try {

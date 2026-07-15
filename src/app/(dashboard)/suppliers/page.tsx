@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,7 @@ export default function SuppliersPage() {
     acceptedPaymentMethods: [] as PaymentMethod[],
   });
 
-  const fetchSuppliers = async () => {
+  const fetchSuppliers = useCallback(async () => {
     try {
       const data = await apiGet("/api/suppliers");
       setSuppliers(Array.isArray(data) ? data : []);
@@ -74,11 +74,11 @@ export default function SuppliersPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     fetchSuppliers();
-  }, []);
+  }, [fetchSuppliers]);
 
   const resetForm = () => {
     setEditingSupplier(null);

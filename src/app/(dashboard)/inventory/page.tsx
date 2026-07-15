@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiGet, apiPost } from "@/lib/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -51,11 +51,7 @@ export default function InventoryPage() {
   const [sizeDeltas, setSizeDeltas] = useState<Record<string, string>>({});
   const [submittingAdjust, setSubmittingAdjust] = useState(false);
 
-  useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       const data = await apiGet("/api/products");
       setProducts(Array.isArray(data) ? data : []);
@@ -64,7 +60,11 @@ export default function InventoryPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
 
   const openAdjust = (product: Product) => {
     setAdjustingProduct(product);

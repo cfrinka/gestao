@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiGet, apiPatch, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,11 +40,7 @@ export default function BulkCategoryPage() {
   const [categories, setCategories] = useState<Record<string, string>>({});
   const [originalCategories, setOriginalCategories] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       const data = await apiGet("/api/products");
       if (Array.isArray(data)) {
@@ -61,7 +57,11 @@ export default function BulkCategoryPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
 
   const changedProducts = products.filter(
     (p) => categories[p.id] !== originalCategories[p.id]

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiGet, apiPost, apiPut, apiDelete, apiPatch } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -102,7 +102,7 @@ export default function ClientsPage() {
     notes: "",
   });
 
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     try {
       const data = await apiGet("/api/clients");
       setClients(Array.isArray(data) ? data : []);
@@ -112,7 +112,7 @@ export default function ClientsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   const handleRemoveOrderItem = async (orderId: string, orderItemId: string) => {
     if (!selectedClient) return;
@@ -251,7 +251,7 @@ export default function ClientsPage() {
 
   useEffect(() => {
     fetchClients();
-  }, []);
+  }, [fetchClients]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

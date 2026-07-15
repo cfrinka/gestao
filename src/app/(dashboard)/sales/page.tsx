@@ -192,6 +192,11 @@ export default function SalesPage() {
   useEffect(() => {
     fetchOrders();
     fetchStoreSettings();
+    // Intentionally run once on mount with the default (empty) date range — changing the
+    // date fields is applied explicitly via the "Filtrar" button (handleFilter), which reads
+    // the current startDate/endDate itself. Including fetchOrders here would make every
+    // keystroke in the date fields trigger a refetch instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchStoreSettings = async () => {

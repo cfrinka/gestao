@@ -45,5 +45,8 @@ db-admin.ts
 # Local scripts
 scripts/seed.ts
 
+# Lint output
+eslint-report.json
+
 # Local deployment notes (contains sensitive data)
 DEPLOYMENT.md

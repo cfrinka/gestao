@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiGet, apiPut, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -223,11 +223,7 @@ export default function SettingsPage() {
   const [adminPassword, setAdminPassword] = useState<string>("");
   const [adminPasswordSaving, setAdminPasswordSaving] = useState(false);
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       const data = await apiGet("/api/settings");
       setSettings({
@@ -256,7 +252,11 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
 
   const previewExchangeDeadline = new Date();
   previewExchangeDeadline.setDate(previewExchangeDeadline.getDate() + Math.max(0, Math.floor(settings.exchangeDays || 0)));

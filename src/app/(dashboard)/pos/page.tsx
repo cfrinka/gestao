@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiGet, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button"
@@ -235,6 +235,17 @@ export default function POSPage() {
     },
   });
 
+  const fetchProducts = useCallback(async () => {
+    try {
+      const data = await apiGet("/api/products");
+      setProducts(Array.isArray(data) ? data : []);
+    } catch {
+      toast({ title: "Erro ao carregar produtos", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
   useEffect(() => {
     fetchProducts();
     fetchCashRegister();
@@ -242,7 +253,7 @@ export default function POSPage() {
     fetchClients();
     // Auto-focus search input for barcode scanner
     searchInputRef.current?.focus();
-  }, []);
+  }, [fetchProducts]);
 
   const fetchClients = async () => {
     try {
@@ -380,17 +391,6 @@ export default function POSPage() {
           variant: "destructive",
         });
       }
-    }
-  };
-
-  const fetchProducts = async () => {
-    try {
-      const data = await apiGet("/api/products");
-      setProducts(Array.isArray(data) ? data : []);
-    } catch {
-      toast({ title: "Erro ao carregar produtos", variant: "destructive" });
-    } finally {
-      setLoading(false);
     }
   };
 

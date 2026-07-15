@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiGet } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,21 +37,7 @@ export default function BarcodesPage() {
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    fetchProducts();
-    loadJsBarcode();
-  }, []);
-
-  const loadJsBarcode = () => {
-    if (typeof window !== "undefined" && !(window as WindowWithJsBarcode).JsBarcode) {
-      const script = document.createElement("script");
-      script.src = "https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js";
-      script.async = true;
-      document.body.appendChild(script);
-    }
-  };
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       const data = await apiGet("/api/products");
       if (Array.isArray(data)) {
@@ -61,6 +47,20 @@ export default function BarcodesPage() {
       toast({ title: "Erro ao carregar produtos", variant: "destructive" });
     } finally {
       setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    fetchProducts();
+    loadJsBarcode();
+  }, [fetchProducts]);
+
+  const loadJsBarcode = () => {
+    if (typeof window !== "undefined" && !(window as WindowWithJsBarcode).JsBarcode) {
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js";
+      script.async = true;
+      document.body.appendChild(script);
     }
   };
 

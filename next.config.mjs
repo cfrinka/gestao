@@ -2,10 +2,6 @@
 const nextConfig = {
   output: 'standalone',
 
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
   experimental: {
     serverComponentsExternalPackages: ['bcryptjs'],
   },
