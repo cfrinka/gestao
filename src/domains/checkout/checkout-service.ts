@@ -93,8 +93,9 @@ export class CheckoutService {
       return { status: 409, body: { error: "Request already being processed" } };
     }
 
+    let order;
     try {
-      const order = await this.repository.processCheckout({
+      order = await this.repository.processCheckout({
         items: command.items,
         payments: normalizedPayments,
         discount: allowedDiscount,
@@ -104,7 +105,29 @@ export class CheckoutService {
         createdById: command.userId,
         createdByRole: command.userRole,
       });
+    } catch (error) {
+      // Nothing was created — safe to let a retry with the same idempotency key try again.
+      await this.repository.markIdempotencyFailed({
+        ownerId: command.userId,
+        idempotencyKey: safeIdempotencyKey,
+        errorMessage: toPublicErrorMessage(error),
+      });
+      throw error;
+    }
 
+    // The order is now created (stock decremented, payment recorded) — this is the
+    // point of no return. Mark idempotency completed immediately so a retry from here
+    // on returns this same order instead of re-running processCheckout and creating a
+    // second one. The remaining steps are secondary bookkeeping (client balance, cash
+    // register totals): failures there are logged, not surfaced as a request failure,
+    // since the sale itself already succeeded.
+    await this.repository.markIdempotencyCompleted({
+      ownerId: command.userId,
+      idempotencyKey: safeIdempotencyKey,
+      response: order,
+    });
+
+    try {
       if (payLater && command.clientId) {
         await this.repository.updateClientBalance(command.clientId, order.totalAmount);
       }
@@ -115,21 +138,13 @@ export class CheckoutService {
           await this.repository.updateCashRegisterSales(cashRegister.id, normalizedPayments, order.totalAmount);
         }
       }
-
-      await this.repository.markIdempotencyCompleted({
-        ownerId: command.userId,
-        idempotencyKey: safeIdempotencyKey,
-        response: order,
-      });
-
-      return { status: 201, body: order };
     } catch (error) {
-      await this.repository.markIdempotencyFailed({
-        ownerId: command.userId,
-        idempotencyKey: safeIdempotencyKey,
-        errorMessage: toPublicErrorMessage(error),
-      });
-      throw error;
+      console.error(
+        `Checkout order ${order.id} completed but a post-sale update failed (client balance / cash register). Needs manual reconciliation.`,
+        error
+      );
     }
+
+    return { status: 201, body: order };
   }
 }
