@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Save, Store, Receipt, Percent, Search, X, Key } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { discountSettingsSchema } from "@/domains/settings/discount-settings-schema";
 
 interface Product {
   id: string;
@@ -321,6 +322,16 @@ export default function SettingsPage() {
   };
 
   const handleSave = async () => {
+    const validation = discountSettingsSchema.safeParse(settings.discounts);
+    if (!validation.success) {
+      toast({
+        title: "Configuração de desconto inválida",
+        description: validation.error.issues[0]?.message || "Verifique os percentuais de desconto (0 a 100%).",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
       await apiPut("/api/settings", settings);
