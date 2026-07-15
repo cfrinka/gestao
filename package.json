@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "vitest run",
     "seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
@@ -59,6 +60,7 @@
     "postcss": "^8",
     "tailwindcss": "^3.3.0",
     "tsx": "^4.7.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }
