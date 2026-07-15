@@ -43,12 +43,14 @@ export class CheckoutService {
       // Admins can apply any discount
       allowedManualDiscount = requestedDiscount;
     } else if (command.userRole === "CASHIER") {
-      // Cashiers can apply up to 10% discount, unless authorized by admin
-      if (command.adminAuthorized) {
-        allowedManualDiscount = requestedDiscount;
+      // Cashiers can apply up to 10% discount, unless a server-verified admin
+      // authorization grant is on file for this user (see /api/admin/verify-password).
+      const maxDiscount = subtotal * 0.10;
+      if (requestedDiscount > maxDiscount) {
+        const isAuthorized = await this.repository.consumeDiscountAuthorization(command.userId);
+        allowedManualDiscount = isAuthorized ? requestedDiscount : maxDiscount;
       } else {
-        const maxDiscount = subtotal * 0.10;
-        allowedManualDiscount = Math.min(requestedDiscount, maxDiscount);
+        allowedManualDiscount = requestedDiscount;
       }
     }
 

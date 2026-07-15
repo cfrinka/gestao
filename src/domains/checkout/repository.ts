@@ -31,4 +31,6 @@ export interface CheckoutRepository {
   updateClientBalance(clientId: string, amount: number): Promise<void>;
   getOpenCashRegister(userId: string): Promise<{ id: string } | null>;
   updateCashRegisterSales(registerId: string, payments: PaymentMethod[], totalAmount: number): Promise<void>;
+  /** Consumes a server-issued discount-override grant for this user, if one is live. Single-use. */
+  consumeDiscountAuthorization(userId: string): Promise<boolean>;
 }

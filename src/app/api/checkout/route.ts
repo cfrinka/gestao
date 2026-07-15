@@ -24,7 +24,6 @@ interface CheckoutBody {
   clientId?: string;
   payLater?: boolean;
   idempotencyKey?: string;
-  adminAuthorized?: boolean;
 }
 
 async function buildDemoOrder(body: CheckoutBody, userId: string) {
@@ -123,7 +122,6 @@ export async function POST(request: NextRequest) {
         payLater: body.payLater,
         idempotencyKey: body.idempotencyKey,
         subtotal: subtotal,
-        adminAuthorized: body.adminAuthorized,
       });
 
       return NextResponse.json(result.body, { status: result.status });

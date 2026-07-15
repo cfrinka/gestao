@@ -1024,7 +1024,6 @@ export default function POSPage() {
         clientId: selectedClientId,
         payLater: true,
         idempotencyKey,
-        adminAuthorized: adminAuthorized,
       });
       
       const selectedClient = clients.find(c => c.id === selectedClientId);
@@ -1093,7 +1092,6 @@ export default function POSPage() {
         discount: effectiveManualDiscount,
         promoDiscount: totalAutoDiscount,
         idempotencyKey,
-        adminAuthorized: adminAuthorized,
       });
       
       printReceipt(order.id, {

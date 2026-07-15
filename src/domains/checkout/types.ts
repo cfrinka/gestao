@@ -19,7 +19,6 @@ export interface CheckoutCommand {
   payLater?: boolean;
   idempotencyKey: string;
   subtotal?: number;
-  adminAuthorized?: boolean;
 }
 
 export type IdempotencyReservation =

@@ -3,6 +3,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import { getClient, updateClientBalance } from "@/domains/clients/clients-db";
 import { getOpenCashRegister, updateCashRegisterSales } from "@/domains/cash-register/cash-register-db";
 import { processCheckout } from "@/domains/checkout/checkout-db";
+import { consumeDiscountAuthorization } from "@/lib/discount-authorization";
 import type { CheckoutRepository } from "@/domains/checkout/repository";
 import type { CheckoutCartItem, IdempotencyReservation } from "@/domains/checkout/types";
 
@@ -139,5 +140,9 @@ export class FirestoreCheckoutRepository implements CheckoutRepository {
 
   async updateCashRegisterSales(registerId: string, payments: PaymentMethod[], totalAmount: number): Promise<void> {
     await updateCashRegisterSales(registerId, payments, totalAmount);
+  }
+
+  async consumeDiscountAuthorization(userId: string): Promise<boolean> {
+    return consumeDiscountAuthorization(userId);
   }
 }

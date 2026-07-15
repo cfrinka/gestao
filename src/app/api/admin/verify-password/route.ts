@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { isAdminPasswordRateLimited, recordAdminPasswordAttempt, verifyAdminPassword } from "@/lib/admin-password";
+import { grantDiscountAuthorization } from "@/lib/discount-authorization";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,10 @@ export async function POST(request: NextRequest) {
       if (!isValid) {
         return NextResponse.json({ error: "Invalid admin password" }, { status: 403 });
       }
+
+      // Issue a short-lived, single-use grant so checkout can verify this authorization
+      // server-side instead of trusting a client-supplied flag.
+      await grantDiscountAuthorization(user.uid);
 
       return NextResponse.json({ success: true });
     },
