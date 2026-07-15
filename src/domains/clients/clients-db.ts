@@ -248,6 +248,16 @@ export async function applyClientDebtCorrection(
 
         if (currentRemaining <= 0) continue;
 
+        // This correction will reduce the order's SALE_REVENUE movement (see below) —
+        // block it if that order's competency month is already closed, so the frozen
+        // financialClosures snapshot for that month can't silently diverge.
+        const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
+        const orderMonth = toCompetencyMonth(orderCreatedAt);
+        const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(orderMonth));
+        if (closureSnap.exists) {
+          throw new Error(`Financial month ${orderMonth} is closed for order ${orderDoc.id}`);
+        }
+
         const correctionToOrder = Math.min(remainingToCorrect, currentRemaining);
         const newRemaining = currentRemaining - correctionToOrder;
         const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : 0;

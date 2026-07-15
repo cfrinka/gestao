@@ -38,6 +38,12 @@ function mapOrderPaymentMethodToFinancial(method: "DINHEIRO" | "DEBITO" | "CREDI
   return "debit";
 }
 
+function toCompetencyMonth(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
 export async function cancelOrder(input: {
   orderId: string;
   actorId: string;
@@ -104,6 +110,16 @@ export async function cancelOrder(input: {
 
     const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
     const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
+
+    // Cancelling would zero out this order's SALE_REVENUE/COGS movements — if its
+    // competency month is already closed, that would silently diverge the frozen
+    // financialClosures snapshot from the live movements. Block it instead, matching
+    // how every other financial write in the app treats a closed month.
+    const orderMonth = toCompetencyMonth(orderCreatedAt);
+    const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(orderMonth));
+    if (closureSnap.exists) {
+      throw new Error(`Financial month ${orderMonth} is closed`);
+    }
 
     // ── ALL WRITES AFTER ──
     const now = new Date();
@@ -292,6 +308,14 @@ export async function updateOrder(input: {
 
     const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
     const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
+
+    // Editing would change this order's SALE_REVENUE movement — block it for a
+    // closed competency month so the frozen financialClosures snapshot can't diverge.
+    const orderMonth = toCompetencyMonth(orderCreatedAt);
+    const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(orderMonth));
+    if (closureSnap.exists) {
+      throw new Error(`Financial month ${orderMonth} is closed`);
+    }
 
     // ── VALIDATION ──
     const subtotal = items.reduce((sum, item) => sum + Number(item.totalRevenue || 0), 0);
