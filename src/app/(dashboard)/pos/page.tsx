@@ -1193,6 +1193,7 @@ export default function POSPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <Input
             ref={searchInputRef}
+            aria-label="Buscar produto por nome ou SKU"
             placeholder="Buscar produto por nome ou SKU (escaneie o código de barras)..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -1237,10 +1238,20 @@ export default function POSPage() {
               {filteredProducts.map((product) => (
                 <Card
                   key={product.id}
-                  className={`cursor-pointer transition-all hover:shadow-md ${
+                  role="button"
+                  tabIndex={product.stock === 0 ? -1 : 0}
+                  aria-disabled={product.stock === 0}
+                  aria-label={`${product.name}, ${formatCurrency(product.salePrice)}, estoque ${product.stock}`}
+                  className={`cursor-pointer transition-all hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#355444] ${
                     product.stock === 0 ? "opacity-50" : ""
                   }`}
                   onClick={() => handleProductClick(product)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleProductClick(product);
+                    }
+                  }}
                 >
                   <CardContent className="p-3 relative">
                     {product.plusSized === true && (
@@ -1431,7 +1442,7 @@ export default function POSPage() {
 
             {canApplyDiscount && (
               <div className="space-y-2">
-                <Label className="text-sm font-medium">
+                <Label htmlFor="discount-input" className="text-sm font-medium">
                   Desconto Adicional (R$)
                   {userData?.role === "CASHIER" && (
                     <span className="text-xs text-gray-500 ml-2">
@@ -1440,6 +1451,7 @@ export default function POSPage() {
                   )}
                 </Label>
                 <Input
+                  id="discount-input"
                   type="number"
                   step="0.01"
                   min="0"
@@ -1506,20 +1518,21 @@ export default function POSPage() {
             {payments.length > 0 && (
               <div className="space-y-3">
                 <Label className="text-sm font-medium">Valores:</Label>
-                {payments.map((payment) => (
+                {payments.map((payment) => {
+                  const methodLabel =
+                    payment.method === "DINHEIRO" ? "Dinheiro" :
+                    payment.method === "DEBITO" ? "Débito" :
+                    payment.method === "CREDITO" ? "Crédito" : "PIX";
+                  return (
                   <div key={payment.method} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
                     <div className="flex-1">
-                      <span className="text-sm font-medium">
-                        {payment.method === "DINHEIRO" && "Dinheiro"}
-                        {payment.method === "DEBITO" && "Débito"}
-                        {payment.method === "CREDITO" && "Crédito"}
-                        {payment.method === "PIX" && "PIX"}
-                      </span>
+                      <span className="text-sm font-medium">{methodLabel}</span>
                     </div>
                     <Input
                       type="number"
                       step="0.01"
                       min="0"
+                      aria-label={`Valor em ${methodLabel}`}
                       value={payment.amount || ""}
                       onChange={(e) => updatePaymentAmount(payment.method, parseFloat(e.target.value) || 0)}
                       className="w-32 text-right"
@@ -1534,7 +1547,8 @@ export default function POSPage() {
                       <X className="h-4 w-4" />
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
