@@ -29,11 +29,37 @@ export class ExchangesService {
       throw new HttpError(400, "Adicione ao menos um item na troca");
     }
 
+    // Estimate the exchange's owed difference from real product prices, to decide whether the
+    // requested discount needs the same cashier cap / admin authorization checkout enforces.
+    // The transaction in createExchange re-derives the authoritative difference from its own
+    // reads and never lets the final discount exceed it, regardless of this estimate.
+    const productIds = command.items.map((item) => item.productId);
+    const salePrices = await this.repository.getProductSalePrices(productIds);
+    let estimatedOut = 0;
+    let estimatedIn = 0;
+    for (const item of command.items) {
+      const value = (salePrices.get(item.productId) || 0) * Number(item.quantity || 0);
+      if (item.direction === "OUT") estimatedOut += value;
+      else estimatedIn += value;
+    }
+    const estimatedGrossDifference = Math.max(0, estimatedOut - estimatedIn);
+
+    const requestedDiscountAmount = Number(command.discountAmount || 0);
+    let allowedDiscountAmount = requestedDiscountAmount;
+
+    if (command.userRole === "CASHIER") {
+      const maxDiscount = estimatedGrossDifference * 0.10;
+      if (requestedDiscountAmount > maxDiscount) {
+        const isAuthorized = await this.repository.consumeDiscountAuthorization(command.userId);
+        allowedDiscountAmount = isAuthorized ? requestedDiscountAmount : maxDiscount;
+      }
+    }
+
     const requestHash = JSON.stringify({
       customerName: command.customerName || "",
       notes: command.notes || "",
       paymentMethod: command.paymentMethod || "",
-      discountAmount: Number(command.discountAmount || 0),
+      discountAmount: allowedDiscountAmount,
       items: command.items,
       userId: command.userId,
     });
@@ -64,7 +90,7 @@ export class ExchangesService {
         customerName: command.customerName,
         notes: command.notes,
         paymentMethod: command.paymentMethod,
-        discountAmount: command.discountAmount,
+        discountAmount: allowedDiscountAmount,
         items: command.items,
         cashRegisterId: openRegisterId,
         createdById: command.userId,

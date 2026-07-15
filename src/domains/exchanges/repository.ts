@@ -19,6 +19,9 @@ export interface ExchangesRepository {
     errorMessage: string;
   }): Promise<void>;
   getOpenCashRegisterId(userId: string): Promise<string | undefined>;
+  getProductSalePrices(productIds: string[]): Promise<Map<string, number>>;
+  /** Consumes a server-issued discount-override grant for this user, if one is live. Single-use. */
+  consumeDiscountAuthorization(userId: string): Promise<boolean>;
   createExchange(input: {
     documentNumber?: string;
     customerName?: string;

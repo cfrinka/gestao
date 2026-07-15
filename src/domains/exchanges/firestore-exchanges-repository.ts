@@ -2,6 +2,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import type { ExchangeRecord } from "@/lib/db-types";
 import { getOpenCashRegister } from "@/domains/cash-register/cash-register-db";
 import { createExchange, getExchanges } from "@/domains/exchanges/exchanges-db";
+import { consumeDiscountAuthorization } from "@/lib/discount-authorization";
 import type { ExchangesRepository } from "@/domains/exchanges/repository";
 import type { ExchangeItemCommand, ExchangePaymentMethod, IdempotencyReservation } from "@/domains/exchanges/types";
 
@@ -105,6 +106,22 @@ export class FirestoreExchangesRepository implements ExchangesRepository {
   async getOpenCashRegisterId(userId: string): Promise<string | undefined> {
     const register = await getOpenCashRegister(userId);
     return register?.id;
+  }
+
+  async getProductSalePrices(productIds: string[]): Promise<Map<string, number>> {
+    const uniqueIds = Array.from(new Set(productIds));
+    const prices = new Map<string, number>();
+    await Promise.all(
+      uniqueIds.map(async (id) => {
+        const snap = await adminDb.collection("products").doc(id).get();
+        prices.set(id, Number(snap.data()?.salePrice || 0));
+      })
+    );
+    return prices;
+  }
+
+  async consumeDiscountAuthorization(userId: string): Promise<boolean> {
+    return consumeDiscountAuthorization(userId);
   }
 
   async createExchange(input: {
