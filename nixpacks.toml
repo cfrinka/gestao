@@ -6,11 +6,11 @@ cmds = ["npm ci"]
 cacheDirectories = []
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["npm run build:demo"]
 cacheDirectories = [".next/cache"]
 
 [start]
-cmd = "npm start"
+cmd = "npm run start:demo"
 
 [variables]
 NODE_ENV = "production"
