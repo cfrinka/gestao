@@ -105,6 +105,7 @@ export default function InventoryPage() {
         delta,
         reason: adjustReason.trim(),
         sizeAdjustments: hasSizes ? sizeAdjustments : [],
+        idempotencyKey: crypto.randomUUID(),
       });
       toast({ title: "Ajuste aplicado" });
       closeAdjust();
