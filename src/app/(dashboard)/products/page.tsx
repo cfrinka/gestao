@@ -174,10 +174,11 @@ export default function ProductsPage() {
     e.preventDefault();
 
     try {
+      const payload = { ...formData, idempotencyKey: crypto.randomUUID() };
       if (editingProduct) {
-        await apiPut(`/api/products/${editingProduct.id}`, formData);
+        await apiPut(`/api/products/${editingProduct.id}`, payload);
       } else {
-        await apiPost("/api/products", formData);
+        await apiPost("/api/products", payload);
       }
 
       toast({

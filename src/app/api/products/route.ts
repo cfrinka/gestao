@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProducts, getProductBySku, createProduct, createStockPurchaseEntry } from "@/domains/products/products-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
+import { ProductsService } from "@/domains/products/products-service";
+import { FirestoreProductsRepository } from "@/domains/products/firestore-products-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,8 @@ export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async () => {
-      const products = await getProducts();
+      const service = new ProductsService(new FirestoreProductsRepository());
+      const products = await service.list();
       return NextResponse.json(products);
     },
     { operationName: "Products GET" }
@@ -20,42 +22,13 @@ export async function POST(request: NextRequest) {
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
-      const { name, sku, costPrice, salePrice, stock, sizes, plusSized, image, category, imageSource } = body;
+      const service = new ProductsService(new FirestoreProductsRepository());
 
-      if (!name || !sku || costPrice === undefined || salePrice === undefined) {
-        return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-      }
-
-      const existingProduct = await getProductBySku(sku);
-      if (existingProduct) {
-        return NextResponse.json({ error: "SKU already exists" }, { status: 400 });
-      }
-
-      const product = await createProduct({
-        name,
-        sku,
-        plusSized: plusSized === true,
-        category: category || undefined,
-        costPrice: parseFloat(costPrice),
-        salePrice: parseFloat(salePrice),
-        stock: parseInt(stock) || 0,
-        sizes: sizes || [],
-        image: image || undefined,
-        imageSource: imageSource || (image ? "random" : "none"),
+      const product = await service.create({
+        ...body,
+        createdById: user.uid,
+        createdByName: user.email || user.uid,
       });
-
-      if ((product.stock || 0) > 0) {
-        await createStockPurchaseEntry({
-          productId: product.id,
-          productName: product.name,
-          sku: product.sku,
-          quantity: product.stock,
-          unitCost: product.costPrice,
-          source: "PRODUCT_CREATE",
-          createdById: user.uid,
-          createdByName: user.email || user.uid,
-        });
-      }
 
       return NextResponse.json(product, { status: 201 });
     },
