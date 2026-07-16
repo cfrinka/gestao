@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cancelOrder, getOrders, updateOrder } from "@/domains/orders/orders-db";
-import { getProduct } from "@/domains/products/products-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
-
-const RECENT_AUTH_WINDOW_SECONDS = 5 * 60;
+import { OrdersService } from "@/domains/orders/orders-service";
+import { FirestoreOrdersRepository } from "@/domains/orders/firestore-orders-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -36,32 +34,9 @@ export async function GET(request: NextRequest) {
       const startDate = parseDateFilter(searchParams.get("startDate"), "start");
       const endDate = parseDateFilter(searchParams.get("endDate"), "end");
 
-      const orders = await getOrders(startDate, endDate);
-
-      const ordersWithDetails = await Promise.all(
-        orders.map(async (order) => {
-          const itemsWithDetails = await Promise.all(
-            (order.items || []).map(async (item) => {
-              const product = await getProduct(item.productId);
-              return { ...item, product };
-            })
-          );
-
-          const paymentHistory = Array.isArray((order as unknown as { paymentHistory?: unknown }).paymentHistory)
-            ? (order as unknown as { paymentHistory: Array<{ createdAt?: unknown }> }).paymentHistory.map((p) => ({
-                ...p,
-                createdAt:
-                  p.createdAt && typeof p.createdAt === "object" && "toDate" in (p.createdAt as object)
-                    ? (p.createdAt as { toDate: () => Date }).toDate()
-                    : p.createdAt,
-              }))
-            : undefined;
-
-          return { ...order, items: itemsWithDetails, ...(paymentHistory ? { paymentHistory } : {}) };
-        })
-      );
-
-      return NextResponse.json(ordersWithDetails);
+      const service = new OrdersService(new FirestoreOrdersRepository());
+      const orders = await service.list({ startDate, endDate });
+      return NextResponse.json(orders);
     },
     { operationName: "Orders GET" }
   );
@@ -83,35 +58,17 @@ export async function POST(request: NextRequest) {
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = (await authorizedRequest.json()) as CancelOrderBody;
-      const orderId = String(body.orderId || "").trim();
-      if (!orderId) {
-        return NextResponse.json({ error: "orderId is required" }, { status: 400 });
-      }
 
-      const authTime = Number(user.authTime || 0);
-      const nowInSeconds = Math.floor(Date.now() / 1000);
-      const isRecentAuth = authTime > 0 && nowInSeconds - authTime <= RECENT_AUTH_WINDOW_SECONDS;
-      if (!isRecentAuth) {
-        return NextResponse.json(
-          { error: "Confirmação de senha expirada. Informe a senha novamente para cancelar a venda." },
-          { status: 401 }
-        );
-      }
+      const service = new OrdersService(new FirestoreOrdersRepository());
+      const cancelledOrder = await service.cancel({
+        orderId: String(body.orderId || "").trim(),
+        reason: body.reason,
+        actorId: user.uid,
+        actorRole: user.role,
+        authTime: user.authTime,
+      });
 
-      try {
-        const cancelledOrder = await cancelOrder({
-          orderId,
-          reason: String(body.reason || "").trim(),
-          actorId: user.uid,
-          actorRole: user.role,
-        });
-
-        return NextResponse.json(cancelledOrder);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Erro ao cancelar venda";
-        console.error("cancelOrder failed:", err);
-        return NextResponse.json({ error: message }, { status: 400 });
-      }
+      return NextResponse.json(cancelledOrder);
     },
     { roles: ["ADMIN"], operationName: "Orders POST Cancel" }
   );
@@ -122,18 +79,12 @@ export async function PATCH(request: NextRequest) {
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = (await authorizedRequest.json()) as UpdateOrderBody;
-      const orderId = String(body.orderId || "").trim();
-      if (!orderId) {
-        return NextResponse.json({ error: "orderId is required" }, { status: 400 });
-      }
 
-      const discount = Number(body.discount || 0);
-      const payments = Array.isArray(body.payments) ? body.payments : [];
-
-      const updatedOrder = await updateOrder({
-        orderId,
-        discount,
-        payments,
+      const service = new OrdersService(new FirestoreOrdersRepository());
+      const updatedOrder = await service.update({
+        orderId: String(body.orderId || "").trim(),
+        discount: Number(body.discount || 0),
+        payments: Array.isArray(body.payments) ? body.payments : [],
         actorId: user.uid,
         actorRole: user.role,
       });
