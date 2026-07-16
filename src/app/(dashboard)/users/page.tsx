@@ -136,7 +136,7 @@ export default function UsersPage() {
     e.preventDefault();
 
     try {
-      await apiPost("/api/users", formData);
+      await apiPost("/api/users", { ...formData, idempotencyKey: crypto.randomUUID() });
 
       toast({ title: "Usuário criado!" });
       setDialogOpen(false);
