@@ -1,36 +1,78 @@
-# Gestão Loja - Sistema de Gestão para Loja com Dois Proprietários
+# Gestão Loja
 
-Sistema completo de gestão para loja de roupas com dois proprietários, desenvolvido com Next.js 14, Firebase e Shadcn UI.
+Sistema de gestão para loja de roupas (PDV, estoque, financeiro e clientes), construído com Next.js 14 (App Router), Firebase (Auth + Firestore) e Shadcn UI.
 
 ## Funcionalidades
 
-### Gestão de Vendas
-- **PDV (Ponto de Venda)**: Interface intuitiva para vendas
-- **Uma transação para o cliente**: O cliente vê apenas um pedido, um recibo e um pagamento
-- **Divisão interna por proprietário**: Sistema separa automaticamente itens, custos, receitas e lucros
+### PDV (Ponto de Venda) — `/pos`
+- Carrinho com busca por produto/SKU/tamanho e leitura de código de barras
+- Descontos configuráveis: fixo, PIX, progressivo por quantidade de itens (1, 2, 3 ou 4+) e por produto
+- Limite de desconto para o papel de Caixa, com autorização pontual do Admin (via senha) para exceder o limite — a autorização é single-use e expira em 5 minutos
+- Baixa de estoque, cálculo de comissão e conciliação com o caixa aberto, tudo na mesma transação de checkout
 
-### Contabilidade por Proprietário
-- Cada produto pertence a um proprietário
-- Cálculo automático de custo, receita e lucro por proprietário
-- Registro em OwnerLedger para cada venda
+### Caixa — sessões de caixa
+- Abertura/fechamento de caixa por usuário, com suprimento e sangria
+- Total por forma de pagamento (dinheiro, débito, crédito, PIX), diferenças de troca e pagamentos de fiado lançados no caixa
+- Abertura protegida contra corrida (dois "abrir caixa" simultâneos do mesmo usuário nunca resultam em dois caixas abertos)
 
-### Relatórios
-- Receita total por proprietário
-- Custo total por proprietário
-- Lucro total por proprietário
-- Margem de lucro
-- Valor do estoque
-- Filtros por data (dia/mês/período)
+### Trocas — `/exchanges`
+- Troca de produtos com ajuste de estoque nos dois lados e lançamento de diferença de valor (a favor da loja ou do cliente) no caixa aberto
 
-### Controle de Estoque
-- Estoque por proprietário
-- Valor do inventário (estoque × preço de custo)
-- Baixa automática na venda
+### Clientes e Fiado — `/clients`
+- Cadastro de clientes, saldo devedor (fiado) e pagamento parcial ou total
+- Correções manuais de débito com trilha de auditoria (`/debt-corrections`)
 
-### Controle de Acesso
-- **Admin**: Acesso total
-- **Owner (Proprietário)**: Acesso aos próprios produtos, inventário e lucros
-- **Cashier (Caixa)**: Apenas PDV e vendas
+### Produtos e Estoque — `/products`, `/inventory`, `/stock-entries`
+- Cadastro de produtos com tamanhos, categoria, preço de custo/venda e SKU único (protegido contra duplicidade mesmo em criações concorrentes)
+- Entrada de estoque na criação/edição do produto e ajustes manuais de estoque (recontagem, perda etc.), cada ajuste gerando um registro de auditoria
+- Histórico de entradas de estoque por dia/mês (`/stock-entries`)
+- Categorização em lote e sincronização de origem de imagem (`/products/categories`)
+
+### Financeiro
+- Contas a pagar (`/bills`), fornecedores (`/suppliers`)
+- Fechamento de mês competente (`financialClosures`) — bloqueia novas escritas financeiras retroativas ao mês fechado
+- Checagem de saúde financeira automatizável via endpoint com segredo compartilhado (cron/automação), além de sob demanda pelo Admin
+- Comissão de vendas (3% sobre o valor vendido) por usuário Caixa, com job de reconciliação idempotente (`/comission`)
+
+### Relatórios — `/reports`, `/sales`, `/sales-month`
+- Receita, custo, lucro e margem, com filtro por dia/mês/período
+- Valor de estoque, vendas mensais agregadas
+
+### Código de Barras — `/barcodes`
+- Geração e impressão de códigos de barras por produto/tamanho
+
+### Usuários e Acesso — `/users`
+- Dois papéis: **Admin** (acesso total) e **Caixa** (PDV, vendas, trocas, comissão e dashboard)
+- Criação/desativação de usuário mexe em dois sistemas (Firebase Auth + Firestore) sem transação conjunta entre eles — desativação reverte o lado já aplicado se o outro falhar, e uma falha na própria reversão é registrada em `syncErrors` para conciliação manual em vez de ser silenciosamente ignorada
+- Conta de demonstração provisionável por um Admin (`/api/users/demo`), com todas as escritas bloqueadas
+
+## Arquitetura
+
+Todo domínio com regra de negócio real segue o mesmo padrão em camadas:
+
+```
+*-service.ts              → regras de negócio, validação, permissões, orquestra idempotência
+  → repository.ts          → interface do domínio
+    → firestore-*-repository.ts → implementação Firestore da interface
+      → *-db.ts             → acesso cru ao Firestore (transações, leitura sempre antes de escrita)
+```
+
+Domínios que são só CRUD ou somente leitura (`settings`, `suppliers`, `debt-corrections`, `stock-entries`) acessam o `*-db.ts` direto pela rota, sem a camada de service/repository — a uniformização é aplicar o padrão completo onde há lógica de negócio de verdade, não em todo lugar.
+
+Mecanismos compartilhados entre domínios:
+- **Idempotência** (`src/domains/shared/idempotency.ts`): chave de idempotência por requisição, guardada em `idempotencyKeys/{scope}:{ownerId}:{key}` com estados `PROCESSING/COMPLETED/FAILED`, usada em toda escrita que poderia ser duplicada por um duplo clique ou uma nova tentativa de rede (checkout, trocas, contas, ajuste de estoque, ajuste de caixa, compra de estoque, criação de usuário)
+- **Documento-marcador em chave natural**: usado para emular unicidade no Firestore onde uma query simples não é segura contra corrida (ex.: `skuIndex/{sku}` para SKU único, `openCashRegisterMarkers/{userId}` para "só um caixa aberto por vez")
+- **HttpError** (`src/lib/api/http-errors.ts`) + `withAuthorizedRoute` (`src/lib/api/authorized-route.ts`): toda rota de API autentica, checa papel (`ADMIN`/`CASHIER`/`SYSTEM`), bloqueia escrita da conta demo e converte erros em respostas HTTP tipadas
+
+## Tecnologias
+
+- **Framework**: Next.js 14 (App Router) + React 18 + TypeScript
+- **Banco de Dados**: Firebase Firestore (via `firebase-admin` no servidor)
+- **Autenticação**: Firebase Authentication (Email/Password)
+- **UI**: Shadcn UI + Tailwind CSS + Lucide React
+- **Validação**: Zod
+- **Exportação**: jsPDF + jspdf-autotable, JsBarcode
+- **Testes**: Vitest (testes unitários de service contra repositório fake em memória)
 
 ## Instalação
 
@@ -50,93 +92,114 @@ Copie `.env.example` para `.env` e preencha com suas credenciais Firebase:
 cp .env.example .env
 ```
 
+Variáveis usadas:
+
+| Variável | Uso |
+|---|---|
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase Client SDK (browser) |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase Client SDK (browser) |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Firebase Client SDK (browser) |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Firebase Client SDK (browser) |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Firebase Client SDK (browser) |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase Client SDK (browser) |
+| `FIREBASE_PROJECT_ID` | Firebase Admin SDK (servidor) |
+| `FIREBASE_CLIENT_EMAIL` | Firebase Admin SDK (servidor) |
+| `FIREBASE_PRIVATE_KEY` | Firebase Admin SDK (servidor) |
+| `FINANCIAL_AUTOMATION_SECRET` | (opcional) segredo para chamar `/api/automation/financial-health` sem login, a partir de um cron externo |
+
 ### 3. Instale as dependências
 
 ```bash
 npm install
 ```
 
-### 4. Popule o banco com dados de exemplo
-
-```bash
-npm run seed
-```
-
-### 5. Inicie o servidor de desenvolvimento
+### 4. Inicie o servidor de desenvolvimento
 
 ```bash
 npm run dev
 ```
 
-## Usuários de Teste
+Não há script de seed/dados de exemplo no momento — crie o primeiro usuário Admin diretamente no Firebase Console (Authentication + um documento em `users/{uid}` com `role: "ADMIN"`).
 
-Após executar o seed, os seguintes usuários estarão disponíveis:
+## Scripts
 
-| Email | Senha | Função |
-|-------|-------|--------|
-| admin@loja.com | admin123 | Administrador |
-| proprietario1@loja.com | owner123 | Proprietário 1 |
-| proprietario2@loja.com | owner123 | Proprietário 2 |
-| caixa@loja.com | caixa123 | Caixa |
+```bash
+npm run dev      # servidor de desenvolvimento
+npm run build    # build de produção
+npm run start    # servidor de produção
+npm run lint     # eslint
+npm test         # vitest run
+```
 
-## Tecnologias
+## Deploy das regras do Firestore
 
-- **Framework**: Next.js 14 (App Router)
-- **Banco de Dados**: Firebase Firestore
-- **Autenticação**: Firebase Authentication
-- **UI**: Shadcn UI + Tailwind CSS
-- **Ícones**: Lucide React
-- **Exportação**: jsPDF + jspdf-autotable
+O projeto Firebase (`loja-7cb7b`) já está configurado em `.firebaserc`/`firebase.json`. Para publicar `firestore.rules`:
+
+```bash
+npx firebase deploy --only firestore:rules
+```
 
 ## Estrutura do Projeto
 
 ```
 src/
 ├── app/
-│   ├── (dashboard)/       # Páginas protegidas
-│   │   ├── dashboard/     # Dashboard principal
-│   │   ├── pos/           # Ponto de Venda
-│   │   ├── products/      # Gestão de Produtos
-│   │   ├── sales/         # Histórico de Vendas
-│   │   ├── inventory/     # Controle de Estoque
-│   │   ├── reports/       # Relatórios
-│   │   ├── owners/        # Gestão de Proprietários
-│   │   └── users/         # Gestão de Usuários
-│   ├── api/               # API Routes
-│   └── login/             # Página de Login
-├── components/
-│   ├── layout/            # Componentes de Layout
-│   └── ui/                # Componentes Shadcn UI
-├── contexts/
-│   └── auth-context.tsx   # Contexto de Autenticação Firebase
+│   ├── (dashboard)/          # Páginas protegidas (layout com sidebar por papel)
+│   │   ├── dashboard/        # Visão geral
+│   │   ├── pos/              # PDV
+│   │   ├── products/         # Produtos (+ categories/ para categorização em lote)
+│   │   ├── inventory/        # Ajustes manuais de estoque
+│   │   ├── stock-entries/    # Histórico de entradas de estoque
+│   │   ├── sales/            # Histórico de vendas
+│   │   ├── sales-month/      # Vendas mensais agregadas
+│   │   ├── exchanges/        # Trocas
+│   │   ├── clients/          # Clientes e fiado
+│   │   ├── debt-corrections/ # Correções manuais de débito
+│   │   ├── bills/            # Contas a pagar
+│   │   ├── suppliers/        # Fornecedores
+│   │   ├── comission/        # Comissão de vendas
+│   │   ├── reports/          # Relatórios financeiros
+│   │   ├── barcodes/         # Geração de código de barras
+│   │   ├── users/            # Usuários e papéis
+│   │   └── settings/         # Descontos, senha de admin (correções de débito), categorias
+│   ├── api/                  # Rotas de API (uma por domínio)
+│   └── login/                # Login
+├── domains/                  # Lógica de negócio, em camadas por domínio (ver Arquitetura)
+│   ├── checkout/ exchanges/ orders/ clients/ bills/ comission/
+│   ├── cash-register/ products/ stock-adjustments/ users/ financial/
+│   ├── suppliers/ settings/ reports/
+│   └── shared/                # idempotência, serializers de Firestore
 ├── lib/
-│   ├── firebase.ts        # Cliente Firebase
-│   ├── firebase-admin.ts  # Firebase Admin SDK
-│   ├── db.ts              # Funções de Banco de Dados
-│   └── utils.ts           # Utilitários
-└── types/                 # Tipos TypeScript
+│   ├── firebase.ts            # Client SDK
+│   ├── firebase-admin.ts      # Admin SDK
+│   ├── api/                   # HttpError, withAuthorizedRoute
+│   ├── auth-api.ts            # verificação de token no servidor
+│   ├── discount-authorization.ts # grant de exceção ao limite de desconto do Caixa
+│   ├── db-types.ts            # tipos compartilhados de domínio
+│   └── utils.ts
+├── contexts/
+│   └── auth-context.tsx       # Contexto de autenticação (Firebase Client SDK)
+└── components/
+    ├── layout/                 # Sidebar, header
+    └── ui/                     # Componentes Shadcn UI
 ```
 
-## Coleções do Firestore
+## Principais Coleções do Firestore
 
-- **owners**: Proprietários da loja
-- **products**: Produtos (com ownerId)
-- **orders**: Pedidos (transação única)
-- **orderItems**: Itens do pedido (com cálculos)
-- **ownerLedgers**: Registro financeiro por proprietário/pedido
-- **users**: Usuários do sistema (sincronizado com Firebase Auth)
-
-## Lógica de Checkout
-
-1. Cria um único documento em `orders`
-2. Para cada produto:
-   - Cria documento em `orderItems` com cálculos de custo, receita e lucro
-3. Agrupa itens por proprietário
-4. Cria documento em `ownerLedgers` para cada proprietário
-5. Atualiza estoque dos produtos
-6. Tudo em uma transação batch do Firestore
-
-## Exportação
-
-- **CSV**: Exportação de vendas e relatórios
-- **PDF**: Relatórios financeiros com formatação profissional
+| Coleção | Conteúdo |
+|---|---|
+| `products`, `skuIndex` | Produtos e índice de unicidade de SKU |
+| `orders`, `orderItems` | Vendas e seus itens |
+| `cashRegisters`, `openCashRegisterMarkers` | Sessões de caixa e marcador de "caixa já aberto" |
+| `exchanges` | Trocas |
+| `clients`, `debtCorrections` | Clientes, saldo de fiado e correções manuais |
+| `bills` | Contas a pagar |
+| `suppliers` | Fornecedores |
+| `stockPurchases`, `stockAdjustments` | Entradas de estoque e ajustes manuais |
+| `financialMovements`, `financialClosures`, `financialAuditLogs` | Lançamentos financeiros, fechamento de mês e auditoria |
+| `financialMonthlyAggregates`, `financialClosurePreviews`, `financialAutomationRuns` | Agregados e execuções da automação financeira |
+| `users`, `syncErrors` | Usuários e falhas de sincronização Auth↔Firestore pendentes de conciliação manual |
+| `discountAuthorizations` | Autorização pontual de desconto acima do limite do Caixa |
+| `idempotencyKeys` | Estado de idempotência compartilhado entre domínios |
+| `settings` | Configuração de descontos (fixo, PIX, progressivo, por produto) |
+| `reportCache` | Cache de relatórios |
