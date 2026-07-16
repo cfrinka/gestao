@@ -25,6 +25,7 @@ class FakeProductsRepository implements ProductsRepository {
   skuIndex = new Map<string, string>();
   stockPurchaseCalls: unknown[] = [];
   idempotencyStore = new Map<string, { requestHash: string; status: "PROCESSING" | "COMPLETED" | "FAILED"; response?: unknown }>();
+  failStockPurchase = false;
 
   seed(product: Product) {
     this.products.set(product.id, product);
@@ -78,6 +79,9 @@ class FakeProductsRepository implements ProductsRepository {
   async createStockPurchaseEntry(
     input: Parameters<ProductsRepository["createStockPurchaseEntry"]>[0]
   ): Promise<StockPurchaseEntry> {
+    if (this.failStockPurchase) {
+      throw new Error("stock purchase write failed");
+    }
     this.stockPurchaseCalls.push(input);
     return {
       id: `purchase-${this.stockPurchaseCalls.length}`,
@@ -133,6 +137,24 @@ function baseCreateCommand(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
+
+describe("ProductsService.list / get", () => {
+  it("list delegates to the repository", async () => {
+    const repo = new FakeProductsRepository();
+    repo.seed(makeProduct({ id: "product-1" }));
+    const service = new ProductsService(repo);
+    const result = await service.list();
+    expect(result).toHaveLength(1);
+  });
+
+  it("get delegates to the repository", async () => {
+    const repo = new FakeProductsRepository();
+    repo.seed(makeProduct({ id: "product-1" }));
+    const service = new ProductsService(repo);
+    const result = await service.get("product-1");
+    expect(result?.id).toBe("product-1");
+  });
+});
 
 describe("ProductsService.create", () => {
   it("rejects missing required fields", async () => {
@@ -221,6 +243,54 @@ describe("ProductsService.update", () => {
 
     await service.update("product-1", command);
     expect(repo.stockPurchaseCalls).toHaveLength(1);
+  });
+
+  it("skips creating a stock purchase entry when the idempotency reservation is already completed", async () => {
+    const repo = new FakeProductsRepository();
+    repo.seed(makeProduct({ id: "product-1", sku: "SKU-1", stock: 10, costPrice: 10 }));
+    const requestHash = JSON.stringify({ productId: "product-1", quantity: 5, unitCost: 10, source: "STOCK_REPLENISHMENT" });
+    repo.idempotencyStore.set("SKU-1:key-1", { requestHash, status: "COMPLETED", response: null });
+
+    const service = new ProductsService(repo);
+    const updated = await service.update("product-1", baseCreateCommand({ sku: "SKU-1", stock: 15, costPrice: 10, idempotencyKey: "key-1" }));
+
+    expect(updated.stock).toBe(15);
+    expect(repo.stockPurchaseCalls).toHaveLength(0);
+  });
+
+  it("rejects idempotency key reuse with a different payload as a conflict", async () => {
+    const repo = new FakeProductsRepository();
+    repo.seed(makeProduct({ id: "product-1", sku: "SKU-1", stock: 10, costPrice: 10 }));
+    repo.idempotencyStore.set("SKU-1:key-1", { requestHash: "different-hash", status: "PROCESSING" });
+
+    const service = new ProductsService(repo);
+    await expect(
+      service.update("product-1", baseCreateCommand({ sku: "SKU-1", stock: 15, costPrice: 10, idempotencyKey: "key-1" }))
+    ).rejects.toThrow(HttpError);
+  });
+
+  it("returns 409 when the same idempotency key is already being processed", async () => {
+    const repo = new FakeProductsRepository();
+    repo.seed(makeProduct({ id: "product-1", sku: "SKU-1", stock: 10, costPrice: 10 }));
+    const requestHash = JSON.stringify({ productId: "product-1", quantity: 5, unitCost: 10, source: "STOCK_REPLENISHMENT" });
+    repo.idempotencyStore.set("SKU-1:key-1", { requestHash, status: "PROCESSING" });
+
+    const service = new ProductsService(repo);
+    await expect(
+      service.update("product-1", baseCreateCommand({ sku: "SKU-1", stock: 15, costPrice: 10, idempotencyKey: "key-1" }))
+    ).rejects.toThrow(HttpError);
+  });
+
+  it("marks idempotency failed and rethrows when creating the stock purchase entry fails", async () => {
+    const repo = new FakeProductsRepository();
+    repo.seed(makeProduct({ id: "product-1", sku: "SKU-1", stock: 10, costPrice: 10 }));
+    repo.failStockPurchase = true;
+
+    const service = new ProductsService(repo);
+    await expect(
+      service.update("product-1", baseCreateCommand({ sku: "SKU-1", stock: 15, costPrice: 10, idempotencyKey: "key-1" }))
+    ).rejects.toThrow("stock purchase write failed");
+    expect(repo.idempotencyStore.get("SKU-1:key-1")?.status).toBe("FAILED");
   });
 });
 

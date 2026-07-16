@@ -97,6 +97,16 @@ function baseCommand(overrides: Partial<CreateExchangeCommand> = {}): CreateExch
   };
 }
 
+describe("ExchangesService.list", () => {
+  it("delegates to the repository", async () => {
+    const repo = new FakeExchangesRepository();
+    const service = new ExchangesService(repo);
+    const spy = vi.spyOn(repo, "listExchanges");
+    await service.list({ limit: 10 });
+    expect(spy).toHaveBeenCalledWith({ limit: 10 });
+  });
+});
+
 describe("ExchangesService", () => {
   it("rejects a missing idempotency key", async () => {
     const service = new ExchangesService(new FakeExchangesRepository());
@@ -157,5 +167,41 @@ describe("ExchangesService", () => {
     expect(second.status).toBe(200);
     expect(repo.createExchangeMock).toHaveBeenCalledTimes(1);
     expect((second.body as ExchangeRecord).id).toBe((first.body as ExchangeRecord).id);
+  });
+
+  it("rejects idempotency key reuse with a different payload", async () => {
+    const repo = new FakeExchangesRepository();
+    const service = new ExchangesService(repo);
+    await service.create(baseCommand({ idempotencyKey: "conflict-key" }));
+    await expect(
+      service.create(baseCommand({ idempotencyKey: "conflict-key", discountAmount: 5 }))
+    ).rejects.toThrow(HttpError);
+  });
+
+  it("returns 409 when the same idempotency key is already being processed", async () => {
+    const repo = new FakeExchangesRepository();
+    const command = baseCommand({ idempotencyKey: "in-progress-key" });
+    const requestHash = JSON.stringify({
+      customerName: "",
+      notes: "",
+      paymentMethod: command.paymentMethod,
+      discountAmount: 0,
+      items: command.items,
+      userId: command.userId,
+    });
+    repo.idempotencyStore.set("user-1:in-progress-key", { requestHash, status: "PROCESSING" });
+
+    const service = new ExchangesService(repo);
+    const result = await service.create(command);
+    expect(result.status).toBe(409);
+  });
+
+  it("marks idempotency failed and rethrows when creating the exchange fails", async () => {
+    const repo = new FakeExchangesRepository();
+    repo.createExchangeMock.mockRejectedValueOnce(new Error("stock write failed"));
+    const service = new ExchangesService(repo);
+
+    await expect(service.create(baseCommand({ idempotencyKey: "fail-key" }))).rejects.toThrow("stock write failed");
+    expect(repo.idempotencyStore.get("user-1:fail-key")?.status).toBe("FAILED");
   });
 });

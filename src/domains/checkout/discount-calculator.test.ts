@@ -37,6 +37,18 @@ describe("calculateAutoDiscount", () => {
     expect(calculateAutoDiscount([{ productId: "p1", quantity: 6, salePrice: 49.998333 }], 299.99, settings, [])).toBeCloseTo(179.994);
   });
 
+  it("applies no progressive discount when there are zero items", () => {
+    const settings: DiscountSettings = {
+      ...baseSettings,
+      progressiveDiscountEnabled: true,
+      progressiveDiscount1Item: 10,
+      progressiveDiscount2Items: 30,
+      progressiveDiscount3PlusItems: 40,
+      progressiveDiscount4PlusItems: 60,
+    };
+    expect(calculateAutoDiscount([], 0, settings, [])).toBe(0);
+  });
+
   it("never applies a discount for a tier with a 0% configured rate", () => {
     const settings: DiscountSettings = { ...baseSettings, progressiveDiscountEnabled: true, progressiveDiscount2Items: 0 };
     expect(calculateAutoDiscount(

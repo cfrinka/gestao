@@ -31,6 +31,7 @@ class FakeUsersRepository implements UsersRepository {
   failDeleteAuthUser = false;
   failDisableAuthUser = false;
   failReactivateUserRecord = false;
+  createUserRecordError: Error | null = null;
 
   seed(user: UserRecord) {
     this.users.set(user.id, user);
@@ -67,6 +68,7 @@ class FakeUsersRepository implements UsersRepository {
   }
 
   async createUserRecord(input: { id: string; email: string; name: string; role: "ADMIN" | "CASHIER" }): Promise<UserRecord> {
+    if (this.createUserRecordError) throw this.createUserRecordError;
     if (this.failCreateUserRecord) throw new Error("firestore create failed");
     const user = makeUser({ ...input, isActive: true });
     this.users.set(input.id, user);
@@ -137,6 +139,16 @@ function baseCreateCommand(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe("UsersService.list", () => {
+  it("delegates to the repository", async () => {
+    const repo = new FakeUsersRepository();
+    repo.seed(makeUser());
+    const service = new UsersService(repo);
+    const result = await service.list();
+    expect(result).toHaveLength(1);
+  });
+});
+
 describe("UsersService.create", () => {
   it("rejects missing required fields", async () => {
     const service = new UsersService(new FakeUsersRepository());
@@ -195,9 +207,45 @@ describe("UsersService.create", () => {
     expect(repo.syncErrors).toHaveLength(1);
     expect(repo.syncErrors[0]).toMatchObject({ kind: "user-create-compensation-failed" });
   });
+
+  it("preserves an HttpError's identity when the Firestore write fails with one", async () => {
+    const repo = new FakeUsersRepository();
+    repo.createUserRecordError = new HttpError(422, "invalid role for this tenant");
+    const service = new UsersService(repo);
+
+    await expect(service.create(baseCreateCommand())).rejects.toMatchObject({
+      statusCode: 422,
+      message: "invalid role for this tenant",
+    });
+  });
+
+  it("rejects idempotency key reuse with a different payload as a conflict", async () => {
+    const repo = new FakeUsersRepository();
+    const service = new UsersService(repo);
+    await service.create(baseCreateCommand({ idempotencyKey: "same-key" }));
+    await expect(
+      service.create(baseCreateCommand({ idempotencyKey: "same-key", name: "Different Name" }))
+    ).rejects.toThrow(HttpError);
+  });
+
+  it("returns 409 when the same idempotency key is already being processed", async () => {
+    const repo = new FakeUsersRepository();
+    const command = baseCreateCommand({ idempotencyKey: "in-progress-key" });
+    const requestHash = JSON.stringify({ email: command.email, name: command.name, role: command.role });
+    repo.idempotencyStore.set(`${command.email}:in-progress-key`, { requestHash, status: "PROCESSING" });
+
+    const service = new UsersService(repo);
+    await expect(service.create(command)).rejects.toThrow(HttpError);
+  });
 });
 
 describe("UsersService.updateRole", () => {
+  it("rejects a missing id or role", async () => {
+    const service = new UsersService(new FakeUsersRepository());
+    await expect(service.updateRole({ id: "", role: "ADMIN" })).rejects.toThrow(HttpError);
+    await expect(service.updateRole({ id: "user-1", role: "" })).rejects.toThrow(HttpError);
+  });
+
   it("rejects when the user does not exist", async () => {
     const service = new UsersService(new FakeUsersRepository());
     await expect(service.updateRole({ id: "missing", role: "ADMIN" })).rejects.toThrow(HttpError);
@@ -220,6 +268,11 @@ describe("UsersService.updateRole", () => {
 });
 
 describe("UsersService.deactivate", () => {
+  it("rejects a missing user id", async () => {
+    const service = new UsersService(new FakeUsersRepository());
+    await expect(service.deactivate({ id: "", actorId: "admin-1" })).rejects.toThrow(HttpError);
+  });
+
   it("rejects deactivating your own user", async () => {
     const repo = new FakeUsersRepository();
     repo.seed(makeUser({ id: "user-1" }));

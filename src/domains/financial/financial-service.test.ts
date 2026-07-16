@@ -83,6 +83,22 @@ describe("FinancialService.closeMonth", () => {
     ).rejects.toMatchObject({ statusCode: 409 });
   });
 
+  it("rejects a missing month", async () => {
+    const service = new FinancialService(new FakeFinancialRepository());
+    await expect(
+      service.closeMonth({ month: undefined as unknown as string, actorId: "u1", actorRole: "ADMIN" })
+    ).rejects.toThrow(HttpError);
+  });
+
+  it("rethrows an unexpected repository error unchanged", async () => {
+    const repo = new FakeFinancialRepository();
+    const unexpected = new Error("connection reset");
+    repo.closeMonthMock.mockRejectedValueOnce(unexpected);
+    const service = new FinancialService(repo);
+
+    await expect(service.closeMonth({ month: PAST_MONTH, actorId: "u1", actorRole: "ADMIN" })).rejects.toBe(unexpected);
+  });
+
   it("closes a valid past month and returns the repository's result", async () => {
     const repo = new FakeFinancialRepository();
     const service = new FinancialService(repo);

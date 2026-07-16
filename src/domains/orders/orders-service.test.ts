@@ -102,6 +102,16 @@ describe("OrdersService.cancel", () => {
       service.cancel({ orderId: "order-1", actorId: "admin-1", actorRole: "ADMIN", authTime: recentAuthTime })
     ).rejects.toMatchObject({ statusCode: 400, message: "Order is already cancelled" });
   });
+
+  it("falls back to a generic message when the repository throws a non-Error value", async () => {
+    const repo = new FakeOrdersRepository();
+    repo.cancelOrderMock.mockRejectedValueOnce("not an Error instance");
+    const service = new OrdersService(repo);
+
+    await expect(
+      service.cancel({ orderId: "order-1", actorId: "admin-1", actorRole: "ADMIN", authTime: recentAuthTime })
+    ).rejects.toMatchObject({ statusCode: 400, message: "Erro ao cancelar venda" });
+  });
 });
 
 describe("OrdersService.update", () => {
@@ -145,5 +155,49 @@ describe("OrdersService.list", () => {
     const service = new OrdersService(repo);
     const result = (await service.list({})) as Array<{ items: Array<{ product?: { name?: string } }> }>;
     expect(result[0].items[0].product?.name).toBe("Product p1");
+  });
+
+  it("converts Firestore-timestamp-like createdAt values in paymentHistory, leaving plain values alone", async () => {
+    const repo = new FakeOrdersRepository();
+    const asDate = new Date("2026-01-01T00:00:00.000Z");
+    repo.getOrdersMock.mockResolvedValueOnce([
+      {
+        id: "order-1",
+        subtotal: 100,
+        discount: 0,
+        totalAmount: 100,
+        payments: [],
+        createdAt: new Date(),
+        items: [],
+        paymentHistory: [
+          { amount: 50, createdAt: { toDate: () => asDate } },
+          { amount: 50, createdAt: "2026-01-02T00:00:00.000Z" },
+        ],
+      } as unknown as Order,
+    ]);
+    const service = new OrdersService(repo);
+    const result = (await service.list({})) as Array<{ paymentHistory: Array<{ createdAt: unknown }> }>;
+    expect(result[0].paymentHistory[0].createdAt).toBe(asDate);
+    expect(result[0].paymentHistory[1].createdAt).toBe("2026-01-02T00:00:00.000Z");
+  });
+
+  it("omits paymentHistory entirely when the order doesn't have one", async () => {
+    const repo = new FakeOrdersRepository();
+    repo.getOrdersMock.mockResolvedValueOnce([
+      { id: "order-1", subtotal: 100, discount: 0, totalAmount: 100, payments: [], createdAt: new Date(), items: [] },
+    ]);
+    const service = new OrdersService(repo);
+    const result = (await service.list({})) as Array<Record<string, unknown>>;
+    expect("paymentHistory" in result[0]).toBe(false);
+  });
+
+  it("treats a missing items array as empty instead of throwing", async () => {
+    const repo = new FakeOrdersRepository();
+    repo.getOrdersMock.mockResolvedValueOnce([
+      { id: "order-1", subtotal: 100, discount: 0, totalAmount: 100, payments: [], createdAt: new Date() } as unknown as Order,
+    ]);
+    const service = new OrdersService(repo);
+    const result = (await service.list({})) as Array<{ items: unknown[] }>;
+    expect(result[0].items).toEqual([]);
   });
 });

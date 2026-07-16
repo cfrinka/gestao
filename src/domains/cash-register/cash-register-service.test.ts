@@ -93,6 +93,16 @@ class FakeCashRegisterRepository implements CashRegisterRepository {
   }
 }
 
+describe("CashRegisterService.getOpen", () => {
+  it("delegates to the repository", async () => {
+    const repo = new FakeCashRegisterRepository();
+    const service = new CashRegisterService(repo);
+    const result = await service.getOpen("user-1");
+    expect(repo.getOpenRegisterMock).toHaveBeenCalledWith("user-1");
+    expect(result?.id).toBe("register-1");
+  });
+});
+
 describe("CashRegisterService.open", () => {
   it("rejects opening when one is already open", async () => {
     const service = new CashRegisterService(new FakeCashRegisterRepository());
@@ -177,5 +187,36 @@ describe("CashRegisterService.adjust", () => {
     const second = await service.adjust(command);
     expect(second.status).toBe(200);
     expect(repo.applyAdjustmentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects idempotency key reuse with a different payload", async () => {
+    const repo = new FakeCashRegisterRepository();
+    const service = new CashRegisterService(repo);
+    await service.adjust({ userId: "user-1", idempotencyKey: "conflict-key", type: "SUPPLY", amount: 10, actorId: "user-1", actorRole: "CASHIER" });
+    await expect(
+      service.adjust({ userId: "user-1", idempotencyKey: "conflict-key", type: "SUPPLY", amount: 999, actorId: "user-1", actorRole: "CASHIER" })
+    ).rejects.toThrow(HttpError);
+  });
+
+  it("returns 409 when the same idempotency key is already being processed", async () => {
+    const repo = new FakeCashRegisterRepository();
+    const command = { userId: "user-1", idempotencyKey: "in-progress-key", type: "SUPPLY" as const, amount: 10, actorId: "user-1", actorRole: "CASHIER" };
+    const requestHash = JSON.stringify({ registerId: "register-1", type: "SUPPLY", amount: 10, note: null, userId: "user-1" });
+    repo.idempotencyStore.set("user-1:in-progress-key", { requestHash, status: "PROCESSING" });
+
+    const service = new CashRegisterService(repo);
+    const result = await service.adjust(command);
+    expect(result.status).toBe(409);
+  });
+
+  it("marks idempotency failed and rethrows when applying the adjustment fails", async () => {
+    const repo = new FakeCashRegisterRepository();
+    repo.applyAdjustmentMock.mockRejectedValueOnce(new Error("insufficient balance"));
+    const service = new CashRegisterService(repo);
+
+    await expect(
+      service.adjust({ userId: "user-1", idempotencyKey: "fail-key", type: "WITHDRAWAL", amount: 999, actorId: "user-1", actorRole: "CASHIER" })
+    ).rejects.toThrow("insufficient balance");
+    expect(repo.idempotencyStore.get("user-1:fail-key")?.status).toBe("FAILED");
   });
 });

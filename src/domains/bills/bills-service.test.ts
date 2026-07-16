@@ -99,6 +99,15 @@ function baseCreateCommand(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe("BillsService.list", () => {
+  it("delegates to the repository", async () => {
+    const repo = new FakeBillsRepository();
+    const service = new BillsService(repo);
+    await service.list({ month: null, status: "all" });
+    expect(repo.listBillsMock).toHaveBeenCalled();
+  });
+});
+
 describe("BillsService.create", () => {
   it("rejects a missing idempotency key", async () => {
     const service = new BillsService(new FakeBillsRepository());
@@ -148,6 +157,55 @@ describe("BillsService.create", () => {
     const result = await service.create(baseCreateCommand());
     expect(result.status).toBe(201);
     expect(repo.createOneTimeBillMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates a FIXED bill series", async () => {
+    const repo = new FakeBillsRepository();
+    const service = new BillsService(repo);
+    const result = await service.create(
+      baseCreateCommand({ kind: "FIXED", dayOfMonth: 10, monthsAhead: 6, dueDate: undefined })
+    );
+    expect(result.status).toBe(201);
+    expect(repo.createFixedBillsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Aluguel", amount: 1000, dayOfMonth: 10, monthsAhead: 6 })
+    );
+  });
+
+  it("creates an INSTALLMENTS bill series", async () => {
+    const repo = new FakeBillsRepository();
+    const service = new BillsService(repo);
+    const result = await service.create(
+      baseCreateCommand({
+        kind: "INSTALLMENTS",
+        dueDate: undefined,
+        firstDueDate: "2026-08-01",
+        installmentsCount: 3,
+        intervalMonths: 1,
+      })
+    );
+    expect(result.status).toBe(201);
+    expect(repo.createInstallmentsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Aluguel", amount: 1000, firstDueDate: "2026-08-01", installmentsCount: 3, intervalMonths: 1 })
+    );
+  });
+
+  it("returns 409 when the same idempotency key is already being processed", async () => {
+    const repo = new FakeBillsRepository();
+    const command = baseCreateCommand({ idempotencyKey: "in-progress-key" });
+    const requestHash = JSON.stringify({ kind: "ONE_TIME", name: command.name, amount: command.amount, dueDate: command.dueDate, userId: command.userId });
+    repo.idempotencyStore.set("user-1:in-progress-key", { requestHash, status: "PROCESSING" });
+
+    const service = new BillsService(repo);
+    const result = await service.create(command);
+    expect(result.status).toBe(409);
+  });
+
+  it("marks idempotency failed and rethrows when the repository create fails", async () => {
+    const repo = new FakeBillsRepository();
+    repo.createOneTimeBillMock.mockRejectedValueOnce(new Error("db write failed"));
+    const service = new BillsService(repo);
+    await expect(service.create(baseCreateCommand({ idempotencyKey: "fail-key" }))).rejects.toThrow("db write failed");
+    expect(repo.idempotencyStore.get("user-1:fail-key")?.status).toBe("FAILED");
   });
 
   it("returns the cached response on a completed retry without creating a duplicate", async () => {
@@ -202,6 +260,21 @@ describe("BillsService.markPaid / markUnpaid / remove", () => {
     await expect(service.markUnpaid({ billId: "b1", actorId: "u1", actorRole: "CASHIER" })).rejects.toThrow(HttpError);
   });
 
+  it("markUnpaid rejects a nonexistent bill", async () => {
+    const repo = new FakeBillsRepository();
+    repo.getBillMock.mockResolvedValueOnce({ exists: false });
+    const service = new BillsService(repo);
+    await expect(service.markUnpaid({ billId: "missing", actorId: "admin-1", actorRole: "ADMIN" })).rejects.toThrow(HttpError);
+  });
+
+  it("markUnpaid succeeds for an admin on an existing bill", async () => {
+    const repo = new FakeBillsRepository();
+    const service = new BillsService(repo);
+    const updated = await service.markUnpaid({ billId: "b1", actorId: "admin-1", actorRole: "ADMIN" });
+    expect(updated.status).toBe("PENDING");
+    expect(repo.markBillUnpaidMock).toHaveBeenCalledWith({ billId: "b1", actorId: "admin-1" });
+  });
+
   it("remove rejects a non-admin actor", async () => {
     const service = new BillsService(new FakeBillsRepository());
     await expect(service.remove({ billId: "b1", actorId: "u1", actorRole: "CASHIER" })).rejects.toThrow(HttpError);
@@ -212,5 +285,12 @@ describe("BillsService.markPaid / markUnpaid / remove", () => {
     repo.getBillMock.mockResolvedValueOnce({ exists: false });
     const service = new BillsService(repo);
     await expect(service.remove({ billId: "missing", actorId: "admin-1", actorRole: "ADMIN" })).rejects.toThrow(HttpError);
+  });
+
+  it("remove succeeds for an admin on an existing bill", async () => {
+    const repo = new FakeBillsRepository();
+    const service = new BillsService(repo);
+    await service.remove({ billId: "b1", actorId: "admin-1", actorRole: "ADMIN" });
+    expect(repo.deleteBillMock).toHaveBeenCalledWith({ billId: "b1", actorId: "admin-1" });
   });
 });

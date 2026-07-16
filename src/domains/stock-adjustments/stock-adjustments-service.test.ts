@@ -121,6 +121,47 @@ describe("StockAdjustmentsService.create", () => {
     await service.create(baseCommand({ idempotencyKey: "same-key" }));
     await expect(service.create(baseCommand({ idempotencyKey: "same-key", delta: 99 }))).rejects.toThrow(HttpError);
   });
+
+  it("returns 409 when the same idempotency key is already being processed", async () => {
+    const repo = new FakeStockAdjustmentsRepository();
+    const command = baseCommand({ idempotencyKey: "in-progress-key" });
+    const requestHash = JSON.stringify({
+      productId: command.productId,
+      delta: command.delta,
+      sizeAdjustments: command.sizeAdjustments,
+      reason: command.reason,
+      userId: command.userId,
+    });
+    repo.idempotencyStore.set(`${command.userId}:in-progress-key`, { requestHash, status: "PROCESSING" });
+
+    const service = new StockAdjustmentsService(repo);
+    const result = await service.create(command);
+    expect(result.status).toBe(409);
+  });
+
+  it("marks idempotency failed and rethrows when the repository create fails with an HttpError", async () => {
+    const repo = new FakeStockAdjustmentsRepository();
+    repo.createAdjustmentMock.mockRejectedValueOnce(new HttpError(400, "invalid size"));
+    const service = new StockAdjustmentsService(repo);
+    await expect(service.create(baseCommand({ idempotencyKey: "fail-key-1" }))).rejects.toThrow(HttpError);
+    expect(repo.idempotencyStore.get("user-1:fail-key-1")?.status).toBe("FAILED");
+  });
+
+  it("marks idempotency failed and rethrows when the repository create fails with a generic Error", async () => {
+    const repo = new FakeStockAdjustmentsRepository();
+    repo.createAdjustmentMock.mockRejectedValueOnce(new Error("stock write failed"));
+    const service = new StockAdjustmentsService(repo);
+    await expect(service.create(baseCommand({ idempotencyKey: "fail-key-2" }))).rejects.toThrow("stock write failed");
+    expect(repo.idempotencyStore.get("user-1:fail-key-2")?.status).toBe("FAILED");
+  });
+
+  it("marks idempotency failed when the repository create fails with a non-Error value", async () => {
+    const repo = new FakeStockAdjustmentsRepository();
+    repo.createAdjustmentMock.mockRejectedValueOnce("not an Error instance");
+    const service = new StockAdjustmentsService(repo);
+    await expect(service.create(baseCommand({ idempotencyKey: "fail-key-3" }))).rejects.toBe("not an Error instance");
+    expect(repo.idempotencyStore.get("user-1:fail-key-3")?.status).toBe("FAILED");
+  });
 });
 
 describe("StockAdjustmentsService.list", () => {
