@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import type { PaymentMethod } from "@/lib/db-types";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { CheckoutService } from "@/domains/checkout/checkout-service";
-import { FirestoreCheckoutRepository } from "@/domains/checkout/firestore-checkout-repository";
+import { getCheckoutRepository } from "@/domains/checkout/checkout-repository-factory";
 import { HttpError } from "@/lib/api/http-errors";
 import { getProduct } from "@/domains/products/products-db";
-import { getStoreSettings } from "@/domains/settings/settings-db";
+import { getStoreSettings } from "@/domains/settings/settings-facade";
 import { calculateAutoDiscount } from "@/domains/checkout/discount-calculator";
 
 export const dynamic = "force-dynamic";
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
       const normalizedPayments = Array.isArray(body.payments) ? body.payments : [];
       const promoDiscount = calculateAutoDiscount(lineItems, subtotal, storeSettings.discounts, normalizedPayments);
 
-      const service = new CheckoutService(new FirestoreCheckoutRepository());
+      const service = new CheckoutService(getCheckoutRepository());
       const result = await service.execute({
         userId: user.uid,
         userRole: user.role,

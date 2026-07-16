@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { UsersService } from "@/domains/users/users-service";
-import { FirestoreUsersRepository } from "@/domains/users/firestore-users-repository";
+import { getUsersRepository } from "@/domains/users/users-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async () => {
-      const service = new UsersService(new FirestoreUsersRepository());
+      const service = new UsersService(getUsersRepository());
       const users = await service.list();
       return NextResponse.json(users);
     },
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     request,
     async ({ request: authorizedRequest }) => {
       const body = await authorizedRequest.json();
-      const service = new UsersService(new FirestoreUsersRepository());
+      const service = new UsersService(getUsersRepository());
       const user = await service.create(body);
       return NextResponse.json(user, { status: 201 });
     },
@@ -35,7 +35,7 @@ export async function PUT(request: NextRequest) {
     request,
     async ({ request: authorizedRequest }) => {
       const body = await authorizedRequest.json();
-      const service = new UsersService(new FirestoreUsersRepository());
+      const service = new UsersService(getUsersRepository());
       const user = await service.updateRole(body);
       return NextResponse.json(user);
     },
@@ -50,7 +50,7 @@ export async function DELETE(request: NextRequest) {
       const { searchParams } = new URL(authorizedRequest.url);
       const id = searchParams.get("id");
 
-      const service = new UsersService(new FirestoreUsersRepository());
+      const service = new UsersService(getUsersRepository());
       await service.deactivate({ id, actorId: user.uid });
 
       return NextResponse.json({ ok: true });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { ClientsService } from "@/domains/clients/clients-service";
-import { FirestoreClientsRepository } from "@/domains/clients/firestore-clients-repository";
+import { getClientsRepository } from "@/domains/clients/clients-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async () => {
-      const service = new ClientsService(new FirestoreClientsRepository());
+      const service = new ClientsService(getClientsRepository());
       const clients = await service.list();
       return NextResponse.json(clients);
     },
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     request,
     async ({ request: authorizedRequest }) => {
       const body = await authorizedRequest.json();
-      const service = new ClientsService(new FirestoreClientsRepository());
+      const service = new ClientsService(getClientsRepository());
       const client = await service.create({
         name: body.name,
         phone: body.phone,

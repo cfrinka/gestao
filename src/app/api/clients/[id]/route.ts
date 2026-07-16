@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { ClientsService } from "@/domains/clients/clients-service";
-import { FirestoreClientsRepository } from "@/domains/clients/firestore-clients-repository";
+import { getClientsRepository } from "@/domains/clients/clients-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   return withAuthorizedRoute(
     request,
     async () => {
-      const service = new ClientsService(new FirestoreClientsRepository());
+      const service = new ClientsService(getClientsRepository());
       const client = await service.get(params.id);
       return NextResponse.json(client);
     },
@@ -22,7 +22,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     request,
     async ({ request: authorizedRequest }) => {
       const body = await authorizedRequest.json();
-      const service = new ClientsService(new FirestoreClientsRepository());
+      const service = new ClientsService(getClientsRepository());
       const updatedClient = await service.update({
         clientId: params.id,
         name: body.name,
@@ -40,7 +40,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   return withAuthorizedRoute(
     request,
     async () => {
-      const service = new ClientsService(new FirestoreClientsRepository());
+      const service = new ClientsService(getClientsRepository());
       await service.remove(params.id);
       return NextResponse.json({ success: true });
     },
@@ -54,7 +54,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
       const { action, orderId, orderItemId, amount, method, adminPassword, reason } = body;
-      const service = new ClientsService(new FirestoreClientsRepository());
+      const service = new ClientsService(getClientsRepository());
 
       if (action === "correct_debt" && amount !== undefined && adminPassword && reason) {
         const result = await service.correctDebt({ clientId: params.id, amount, adminPassword, reason });

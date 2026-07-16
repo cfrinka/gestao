@@ -1,15 +1,23 @@
 import { NextRequest } from "next/server";
 import { adminAuth, adminDb } from "./firebase-admin";
+import { isDemoMode } from "@/lib/demo/demo-mode";
+import { verifyDemoAuth } from "@/lib/demo/demo-auth";
 
-interface AuthUser {
+export interface AuthUser {
   uid: string;
   email: string;
   role: string;
   authTime?: number;
   isDemo?: boolean;
+  /** Set only for demo-mode sessions; identifies which in-memory DemoDataset this request should use. */
+  sessionId?: string;
 }
 
 export async function verifyAuth(request: NextRequest): Promise<AuthUser | null> {
+  if (isDemoMode()) {
+    return verifyDemoAuth(request);
+  }
+
   try {
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) {

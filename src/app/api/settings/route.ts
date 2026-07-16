@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStoreSettings, updateStoreSettings } from "@/domains/settings/settings-db";
+import { getStoreSettings, updateStoreSettings } from "@/domains/settings/settings-facade";
 import { discountSettingsSchema } from "@/domains/settings/discount-settings-schema";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { HttpError } from "@/lib/api/http-errors";

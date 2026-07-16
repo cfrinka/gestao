@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
+import { isDemoMode } from "@/lib/demo/demo-mode";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,9 @@ async function runMigration(apply: boolean, limit: number): Promise<MigrateResul
 }
 
 export async function POST(request: NextRequest) {
+  if (isDemoMode()) {
+    return NextResponse.json({ error: "Indisponível no modo demonstração" }, { status: 404 });
+  }
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest }) => {

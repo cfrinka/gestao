@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unauthorizedResponse, verifyAuth } from "@/lib/auth-api";
 import { toHttpError } from "@/lib/api/http-errors";
+import { isDemoMode } from "@/lib/demo/demo-mode";
+import { demoContext } from "@/lib/demo/demo-context";
 
 type Role = "ADMIN" | "CASHIER" | "SYSTEM";
 
@@ -10,6 +12,7 @@ type AuthorizedUser = {
   role: string;
   authTime?: number;
   isDemo?: boolean;
+  sessionId?: string;
 };
 
 type HandlerContext = {
@@ -47,6 +50,10 @@ export async function withAuthorizedRoute(
         },
         { status: 200 }
       );
+    }
+
+    if (isDemoMode() && user.sessionId) {
+      return await demoContext.run({ sessionId: user.sessionId }, () => handler({ request, user }));
     }
 
     return await handler({ request, user });

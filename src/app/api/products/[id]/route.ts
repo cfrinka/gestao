@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { ProductsService } from "@/domains/products/products-service";
-import { FirestoreProductsRepository } from "@/domains/products/firestore-products-repository";
+import { getProductsRepository } from "@/domains/products/products-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export async function GET(
   return withAuthorizedRoute(
     request,
     async () => {
-      const service = new ProductsService(new FirestoreProductsRepository());
+      const service = new ProductsService(getProductsRepository());
       const product = await service.get(params.id);
 
       if (!product) {
@@ -33,7 +33,7 @@ export async function PUT(
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
-      const service = new ProductsService(new FirestoreProductsRepository());
+      const service = new ProductsService(getProductsRepository());
 
       const updatedProduct = await service.update(params.id, {
         ...body,
@@ -54,7 +54,7 @@ export async function DELETE(
   return withAuthorizedRoute(
     request,
     async () => {
-      const service = new ProductsService(new FirestoreProductsRepository());
+      const service = new ProductsService(getProductsRepository());
       await service.remove(params.id);
       return NextResponse.json({ message: "Product deleted" });
     },

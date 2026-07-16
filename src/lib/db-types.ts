@@ -120,6 +120,7 @@ export interface Order {
   totalAmount: number;
   cogsTotal?: number;
   payments: PaymentMethod[];
+  createdById?: string;
   clientId?: string;
   clientName?: string;
   isPaidLater?: boolean;

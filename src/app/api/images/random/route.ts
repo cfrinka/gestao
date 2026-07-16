@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isDemoMode } from '@/lib/demo/demo-mode';
 
 export async function GET(request: NextRequest) {
+  if (isDemoMode()) {
+    return NextResponse.json({ error: 'Indisponível no modo demonstração' }, { status: 404 });
+  }
   try {
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('query') || 'product';

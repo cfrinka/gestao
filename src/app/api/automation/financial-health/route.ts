@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "@/lib/auth-api";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { FinancialService } from "@/domains/financial/financial-service";
-import { FirestoreFinancialRepository } from "@/domains/financial/firestore-financial-repository";
+import { getFinancialRepository } from "@/domains/financial/financial-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async ({ user }) => {
-      const service = new FinancialService(new FirestoreFinancialRepository());
+      const service = new FinancialService(getFinancialRepository());
       const result = await service.runHealthCheck({ actorId: user.uid, actorRole: user.role });
       return NextResponse.json(result);
     },

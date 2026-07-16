@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
+import { getDemoSessionId } from "@/lib/demo/demo-context";
+import { getDemoDataset } from "@/lib/demo/demo-store";
+import type { StockPurchaseEntry } from "@/lib/db-types";
 
 export const dynamic = "force-dynamic";
 
@@ -57,31 +60,54 @@ export async function GET(request: NextRequest) {
       const defaultStart = startDate || new Date(now.getFullYear(), now.getMonth(), 1);
       const defaultEnd = endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-      let entriesDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
-      try {
-        const snapshot = await adminDb
-          .collection("stockPurchases")
-          .where("createdAt", ">=", Timestamp.fromDate(defaultStart))
-          .where("createdAt", "<=", Timestamp.fromDate(defaultEnd))
-          .orderBy("createdAt", "asc")
-          .get();
-        entriesDocs = snapshot.docs;
-      } catch (err) {
-        console.error("[stock-entries] query failed:", err);
-        throw err;
+      let rawEntries: StockPurchaseEntry[] = [];
+      const demoSessionId = getDemoSessionId();
+      if (demoSessionId) {
+        const dataset = getDemoDataset(demoSessionId);
+        rawEntries = Array.from(dataset?.stockPurchases.values() ?? []).filter(
+          (e) => e.createdAt >= defaultStart && e.createdAt <= defaultEnd
+        );
+      } else {
+        try {
+          const snapshot = await adminDb
+            .collection("stockPurchases")
+            .where("createdAt", ">=", Timestamp.fromDate(defaultStart))
+            .where("createdAt", "<=", Timestamp.fromDate(defaultEnd))
+            .orderBy("createdAt", "asc")
+            .get();
+          rawEntries = snapshot.docs.map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              productId: String(data.productId || ""),
+              productName: String(data.productName || "Produto"),
+              sku: String(data.sku || ""),
+              quantity: Number(data.quantity || 0),
+              unitCost: Number(data.unitCost || 0),
+              totalCost: Number(data.totalCost || 0),
+              source: data.source,
+              createdById: String(data.createdById || ""),
+              createdByName: String(data.createdByName || ""),
+              createdAt: data.createdAt?.toDate?.() || new Date(),
+            };
+          });
+        } catch (err) {
+          console.error("[stock-entries] query failed:", err);
+          throw err;
+        }
       }
+      rawEntries.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
       const byDay = new Map<string, DayGroup>();
       let monthTotal = 0;
       let monthQuantity = 0;
 
-      entriesDocs.forEach((doc) => {
-        const data = doc.data();
-        const createdAt: Date = data.createdAt?.toDate?.() || new Date();
+      rawEntries.forEach((entry) => {
+        const createdAt = entry.createdAt;
         const date = createdAt.toLocaleDateString("pt-BR");
-        const quantity = Number(data.quantity || 0);
-        const unitCost = Number(data.unitCost || 0);
-        const totalCost = Number(data.totalCost || quantity * unitCost);
+        const quantity = Number(entry.quantity || 0);
+        const unitCost = Number(entry.unitCost || 0);
+        const totalCost = Number(entry.totalCost || quantity * unitCost);
 
         if (!byDay.has(date)) {
           byDay.set(date, { date, total: 0, quantity: 0, entries: [] });
@@ -89,15 +115,15 @@ export async function GET(request: NextRequest) {
 
         const group = byDay.get(date)!;
         group.entries.push({
-          id: doc.id,
-          productName: String(data.productName || "Produto"),
-          sku: String(data.sku || ""),
+          id: entry.id,
+          productName: String(entry.productName || "Produto"),
+          sku: String(entry.sku || ""),
           quantity,
           unitCost,
           totalCost,
-          source: String(data.source || ""),
+          source: String(entry.source || ""),
           time: createdAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-          createdByName: String(data.createdByName || ""),
+          createdByName: String(entry.createdByName || ""),
         });
         group.total += totalCost;
         group.quantity += quantity;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { CashRegisterService } from "@/domains/cash-register/cash-register-service";
-import { FirestoreCashRegisterRepository } from "@/domains/cash-register/firestore-cash-register-repository";
+import { getCashRegisterRepository } from "@/domains/cash-register/cash-register-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async ({ user }) => {
-      const service = new CashRegisterService(new FirestoreCashRegisterRepository());
+      const service = new CashRegisterService(getCashRegisterRepository());
       const register = await service.getOpen(user.uid);
       return NextResponse.json({ register });
     },
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       const body = await authorizedRequest.json();
       const { action, openingBalance, closingBalance, amount, note, idempotencyKey } = body;
 
-      const service = new CashRegisterService(new FirestoreCashRegisterRepository());
+      const service = new CashRegisterService(getCashRegisterRepository());
 
       if (action === "open") {
         const register = await service.open(user.uid, user.email, Number(openingBalance || 0));

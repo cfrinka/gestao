@@ -95,6 +95,159 @@ type MonthAggregate = {
   };
 };
 
+export type ReportsPaymentMix = {
+  cash: number;
+  debit: number;
+  credit: number;
+  pix: number;
+  payLater: number;
+  payLaterReceived: number;
+  payLaterOutstanding: number;
+  exchangeDifferenceIn: number;
+};
+
+export type ReportsProductMarginRow = {
+  productId: string;
+  productName: string;
+  sku: string;
+  qtySold: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  margin: number;
+};
+
+export type ReportsFiadoAging = {
+  asOf: string;
+  totalOutstanding: number;
+  buckets: {
+    current30: number;
+    days31to60: number;
+    days61to90: number;
+    days90plus: number;
+  };
+  topOpenOrders: Array<{ orderId: string; ageDays: number; outstanding: number }>;
+};
+
+export type ReportsMonthlyDreRow = {
+  month: string;
+  source: "closure" | "live";
+  revenue: number;
+  cogs: number;
+  grossProfit: number;
+  expenses: number;
+  netResult: number;
+};
+
+/**
+ * Structural shape of `generateReports(...).payload` — the object the reports route sends
+ * verbatim via `NextResponse.json(result.payload)`. Exported so demo-reports-service.ts can
+ * build a same-shaped payload from in-memory data without the frontend needing any changes.
+ */
+export type ReportsPayload = {
+  period: { start: string; end: string; days: number };
+  snapshotUsed: boolean;
+  grossRevenue: number;
+  discounts: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  profitMargin: number;
+  ordersCount: number;
+  itemsSold: number;
+  averageTicket: number;
+  stockPurchasesCost: number;
+  payments: ReportsPaymentMix;
+  paymentMix: ReportsPaymentMix;
+  totalStock: number;
+  inventoryValue: number;
+  dre: {
+    grossRevenue: number;
+    discounts: number;
+    netRevenue: number;
+    cogs: number;
+    grossProfit: number;
+    grossMargin: number;
+    operatingExpenses: number;
+    netProfit: number;
+    netMargin: number;
+  };
+  monthlyDre: ReportsMonthlyDreRow[];
+  cashFlow: {
+    inflowsActual: number;
+    outflowsActual: number;
+    netCashFlowActual: number;
+    projectedInflows30: number;
+    projectedOutflows30: number;
+    projectedNetCashFlow30: number;
+  };
+  sales: {
+    ordersCount: number;
+    itemsSold: number;
+    averageTicket: number;
+    bestSalesDay: null;
+    payLaterOutstanding: number;
+    payLaterReceived: number;
+  };
+  fiadoAging: ReportsFiadoAging;
+  inventory: {
+    totalStock: number;
+    inventoryValueCost: number;
+    inventoryValueSale: number;
+    stockCoverageDays: number;
+    turnover: number;
+    lowStockCount: number;
+    outOfStockCount: number;
+    deadStockCount: number;
+  };
+  profitability: {
+    topProfitProducts: ReportsProductMarginRow[];
+    lowMarginProducts: ReportsProductMarginRow[];
+  };
+  goals: {
+    targetRevenue: number;
+    targetAverageTicket: number;
+    targetMargin: number;
+    achievementRevenue: number;
+    achievementAverageTicket: number;
+    achievementMargin: number;
+  };
+  promotions: {
+    totalDiscounts: number;
+    discountRate: number;
+    ordersWithDiscount: number;
+    discountedOrdersRate: number;
+    avgDiscountPerDiscountedOrder: number;
+    discountedRevenue: number;
+  };
+  alerts: {
+    dre: string[];
+    cashFlow: string[];
+    sales: string[];
+    inventory: string[];
+    profitability: string[];
+    goals: string[];
+    promotions: string[];
+  };
+  insights: {
+    dre: string;
+    cashFlow: string;
+    sales: string;
+    inventory: string;
+    profitability: string;
+    goals: string;
+    promotions: string;
+  };
+  debug?: {
+    monthlySources: MonthDebugRow[];
+    previousPeriodMonthlySources: MonthDebugRow[];
+  };
+  cache: { hit: boolean; generatedAt?: string; ttlMs: number };
+};
+
+/** `ReportsPayload` minus the `cache` block, which is only known after the cache write decision. */
+export type ReportsPayloadCore = Omit<ReportsPayload, "cache">;
+
 function toValidDate(value: string | null): Date | null {
   if (!value) return null;
   const d = new Date(value);
@@ -703,7 +856,7 @@ export async function generateReports(input: {
   if (achievementRevenue < 0.9) alerts.goals.push("Receita abaixo de 90% da meta.");
   if (discountRate > 0.12) alerts.promotions.push("Taxa de desconto acima de 12%.");
 
-  const responsePayload = {
+  const responsePayload: ReportsPayloadCore = {
     period: {
       start: start.toISOString(),
       end: end.toISOString(),

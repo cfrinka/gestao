@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { BillsService } from "@/domains/bills/bills-service";
-import { FirestoreBillsRepository } from "@/domains/bills/firestore-bills-repository";
+import { getBillsRepository } from "@/domains/bills/bills-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     async ({ request: authorizedRequest, user }) => {
       const body = (await authorizedRequest.json().catch(() => ({}))) as Record<string, unknown>;
       const action = typeof body.action === "string" ? body.action : "";
-      const service = new BillsService(new FirestoreBillsRepository());
+      const service = new BillsService(getBillsRepository());
 
       if (action === "mark_paid") {
         const updated = await service.markPaid({
@@ -42,7 +42,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   return withAuthorizedRoute(
     request,
     async ({ user }) => {
-      const service = new BillsService(new FirestoreBillsRepository());
+      const service = new BillsService(getBillsRepository());
       await service.remove({ billId: params.id, actorId: user.uid, actorRole: user.role });
       return NextResponse.json({ ok: true });
     },

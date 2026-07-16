@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { OrdersService } from "@/domains/orders/orders-service";
-import { FirestoreOrdersRepository } from "@/domains/orders/firestore-orders-repository";
+import { getOrdersRepository } from "@/domains/orders/orders-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       const startDate = parseDateFilter(searchParams.get("startDate"), "start");
       const endDate = parseDateFilter(searchParams.get("endDate"), "end");
 
-      const service = new OrdersService(new FirestoreOrdersRepository());
+      const service = new OrdersService(getOrdersRepository());
       const orders = await service.list({ startDate, endDate });
       return NextResponse.json(orders);
     },
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     async ({ request: authorizedRequest, user }) => {
       const body = (await authorizedRequest.json()) as CancelOrderBody;
 
-      const service = new OrdersService(new FirestoreOrdersRepository());
+      const service = new OrdersService(getOrdersRepository());
       const cancelledOrder = await service.cancel({
         orderId: String(body.orderId || "").trim(),
         reason: body.reason,
@@ -80,7 +80,7 @@ export async function PATCH(request: NextRequest) {
     async ({ request: authorizedRequest, user }) => {
       const body = (await authorizedRequest.json()) as UpdateOrderBody;
 
-      const service = new OrdersService(new FirestoreOrdersRepository());
+      const service = new OrdersService(getOrdersRepository());
       const updatedOrder = await service.update({
         orderId: String(body.orderId || "").trim(),
         discount: Number(body.discount || 0),

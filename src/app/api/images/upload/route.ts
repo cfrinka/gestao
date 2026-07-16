@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStorage } from "firebase-admin/storage";
 import { verifyAuth, unauthorizedResponse } from "@/lib/auth-api";
 import { getAdminApp } from "@/lib/firebase-admin";
+import { isDemoMode } from "@/lib/demo/demo-mode";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  if (isDemoMode()) {
+    return NextResponse.json({ error: "Indisponível no modo demonstração" }, { status: 404 });
+  }
   try {
     const user = await verifyAuth(request);
     if (!user) {

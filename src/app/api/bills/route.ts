@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { BillsService } from "@/domains/bills/bills-service";
-import { FirestoreBillsRepository } from "@/domains/bills/firestore-bills-repository";
+import { getBillsRepository } from "@/domains/bills/bills-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       const month = searchParams.get("month");
       const status = (searchParams.get("status") || "all").toLowerCase();
 
-      const service = new BillsService(new FirestoreBillsRepository());
+      const service = new BillsService(getBillsRepository());
       const bills = await service.list({ month, status });
       return NextResponse.json(bills);
     },
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     async ({ request: authorizedRequest, user }) => {
       const body = (await authorizedRequest.json().catch(() => ({}))) as Record<string, unknown>;
 
-      const service = new BillsService(new FirestoreBillsRepository());
+      const service = new BillsService(getBillsRepository());
       const result = await service.create({
         userId: user.uid,
         idempotencyKey: String(body.idempotencyKey || ""),

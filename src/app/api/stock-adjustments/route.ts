@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { StockAdjustmentsService } from "@/domains/stock-adjustments/stock-adjustments-service";
-import { FirestoreStockAdjustmentsRepository } from "@/domains/stock-adjustments/firestore-stock-adjustments-repository";
+import { getStockAdjustmentsRepository } from "@/domains/stock-adjustments/stock-adjustments-repository-factory";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     async ({ request: authorizedRequest, user }) => {
       const body = (await authorizedRequest.json()) as AdjustmentBody;
 
-      const service = new StockAdjustmentsService(new FirestoreStockAdjustmentsRepository());
+      const service = new StockAdjustmentsService(getStockAdjustmentsRepository());
       const result = await service.create({
         userId: user.uid,
         userName: user.email || user.uid,
@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async () => {
-      const service = new StockAdjustmentsService(new FirestoreStockAdjustmentsRepository());
+      const service = new StockAdjustmentsService(getStockAdjustmentsRepository());
       const items = await service.list(100);
       return NextResponse.json(items);
     },

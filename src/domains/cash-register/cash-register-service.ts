@@ -1,5 +1,6 @@
 import { HttpError } from "@/lib/api/http-errors";
 import { getUser } from "@/domains/users/users-db";
+import { isDemoMode } from "@/lib/demo/demo-mode";
 import type { CashRegisterRepository } from "@/domains/cash-register/repository";
 import type { AdjustmentCommand, AdjustmentExecutionResult } from "@/domains/cash-register/types";
 import type { CashRegister, Order } from "@/lib/db-types";
@@ -23,8 +24,10 @@ export class CashRegisterService {
       throw new HttpError(400, "Já existe um caixa aberto");
     }
 
-    const userData = await getUser(userId);
-    const userName = userData?.name || userEmail;
+    // In demo mode there's no real Firestore `users` collection to query — getUser would throw
+    // for lack of credentials. The caller-supplied userEmail (the demo user's display email) is
+    // a safe, always-available fallback.
+    const userName = isDemoMode() ? userEmail : (await getUser(userId))?.name || userEmail;
     return this.repository.openRegister(userId, userName, Number(openingBalance || 0));
   }
 

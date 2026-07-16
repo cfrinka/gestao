@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { ExchangesService } from "@/domains/exchanges/exchanges-service";
-import { FirestoreExchangesRepository } from "@/domains/exchanges/firestore-exchanges-repository";
+import { getExchangesRepository } from "@/domains/exchanges/exchanges-repository-factory";
 import { addExchangeDifferenceToCashRegisterSales } from "@/domains/exchanges/exchanges-db";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
         parsedEndDate instanceof Date &&
         !Number.isNaN(parsedEndDate.getTime());
 
-      const service = new ExchangesService(new FirestoreExchangesRepository());
+      const service = new ExchangesService(getExchangesRepository());
       const exchanges = await service.list({
         limit,
         startDate: hasValidRange ? parsedStartDate : undefined,
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = (await authorizedRequest.json()) as CreateExchangeBody;
-      const service = new ExchangesService(new FirestoreExchangesRepository());
+      const service = new ExchangesService(getExchangesRepository());
 
       const result = await service.create({
         userId: user.uid,

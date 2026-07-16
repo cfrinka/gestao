@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { setAdminPassword } from "@/lib/admin-password";
+import { isDemoMode } from "@/lib/demo/demo-mode";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(
   request: NextRequest
 ) {
+  if (isDemoMode()) {
+    return NextResponse.json({ error: "Indisponível no modo demonstração" }, { status: 404 });
+  }
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest }) => {

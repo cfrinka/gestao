@@ -1,0 +1,23 @@
+{
+  "products": [
+    { "name": "Camiseta Básica", "sku": "CAM-001", "category": "Camisetas", "costPrice": 25, "salePrice": 59.9, "sizes": [{ "size": "P", "stock": 12 }, { "size": "M", "stock": 18 }, { "size": "G", "stock": 9 }] },
+    { "name": "Blusa Cropped", "sku": "BLU-002", "category": "Blusas", "costPrice": 30, "salePrice": 79.9, "sizes": [{ "size": "P", "stock": 8 }, { "size": "M", "stock": 14 }, { "size": "G", "stock": 6 }] },
+    { "name": "Regata Canelada", "sku": "REG-003", "category": "Regatas", "costPrice": 18, "salePrice": 39.9, "sizes": [{ "size": "P", "stock": 20 }, { "size": "M", "stock": 25 }, { "size": "G", "stock": 15 }] },
+    { "name": "Short Jeans", "sku": "SHO-004", "category": "Shorts", "costPrice": 35, "salePrice": 89.9, "sizes": [{ "size": "36", "stock": 5 }, { "size": "38", "stock": 7 }, { "size": "40", "stock": 3 }] },
+    { "name": "Calça Wide Leg", "sku": "CAL-005", "category": "Calças", "costPrice": 60, "salePrice": 149.9, "sizes": [{ "size": "36", "stock": 4 }, { "size": "38", "stock": 6 }, { "size": "40", "stock": 2 }] },
+    { "name": "Saia Midi", "sku": "SAI-006", "category": "Saias", "costPrice": 40, "salePrice": 99.9, "sizes": [{ "size": "P", "stock": 3 }, { "size": "M", "stock": 2 }, { "size": "G", "stock": 1 }] },
+    { "name": "Conjunto Alfaiataria", "sku": "CON-007", "category": "Conjuntos", "costPrice": 90, "salePrice": 219.9, "sizes": [{ "size": "P", "stock": 2 }, { "size": "M", "stock": 4 }, { "size": "G", "stock": 2 }] },
+    { "name": "Camiseta Plus Size", "sku": "CAM-008", "category": "Camisetas", "plusSized": true, "costPrice": 28, "salePrice": 64.9, "sizes": [{ "size": "G1", "stock": 6 }, { "size": "G2", "stock": 4 }, { "size": "G3", "stock": 2 }] }
+  ],
+  "clients": [
+    { "name": "Maria Silva", "phone": "(11) 98888-1111", "email": "maria.silva@example.com" },
+    { "name": "João Pereira", "phone": "(11) 98888-2222", "email": "joao.pereira@example.com" },
+    { "name": "Fernanda Costa", "phone": "(11) 98888-3333", "email": "fernanda.costa@example.com" },
+    { "name": "Roberto Almeida", "phone": "(11) 98888-4444", "email": "roberto.almeida@example.com" }
+  ],
+  "bills": [
+    { "name": "Aluguel da loja", "amount": 2200, "kind": "FIXED", "status": "PENDING", "dueOffsetDays": 6 },
+    { "name": "Conta de luz", "amount": 340, "kind": "ONE_TIME", "status": "PENDING", "dueOffsetDays": -3 },
+    { "name": "Internet", "amount": 150, "kind": "FIXED", "status": "PAID", "dueOffsetDays": -10, "paidOffsetDays": -9, "paidMethod": "PIX" }
+  ]
+}
