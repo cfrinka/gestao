@@ -155,9 +155,10 @@ export default function BillsPage() {
     }
 
     setCreating(true);
+    const idempotencyKey = crypto.randomUUID();
     try {
       if (kind === "ONE_TIME") {
-        await apiPost("/api/bills", { kind: "ONE_TIME", name: name.trim(), amount: parsed, dueDate });
+        await apiPost("/api/bills", { kind: "ONE_TIME", name: name.trim(), amount: parsed, dueDate, idempotencyKey });
       } else if (kind === "FIXED") {
         await apiPost("/api/bills", {
           kind: "FIXED",
@@ -166,6 +167,7 @@ export default function BillsPage() {
           dayOfMonth: parseInt(dayOfMonth, 10),
           monthsAhead: parseInt(monthsAhead, 10),
           startMonth: month,
+          idempotencyKey,
         });
       } else {
         await apiPost("/api/bills", {
@@ -175,6 +177,7 @@ export default function BillsPage() {
           firstDueDate,
           installmentsCount: parseInt(installmentsCount, 10),
           intervalMonths: 1,
+          idempotencyKey,
         });
       }
 
