@@ -1,13 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  applyCashRegisterAdjustment,
-  getOpenCashRegister,
-  openCashRegister,
-  closeCashRegister,
-  getCashRegisterOrders,
-} from "@/domains/cash-register/cash-register-db";
-import { getUser } from "@/domains/users/users-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
+import { CashRegisterService } from "@/domains/cash-register/cash-register-service";
+import { FirestoreCashRegisterRepository } from "@/domains/cash-register/firestore-cash-register-repository";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +9,8 @@ export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async ({ user }) => {
-      const register = await getOpenCashRegister(user.uid);
+      const service = new CashRegisterService(new FirestoreCashRegisterRepository());
+      const register = await service.getOpen(user.uid);
       return NextResponse.json({ register });
     },
     { operationName: "CashRegister GET" }
@@ -27,51 +22,31 @@ export async function POST(request: NextRequest) {
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
-      const { action, openingBalance, closingBalance, amount, note } = body;
+      const { action, openingBalance, closingBalance, amount, note, idempotencyKey } = body;
+
+      const service = new CashRegisterService(new FirestoreCashRegisterRepository());
 
       if (action === "open") {
-        const existingRegister = await getOpenCashRegister(user.uid);
-        if (existingRegister) {
-          return NextResponse.json({ error: "Já existe um caixa aberto" }, { status: 400 });
-        }
-
-        const userData = await getUser(user.uid);
-        const userName = userData?.name || user.email;
-        const register = await openCashRegister(user.uid, userName, openingBalance || 0);
+        const register = await service.open(user.uid, user.email, Number(openingBalance || 0));
         return NextResponse.json({ register }, { status: 201 });
       }
 
       if (action === "close") {
-        const register = await getOpenCashRegister(user.uid);
-        if (!register) {
-          return NextResponse.json({ error: "Nenhum caixa aberto" }, { status: 400 });
-        }
-
-        const orders = await getCashRegisterOrders(register.id);
-        const closedRegister = await closeCashRegister(register.id, closingBalance || 0);
-
-        return NextResponse.json({
-          register: closedRegister,
-          orders,
-        });
+        const result = await service.close(user.uid, Number(closingBalance || 0));
+        return NextResponse.json(result);
       }
 
       if (action === "supply" || action === "withdrawal") {
-        const register = await getOpenCashRegister(user.uid);
-        if (!register) {
-          return NextResponse.json({ error: "Nenhum caixa aberto" }, { status: 400 });
-        }
-
-        const updatedRegister = await applyCashRegisterAdjustment({
-          registerId: register.id,
+        const result = await service.adjust({
+          userId: user.uid,
+          idempotencyKey: String(idempotencyKey || ""),
           type: action === "supply" ? "SUPPLY" : "WITHDRAWAL",
-          amount: Number(amount || 0),
-          note: typeof note === "string" ? note : undefined,
+          amount,
+          note,
           actorId: user.uid,
           actorRole: user.role,
         });
-
-        return NextResponse.json({ register: updatedRegister });
+        return NextResponse.json(result.body, { status: result.status });
       }
 
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });

@@ -302,6 +302,7 @@ export default function POSPage() {
         action: cashAdjustmentType,
         amount,
         note: cashAdjustmentNote,
+        idempotencyKey: crypto.randomUUID(),
       });
       setCashRegister(data.register || null);
       setShowCashAdjustmentModal(false);

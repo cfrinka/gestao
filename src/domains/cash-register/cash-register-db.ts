@@ -42,41 +42,31 @@ export async function getOpenCashRegister(userId: string): Promise<CashRegister 
   return { id: doc.id, ...convertTimestamp<Omit<CashRegister, "id">>(doc.data()) };
 }
 
+// A marker doc at a natural key (userId) makes "does this user already have an open
+// register" a race-safe tx.create instead of a separate check-then-act query — two
+// concurrent "open" requests for the same user can no longer both pass the check.
+function openRegisterMarkerRef(userId: string) {
+  return adminDb.collection("openCashRegisterMarkers").doc(userId);
+}
+
 export async function openCashRegister(
   userId: string,
   userName: string,
   openingBalance: number
 ): Promise<CashRegister> {
   const now = new Date();
-  const docRef = await adminDb.collection("cashRegisters").add({
-    userId,
-    userName,
-    openedAt: Timestamp.fromDate(now),
-    closedAt: null,
-    openingBalance,
-    closingBalance: null,
-    status: "OPEN",
-    totalSales: 0,
-    totalCash: 0,
-    totalDebit: 0,
-    totalCredit: 0,
-    totalPix: 0,
-    totalCashSupply: 0,
-    totalCashWithdrawal: 0,
-    salesCount: 0,
-    totalExchangeDifferenceIn: 0,
-    exchangeDifferenceCount: 0,
-  });
+  const nowTs = Timestamp.fromDate(now);
+  const registerRef = adminDb.collection("cashRegisters").doc();
+  const markerRef = openRegisterMarkerRef(userId);
 
-  return {
-    id: docRef.id,
+  const registerData = {
     userId,
     userName,
-    openedAt: now,
+    openedAt: nowTs,
     closedAt: null,
     openingBalance,
     closingBalance: null,
-    status: "OPEN",
+    status: "OPEN" as const,
     totalSales: 0,
     totalCash: 0,
     totalDebit: 0,
@@ -88,17 +78,48 @@ export async function openCashRegister(
     totalExchangeDifferenceIn: 0,
     exchangeDifferenceCount: 0,
   };
+
+  await adminDb.runTransaction(async (tx) => {
+    const markerSnap = await tx.get(markerRef);
+    if (markerSnap.exists) {
+      throw new HttpError(400, "Já existe um caixa aberto");
+    }
+
+    tx.create(markerRef, { registerId: registerRef.id, userId, openedAt: nowTs });
+    tx.set(registerRef, registerData);
+  });
+
+  return {
+    id: registerRef.id,
+    ...registerData,
+    openedAt: now,
+    closedAt: null,
+  };
 }
 
 export async function closeCashRegister(registerId: string, closingBalance: number): Promise<CashRegister> {
   const now = new Date();
-  await adminDb.collection("cashRegisters").doc(registerId).update({
-    closedAt: Timestamp.fromDate(now),
-    closingBalance,
-    status: "CLOSED",
+  const registerRef = adminDb.collection("cashRegisters").doc(registerId);
+
+  await adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(registerRef);
+    if (!snap.exists) {
+      throw new HttpError(404, "Caixa não encontrado");
+    }
+    const data = snap.data() as { userId?: string };
+
+    tx.update(registerRef, {
+      closedAt: Timestamp.fromDate(now),
+      closingBalance,
+      status: "CLOSED",
+    });
+
+    if (data.userId) {
+      tx.delete(openRegisterMarkerRef(data.userId));
+    }
   });
 
-  const doc = await adminDb.collection("cashRegisters").doc(registerId).get();
+  const doc = await registerRef.get();
   return { id: doc.id, ...convertTimestamp<Omit<CashRegister, "id">>(doc.data()!) };
 }
 
@@ -171,20 +192,26 @@ export async function applyCashRegisterAdjustment(input: {
         ? { totalCashSupply: FieldValue.increment(amount) }
         : { totalCashWithdrawal: FieldValue.increment(amount) }),
     });
-  });
 
-  await createFinancialAuditLog({
-    action: "MANUAL_ADJUSTMENT",
-    actorId: input.actorId,
-    actorRole: input.actorRole,
-    occurredAt: now,
-    competencyMonth: toCompetencyMonth(now),
-    relatedEntity: { kind: "cashRegister", id: input.registerId },
-    payload: {
-      adjustmentType: input.type,
-      amount,
-      note: input.note || null,
-    },
+    // Written inside the same transaction as the register update — previously this was a
+    // separate call after the transaction committed, so a crash in between left the
+    // register adjusted with no audit trail.
+    await createFinancialAuditLog(
+      {
+        action: "MANUAL_ADJUSTMENT",
+        actorId: input.actorId,
+        actorRole: input.actorRole,
+        occurredAt: now,
+        competencyMonth: toCompetencyMonth(now),
+        relatedEntity: { kind: "cashRegister", id: input.registerId },
+        payload: {
+          adjustmentType: input.type,
+          amount,
+          note: input.note || null,
+        },
+      },
+      tx
+    );
   });
 
   const updatedDoc = await registerRef.get();
