@@ -3,20 +3,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import type { Client, FiadoPayment, Order, OrderItem, PaymentMethod } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { verifyAdminPassword } from "@/lib/admin-password";
-
-function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-
-async function assertFinancialMonthOpen(date: Date): Promise<void> {
-  const month = toCompetencyMonth(date);
-  const closure = await adminDb.collection("financialClosures").doc(month).get();
-  if (closure.exists) {
-    throw new Error(`Financial month ${month} is closed`);
-  }
-}
+import { assertFinancialMonthOpenTx, toCompetencyMonth } from "@/domains/financial/financial-db";
 
 function mapOrderPaymentMethodToFinancial(method: PaymentMethod["method"]): "cash" | "pix" | "credit" | "debit" {
   if (method === "DINHEIRO") return "cash";
@@ -142,12 +129,6 @@ export async function getClientPendingOrders(clientId: string): Promise<Order[]>
       };
     })
   );
-}
-
-export async function markOrderAsPaid(orderId: string): Promise<void> {
-  await adminDb.collection("orders").doc(orderId).update({
-    paidAt: Timestamp.fromDate(new Date()),
-  });
 }
 
 export async function applyCascadingFiadoPayment(
@@ -383,9 +364,28 @@ export async function applyFiadoPayment(
     const nextPaid = currentPaid + appliedAmount;
     const nextRemaining = Math.max(0, currentRemaining - appliedAmount);
     const now = new Date();
-    await assertFinancialMonthOpen(now);
+    await assertFinancialMonthOpenTx(tx, now);
     const nowTs = Timestamp.fromDate(now);
 
+    // Cash register lookup must happen here, before any tx.update/tx.set below — Firestore
+    // transactions require all reads to complete before any writes are queued.
+    const safeReceivedByUserId = String(receivedByUserId || "").trim();
+    let cashRegisterId: string | null = null;
+    let registerDocRef: FirebaseFirestore.DocumentReference | null = null;
+    if (safeReceivedByUserId) {
+      const openRegisterQuery = adminDb
+        .collection("cashRegisters")
+        .where("userId", "==", safeReceivedByUserId)
+        .where("status", "==", "OPEN")
+        .limit(1);
+      const openRegisterSnapshot = await tx.get(openRegisterQuery);
+      if (!openRegisterSnapshot.empty) {
+        registerDocRef = openRegisterSnapshot.docs[0].ref;
+        cashRegisterId = openRegisterSnapshot.docs[0].id;
+      }
+    }
+
+    // ALL WRITES AFTER ALL READS
     const payment: Omit<FiadoPayment, "createdAt"> & { createdAt: FirebaseFirestore.Timestamp } = {
       id: `pay_${Date.now()}`,
       amount: appliedAmount,
@@ -405,26 +405,13 @@ export async function applyFiadoPayment(
       updatedAt: nowTs,
     });
 
-    const safeReceivedByUserId = String(receivedByUserId || "").trim();
-    let cashRegisterId: string | null = null;
-    if (safeReceivedByUserId) {
-      const openRegisterQuery = adminDb
-        .collection("cashRegisters")
-        .where("userId", "==", safeReceivedByUserId)
-        .where("status", "==", "OPEN")
-        .limit(1);
-      const openRegisterSnapshot = await tx.get(openRegisterQuery);
-      if (!openRegisterSnapshot.empty) {
-        const registerDoc = openRegisterSnapshot.docs[0];
-        const paymentField = mapOrderPaymentMethodToCashRegisterField(method);
-        cashRegisterId = registerDoc.id;
-
-        tx.update(registerDoc.ref, {
-          totalSales: FieldValue.increment(appliedAmount),
-          [paymentField]: FieldValue.increment(appliedAmount),
-          salesCount: FieldValue.increment(1),
-        });
-      }
+    if (registerDocRef) {
+      const paymentField = mapOrderPaymentMethodToCashRegisterField(method);
+      tx.update(registerDocRef, {
+        totalSales: FieldValue.increment(appliedAmount),
+        [paymentField]: FieldValue.increment(appliedAmount),
+        salesCount: FieldValue.increment(1),
+      });
     }
 
     const movementRef = adminDb.collection("financialMovements").doc();

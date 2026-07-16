@@ -1,181 +1,90 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getClient,
-  updateClient,
-  deleteClient,
-  getClientPendingOrders,
-  updateClientBalance,
-  markOrderAsPaid,
-  applyFiadoPayment,
-  applyCascadingFiadoPayment,
-  correctClientDebt,
-  removeFiadoOrderItem,
-} from "@/domains/clients/clients-db";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
+import { ClientsService } from "@/domains/clients/clients-service";
+import { FirestoreClientsRepository } from "@/domains/clients/firestore-clients-repository";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   return withAuthorizedRoute(
     request,
     async () => {
-      const client = await getClient(params.id);
-      if (!client) {
-        return NextResponse.json({ error: "Client not found" }, { status: 404 });
-      }
-
-      const pendingOrders = await getClientPendingOrders(params.id);
-      return NextResponse.json({ ...client, pendingOrders });
+      const service = new ClientsService(new FirestoreClientsRepository());
+      const client = await service.get(params.id);
+      return NextResponse.json(client);
     },
     { roles: ["ADMIN"], operationName: "Client GET" }
   );
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest }) => {
-      const client = await getClient(params.id);
-      if (!client) {
-        return NextResponse.json({ error: "Client not found" }, { status: 404 });
-      }
-
       const body = await authorizedRequest.json();
-      const { name, phone, email, notes } = body;
-
-      await updateClient(params.id, { name, phone, email, notes });
-      const updatedClient = await getClient(params.id);
+      const service = new ClientsService(new FirestoreClientsRepository());
+      const updatedClient = await service.update({
+        clientId: params.id,
+        name: body.name,
+        phone: body.phone,
+        email: body.email,
+        notes: body.notes,
+      });
       return NextResponse.json(updatedClient);
     },
     { roles: ["ADMIN"], operationName: "Client PUT" }
   );
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   return withAuthorizedRoute(
     request,
     async () => {
-      const client = await getClient(params.id);
-      if (!client) {
-        return NextResponse.json({ error: "Client not found" }, { status: 404 });
-      }
-
-      if (client.balance !== 0) {
-        return NextResponse.json({ error: "Cannot delete client with pending balance" }, { status: 400 });
-      }
-
-      await deleteClient(params.id);
+      const service = new ClientsService(new FirestoreClientsRepository());
+      await service.remove(params.id);
       return NextResponse.json({ success: true });
     },
     { roles: ["ADMIN"], operationName: "Client DELETE" }
   );
 }
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest, user }) => {
-      const client = await getClient(params.id);
-      if (!client) {
-        return NextResponse.json({ error: "Client not found" }, { status: 404 });
-      }
-
       const body = await authorizedRequest.json();
       const { action, orderId, orderItemId, amount, method, adminPassword, reason } = body;
+      const service = new ClientsService(new FirestoreClientsRepository());
 
       if (action === "correct_debt" && amount !== undefined && adminPassword && reason) {
-        const correctionAmount = typeof amount === "number" ? amount : parseFloat(amount);
-        
-        if (!Number.isFinite(correctionAmount) || correctionAmount === 0) {
-          return NextResponse.json({ error: "Invalid correction amount" }, { status: 400 });
-        }
-
-        try {
-          await correctClientDebt(params.id, correctionAmount, adminPassword, reason);
-          const updatedClient = await getClient(params.id);
-          const refreshedPending = await getClientPendingOrders(params.id);
-          
-          return NextResponse.json({ 
-            ...updatedClient, 
-            pendingOrders: refreshedPending
-          });
-        } catch (error) {
-          if (error instanceof Error && error.message.includes("Invalid admin password")) {
-            return NextResponse.json({ error: "Senha de administrador inválida" }, { status: 403 });
-          }
-          return NextResponse.json({ error: error instanceof Error ? error.message : "Erro ao corrigir débito" }, { status: 400 });
-        }
+        const result = await service.correctDebt({ clientId: params.id, amount, adminPassword, reason });
+        return NextResponse.json(result);
       }
 
       if (action === "pay_cascading" && amount) {
-        const paymentAmount = typeof amount === "number" ? amount : parseFloat(amount);
-        const finalAmount = Number.isFinite(paymentAmount) && paymentAmount > 0 ? paymentAmount : 0;
-        const finalMethod = method || "DINHEIRO";
-
-        if (finalAmount <= 0) {
-          return NextResponse.json({ error: "Invalid payment amount" }, { status: 400 });
-        }
-
-        try {
-          const result = await applyCascadingFiadoPayment(params.id, finalAmount, finalMethod, user.uid);
-          const updatedClient = await getClient(params.id);
-          const refreshedPending = await getClientPendingOrders(params.id);
-          
-          return NextResponse.json({ 
-            ...updatedClient, 
-            pendingOrders: refreshedPending,
-            paymentResult: result
-          });
-        } catch (error) {
-          return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Erro ao registrar pagamento" },
-            { status: 400 }
-          );
-        }
+        const result = await service.payCascading({
+          clientId: params.id,
+          amount,
+          method,
+          receivedByUserId: user.uid,
+        });
+        return NextResponse.json(result);
       }
 
       if (action === "pay_order" && orderId) {
-        const pendingOrders = await getClientPendingOrders(params.id);
-        const order = pendingOrders.find(o => o.id === orderId);
-
-        if (!order) {
-          return NextResponse.json({ error: "Order not found or already paid" }, { status: 404 });
-        }
-
-        const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
-        const paymentAmount = typeof amount === "number" ? amount : parseFloat(amount);
-        const finalAmount = Number.isFinite(paymentAmount) && paymentAmount > 0 ? paymentAmount : remaining;
-        const finalMethod = method || "DINHEIRO";
-
-        try {
-          await applyFiadoPayment(params.id, orderId, finalAmount, finalMethod, user.uid);
-        } catch {
-          await markOrderAsPaid(orderId);
-          await updateClientBalance(params.id, -order.totalAmount);
-        }
-
-        const updatedClient = await getClient(params.id);
-        const refreshedPending = await getClientPendingOrders(params.id);
-        return NextResponse.json({ ...updatedClient, pendingOrders: refreshedPending });
+        const result = await service.payOrder({
+          clientId: params.id,
+          orderId,
+          amount,
+          method,
+          receivedByUserId: user.uid,
+        });
+        return NextResponse.json(result);
       }
 
       if (action === "remove_order_item" && orderId && orderItemId) {
-        await removeFiadoOrderItem(params.id, orderId, orderItemId);
-        const updatedClient = await getClient(params.id);
-        const refreshedPending = await getClientPendingOrders(params.id);
-        return NextResponse.json({ ...updatedClient, pendingOrders: refreshedPending });
+        const result = await service.removeOrderItem({ clientId: params.id, orderId, orderItemId });
+        return NextResponse.json(result);
       }
 
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
