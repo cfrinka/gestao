@@ -89,6 +89,7 @@ function baseCommand(overrides: Partial<CheckoutCommand> = {}): CheckoutCommand 
   return {
     userId: "user-1",
     userRole: "CASHIER",
+    userName: "Test User",
     items: [{ productId: "p1", size: "", quantity: 1 }],
     payments: [{ method: "DINHEIRO", amount: 100 }],
     discount: 0,
@@ -110,9 +111,16 @@ describe("CheckoutService", () => {
     await expect(service.execute(baseCommand({ items: [] }))).rejects.toThrow(HttpError);
   });
 
-  it("blocks payLater for non-admin roles", async () => {
+  it("blocks payLater for roles other than ADMIN or CASHIER", async () => {
     const service = new CheckoutService(new FakeCheckoutRepository());
-    await expect(service.execute(baseCommand({ payLater: true, clientId: "c1", userRole: "CASHIER" }))).rejects.toThrow(HttpError);
+    await expect(service.execute(baseCommand({ payLater: true, clientId: "c1", userRole: "SYSTEM" }))).rejects.toThrow(HttpError);
+  });
+
+  it("allows payLater for CASHIER", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    const result = await service.execute(baseCommand({ payLater: true, clientId: "client-1", userRole: "CASHIER" }));
+    expect(result.status).toBe(201);
   });
 
   it("requires a clientId for payLater", async () => {

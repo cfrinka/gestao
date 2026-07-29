@@ -32,6 +32,7 @@ interface FiadoPaymentEntry {
   amount: number;
   method: string;
   createdAt: string;
+  receivedByUserName?: string;
 }
 
 interface Order {
@@ -429,15 +430,7 @@ export default function ClientsPage() {
     setDialogOpen(true);
   };
 
-  // Only ADMIN can access this page
-  if (userData?.role === "CASHIER") {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <p className="text-gray-500">Você não tem permissão para acessar esta página.</p>
-      </div>
-    );
-  }
-
+  const isAdmin = userData?.role === "ADMIN";
   const totalPending = clients.reduce((sum, c) => sum + c.balance, 0);
 
   return (
@@ -447,6 +440,7 @@ export default function ClientsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Clientes</h1>
           <p className="text-gray-500">Gerencie clientes e pagamentos pendentes</p>
         </div>
+        {isAdmin && (
         <div className="flex items-center gap-2">
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
@@ -511,6 +505,7 @@ export default function ClientsPage() {
             </DialogContent>
           </Dialog>
         </div>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -576,6 +571,7 @@ export default function ClientsPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
+                        {isAdmin && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -584,6 +580,8 @@ export default function ClientsPage() {
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
+                        )}
+                        {isAdmin && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -593,6 +591,7 @@ export default function ClientsPage() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -656,6 +655,7 @@ export default function ClientsPage() {
                       Receber Pagamento
                     </Button>
                   )}
+                  {isAdmin && (
                   <Button
                     variant="destructive"
                     size="sm"
@@ -663,6 +663,7 @@ export default function ClientsPage() {
                   >
                     Corrigir Débito
                   </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -707,6 +708,12 @@ export default function ClientsPage() {
                                     <span className="text-green-600 font-medium">{formatCurrency(entry.amount)}</span>
                                     <span className="text-gray-400">•</span>
                                     <span>{new Date(entry.createdAt).toLocaleDateString("pt-BR")} {new Date(entry.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+                                    {entry.receivedByUserName && (
+                                      <>
+                                        <span className="text-gray-400">•</span>
+                                        <span className="text-gray-500">recebido por {entry.receivedByUserName}</span>
+                                      </>
+                                    )}
                                   </li>
                                 ))}
                               </ul>
@@ -722,6 +729,7 @@ export default function ClientsPage() {
                                       {item.quantity}x {item.productName || "Produto removido"}
                                       {item.size ? ` (${item.size})` : ""}
                                     </span>
+                                    {isAdmin && (
                                     <Button
                                       type="button"
                                       variant="ghost"
@@ -733,6 +741,7 @@ export default function ClientsPage() {
                                     >
                                       <X className="h-3.5 w-3.5" />
                                     </Button>
+                                    )}
                                   </li>
                                 ))}
                               </ul>

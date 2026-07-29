@@ -50,9 +50,10 @@ export class FirestoreClientsRepository implements ClientsRepository {
     clientId: string,
     amount: number,
     method: ClientPaymentMethod,
-    receivedByUserId?: string
+    receivedByUserId?: string,
+    receivedByUserName?: string
   ): Promise<unknown> {
-    return applyCascadingFiadoPayment(clientId, amount, method, receivedByUserId);
+    return applyCascadingFiadoPayment(clientId, amount, method, receivedByUserId, receivedByUserName);
   }
 
   async applyFiadoPayment(
@@ -60,9 +61,10 @@ export class FirestoreClientsRepository implements ClientsRepository {
     orderId: string,
     amount: number,
     method: ClientPaymentMethod,
-    receivedByUserId?: string
+    receivedByUserId?: string,
+    receivedByUserName?: string
   ): Promise<void> {
-    return applyFiadoPayment(clientId, orderId, amount, method, receivedByUserId);
+    return applyFiadoPayment(clientId, orderId, amount, method, receivedByUserId, receivedByUserName);
   }
 
   async removeFiadoOrderItem(clientId: string, orderId: string, orderItemId: string): Promise<void> {

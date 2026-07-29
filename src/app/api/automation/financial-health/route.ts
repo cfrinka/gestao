@@ -6,12 +6,12 @@ import { FirestoreFinancialRepository } from "@/domains/financial/firestore-fina
 
 export const dynamic = "force-dynamic";
 
-async function resolveActor(request: NextRequest): Promise<{ uid: string; email: string; role: string } | null> {
+async function resolveActor(request: NextRequest): Promise<{ uid: string; email: string; name: string; role: string } | null> {
   const cronSecret = request.headers.get("x-automation-secret") || "";
   const configuredSecret = process.env.FINANCIAL_AUTOMATION_SECRET || "";
 
   if (configuredSecret && cronSecret && cronSecret === configuredSecret) {
-    return { uid: "automation", email: "", role: "SYSTEM" };
+    return { uid: "automation", email: "", name: "Automation", role: "SYSTEM" };
   }
 
   return verifyAuth(request);

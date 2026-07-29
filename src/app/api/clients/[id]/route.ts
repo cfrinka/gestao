@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       const client = await service.get(params.id);
       return NextResponse.json(client);
     },
-    { roles: ["ADMIN"], operationName: "Client GET" }
+    { roles: ["ADMIN", "CASHIER"], operationName: "Client GET" }
   );
 }
 
@@ -56,6 +56,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       const { action, orderId, orderItemId, amount, method, adminPassword, reason } = body;
       const service = new ClientsService(new FirestoreClientsRepository());
 
+      // Debt correction and order-item removal are administrative overrides, not payment
+      // receiving — cashiers can receive fiado payments but not adjust what's owed.
+      const adminOnlyActions = ["correct_debt", "remove_order_item"];
+      if (adminOnlyActions.includes(action) && user.role !== "ADMIN") {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+
       if (action === "correct_debt" && amount !== undefined && adminPassword && reason) {
         const result = await service.correctDebt({ clientId: params.id, amount, adminPassword, reason });
         return NextResponse.json(result);
@@ -67,6 +74,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           amount,
           method,
           receivedByUserId: user.uid,
+          receivedByUserName: user.name,
         });
         return NextResponse.json(result);
       }
@@ -78,6 +86,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           amount,
           method,
           receivedByUserId: user.uid,
+          receivedByUserName: user.name,
         });
         return NextResponse.json(result);
       }
@@ -89,6 +98,6 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     },
-    { roles: ["ADMIN"], operationName: "Client PATCH" }
+    { roles: ["ADMIN", "CASHIER"], operationName: "Client PATCH" }
   );
 }

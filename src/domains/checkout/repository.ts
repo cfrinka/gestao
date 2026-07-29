@@ -26,6 +26,7 @@ export interface CheckoutRepository {
     clientName?: string;
     payLater: boolean;
     createdById: string;
+    createdByName: string;
     createdByRole: string;
   }): Promise<Order>;
   updateClientBalance(clientId: string, amount: number): Promise<void>;

@@ -13,14 +13,16 @@ export interface ClientsRepository {
     clientId: string,
     amount: number,
     method: ClientPaymentMethod,
-    receivedByUserId?: string
+    receivedByUserId?: string,
+    receivedByUserName?: string
   ): Promise<unknown>;
   applyFiadoPayment(
     clientId: string,
     orderId: string,
     amount: number,
     method: ClientPaymentMethod,
-    receivedByUserId?: string
+    receivedByUserId?: string,
+    receivedByUserName?: string
   ): Promise<void>;
   removeFiadoOrderItem(clientId: string, orderId: string, orderItemId: string): Promise<void>;
 }

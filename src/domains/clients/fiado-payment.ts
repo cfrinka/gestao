@@ -53,7 +53,8 @@ export async function applyCascadingFiadoPayment(
   clientId: string,
   paymentAmount: number,
   method: PaymentMethod["method"],
-  receivedByUserId?: string
+  receivedByUserId?: string,
+  receivedByUserName?: string
 ): Promise<FiadoPaymentResult> {
   if (!paymentAmount || paymentAmount <= 0) {
     throw new Error("Payment amount must be greater than zero");
@@ -73,6 +74,7 @@ export async function applyCascadingFiadoPayment(
   let remainingToApply = paymentAmount;
 
   const safeReceivedByUserId = String(receivedByUserId || "").trim();
+  const safeReceivedByUserName = String(receivedByUserName || "").trim();
 
   await adminDb.runTransaction(async (tx) => {
     // ===== ALL READS FIRST =====
@@ -137,6 +139,8 @@ export async function applyCascadingFiadoPayment(
         id: `pay_${Date.now()}_${orderDoc.id}`,
         amount: appliedToOrder,
         method,
+        ...(safeReceivedByUserId && { receivedByUserId: safeReceivedByUserId }),
+        ...(safeReceivedByUserName && { receivedByUserName: safeReceivedByUserName }),
         createdAt: nowTs,
       };
 
@@ -211,6 +215,7 @@ export async function applyCascadingFiadoPayment(
           remainingBefore: allocation.remainingBefore,
           remainingAfter: allocation.remainingAfter,
           receivedByUserId: safeReceivedByUserId || null,
+          receivedByUserName: safeReceivedByUserName || null,
           cashRegisterId,
         },
       });

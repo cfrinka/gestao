@@ -47,6 +47,7 @@ export class FirestoreCheckoutRepository implements CheckoutRepository {
     clientName?: string;
     payLater: boolean;
     createdById: string;
+    createdByName: string;
     createdByRole: string;
   }): Promise<Order> {
     return processCheckout(
@@ -57,7 +58,8 @@ export class FirestoreCheckoutRepository implements CheckoutRepository {
       input.clientName,
       input.payLater,
       input.createdById,
-      input.createdByRole
+      input.createdByRole,
+      input.createdByName
     );
   }
 

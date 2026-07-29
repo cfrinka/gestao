@@ -7,6 +7,7 @@ type Role = "ADMIN" | "CASHIER" | "SYSTEM";
 type AuthorizedUser = {
   uid: string;
   email: string;
+  name: string;
   role: string;
   authTime?: number;
   isDemo?: boolean;

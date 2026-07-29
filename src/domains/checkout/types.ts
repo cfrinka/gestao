@@ -13,6 +13,7 @@ export interface CheckoutCartItem {
 export interface CheckoutCommand {
   userId: string;
   userRole: UserRole;
+  userName: string;
   items: CheckoutCartItem[];
   payments?: PaymentMethod[];
   discount?: number;

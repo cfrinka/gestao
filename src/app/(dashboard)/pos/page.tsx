@@ -708,7 +708,7 @@ export default function POSPage() {
   const total = Math.max(0, subtotal - totalDiscount);
 
   const canApplyDiscount = userData?.role === "ADMIN" || userData?.role === "CASHIER";
-  const canUsePayLater = userData?.role === "ADMIN";
+  const canUsePayLater = userData?.role === "ADMIN" || userData?.role === "CASHIER";
   const maxCashierDiscount = subtotal * 0.10;
 
   const openPaymentModal = () => {

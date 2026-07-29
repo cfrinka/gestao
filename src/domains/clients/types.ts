@@ -27,6 +27,7 @@ export interface PayCascadingCommand {
   amount: unknown;
   method: unknown;
   receivedByUserId: string;
+  receivedByUserName?: string;
 }
 
 export interface PayOrderCommand {
@@ -35,6 +36,7 @@ export interface PayOrderCommand {
   amount: unknown;
   method: unknown;
   receivedByUserId: string;
+  receivedByUserName?: string;
 }
 
 export interface RemoveOrderItemCommand {

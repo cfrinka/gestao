@@ -29,7 +29,8 @@ export async function processCheckout(
   clientName?: string,
   isPaidLater: boolean = false,
   createdById: string = "system",
-  createdByRole: string = "ADMIN"
+  createdByRole: string = "ADMIN",
+  createdByName: string = "system"
 ): Promise<Order> {
   if (createdByRole !== "ADMIN" && createdByRole !== "CASHIER") {
     throw new Error("Role not allowed to process checkout");
@@ -133,6 +134,7 @@ export async function processCheckout(
       cogsTotal,
       payments,
       createdById,
+      createdByName,
       ...(clientId && { clientId }),
       ...(clientName && { clientName }),
       ...(isPaidLater && {

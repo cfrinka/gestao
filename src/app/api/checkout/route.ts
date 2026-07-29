@@ -114,6 +114,7 @@ export async function POST(request: NextRequest) {
       const result = await service.execute({
         userId: user.uid,
         userRole: user.role,
+        userName: user.name,
         items: body.items,
         payments: body.payments,
         discount: body.discount,

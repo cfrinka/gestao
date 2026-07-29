@@ -22,9 +22,10 @@ export class CheckoutService {
     }
 
     const canUseAdvancedFeatures = command.userRole === "ADMIN";
+    const canUsePayLater = command.userRole === "ADMIN" || command.userRole === "CASHIER";
     const payLater = Boolean(command.payLater);
 
-    if (payLater && !canUseAdvancedFeatures) {
+    if (payLater && !canUsePayLater) {
       throw new HttpError(403, "You don't have permission to use pay later");
     }
 
@@ -103,6 +104,7 @@ export class CheckoutService {
         clientName,
         payLater,
         createdById: command.userId,
+        createdByName: command.userName,
         createdByRole: command.userRole,
       });
     } catch (error) {

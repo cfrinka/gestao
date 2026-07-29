@@ -135,10 +135,11 @@ export async function applyCascadingFiadoPayment(
   clientId: string,
   paymentAmount: number,
   method: PaymentMethod["method"],
-  receivedByUserId?: string
+  receivedByUserId?: string,
+  receivedByUserName?: string
 ) {
   const { applyCascadingFiadoPayment: applyCascadingPayment } = await import("./fiado-payment");
-  return applyCascadingPayment(clientId, paymentAmount, method, receivedByUserId);
+  return applyCascadingPayment(clientId, paymentAmount, method, receivedByUserId, receivedByUserName);
 }
 
 export async function correctClientDebt(
@@ -323,7 +324,8 @@ export async function applyFiadoPayment(
   orderId: string,
   amount: number,
   method: PaymentMethod["method"],
-  receivedByUserId?: string
+  receivedByUserId?: string,
+  receivedByUserName?: string
 ): Promise<void> {
   if (!amount || amount <= 0) {
     throw new Error("Payment amount must be greater than zero");
@@ -370,6 +372,7 @@ export async function applyFiadoPayment(
     // Cash register lookup must happen here, before any tx.update/tx.set below — Firestore
     // transactions require all reads to complete before any writes are queued.
     const safeReceivedByUserId = String(receivedByUserId || "").trim();
+    const safeReceivedByUserName = String(receivedByUserName || "").trim();
     let cashRegisterId: string | null = null;
     let registerDocRef: FirebaseFirestore.DocumentReference | null = null;
     if (safeReceivedByUserId) {
@@ -390,6 +393,8 @@ export async function applyFiadoPayment(
       id: `pay_${Date.now()}`,
       amount: appliedAmount,
       method,
+      ...(safeReceivedByUserId && { receivedByUserId: safeReceivedByUserId }),
+      ...(safeReceivedByUserName && { receivedByUserName: safeReceivedByUserName }),
       createdAt: nowTs,
     };
 
@@ -433,6 +438,7 @@ export async function applyFiadoPayment(
         description,
         orderDate: orderDateStr,
         receivedByUserId: safeReceivedByUserId || null,
+        receivedByUserName: safeReceivedByUserName || null,
         cashRegisterId,
       },
     });

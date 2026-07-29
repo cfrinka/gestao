@@ -110,6 +110,8 @@ export interface FiadoPayment {
   id: string;
   amount: number;
   method: PaymentMethod["method"];
+  receivedByUserId?: string;
+  receivedByUserName?: string;
   createdAt: Date;
 }
 
@@ -131,6 +133,8 @@ export interface Order {
   cancelledAt?: Date;
   cancelledBy?: string;
   cancellationReason?: string;
+  createdById?: string;
+  createdByName?: string;
   createdAt: Date;
   items?: OrderItem[];
 }

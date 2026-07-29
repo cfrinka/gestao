@@ -4,6 +4,7 @@ import { adminAuth, adminDb } from "./firebase-admin";
 interface AuthUser {
   uid: string;
   email: string;
+  name: string;
   role: string;
   authTime?: number;
   isDemo?: boolean;
@@ -33,6 +34,7 @@ export async function verifyAuth(request: NextRequest): Promise<AuthUser | null>
     return {
       uid: decodedToken.uid,
       email: decodedToken.email || "",
+      name: String(userData?.name || decodedToken.email || decodedToken.uid),
       role: normalizedRole,
       authTime: typeof decodedToken.auth_time === "number" ? decodedToken.auth_time : undefined,
       isDemo: userData?.isDemo === true,

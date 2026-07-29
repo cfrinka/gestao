@@ -121,7 +121,8 @@ export class ClientsService {
         command.clientId,
         finalAmount,
         toPaymentMethod(command.method),
-        command.receivedByUserId
+        command.receivedByUserId,
+        command.receivedByUserName
       );
     } catch (error) {
       throw new HttpError(400, error instanceof Error ? error.message : "Erro ao registrar pagamento");
@@ -157,7 +158,8 @@ export class ClientsService {
         command.orderId,
         finalAmount,
         toPaymentMethod(command.method),
-        command.receivedByUserId
+        command.receivedByUserId,
+        command.receivedByUserName
       );
     } catch (error) {
       throw new HttpError(400, error instanceof Error ? error.message : "Erro ao registrar pagamento");
