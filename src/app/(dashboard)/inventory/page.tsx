@@ -24,7 +24,9 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Boxes, TrendingUp, Settings2 } from "lucide-react";
+import { Boxes, TrendingUp, Settings2, Printer } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface ProductSize {
   size: string;
@@ -124,11 +126,55 @@ export default function InventoryPage() {
   const totalInventoryValue = products.reduce((sum, p) => sum + p.stock * p.costPrice, 0);
   const totalStock = products.reduce((sum, p) => sum + p.stock, 0);
 
+  const printInventorySheet = () => {
+    if (products.length === 0) return;
+
+    const doc = new jsPDF();
+
+    doc.setFontSize(18);
+    doc.text("Folha de Contagem de Estoque", 14, 20);
+    doc.setFontSize(10);
+    doc.text("Data: ____/____/________", 14, 28);
+    doc.text("Responsável: ______________________________________", 90, 28);
+
+    const rows: string[][] = [];
+    products.forEach((product) => {
+      if (product.sizes && product.sizes.length > 0) {
+        product.sizes.forEach((s) => {
+          rows.push([product.name, product.sku, s.size, String(s.stock), ""]);
+        });
+      } else {
+        rows.push([product.name, product.sku, "-", String(product.stock), ""]);
+      }
+    });
+
+    autoTable(doc, {
+      startY: 36,
+      head: [["Produto", "SKU", "Tamanho", "Estoque (Sistema)", "Contagem Física"]],
+      body: rows,
+      theme: "grid",
+      styles: { fontSize: 9, minCellHeight: 8 },
+      headStyles: { fillColor: [245, 245, 245], textColor: 20 },
+      columnStyles: {
+        3: { halign: "right" },
+        4: { halign: "right", cellWidth: 35 },
+      },
+    });
+
+    doc.save(`inventario-${new Date().toISOString().split("T")[0]}.pdf`);
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Estoque</h1>
-        <p className="text-gray-500">Controle de inventário</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Estoque</h1>
+          <p className="text-gray-500">Controle de inventário</p>
+        </div>
+        <Button variant="outline" onClick={printInventorySheet} disabled={loading || products.length === 0}>
+          <Printer className="h-4 w-4 mr-2" />
+          Imprimir Inventário
+        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
