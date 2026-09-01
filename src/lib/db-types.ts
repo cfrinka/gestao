@@ -13,6 +13,8 @@ export const PRODUCT_CATEGORIES = [
   "Calças",
   "Saias",
   "Conjuntos",
+  "Acessórios",
+  "Vestidos",
 ] as const;
 
 export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];

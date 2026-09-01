@@ -19,21 +19,12 @@ import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartp
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Label } from "@/components/ui/label";
+import { PRODUCT_CATEGORIES } from "@/lib/db-types";
 
 interface ProductSize {
   size: string;
   stock: number;
 }
-
-const PRODUCT_CATEGORIES = [
-  "Blusas",
-  "Regatas",
-  "Camisetas",
-  "Shorts",
-  "Calças",
-  "Saias",
-  "Conjuntos",
-] as const;
 
 interface Product {
   id: string;

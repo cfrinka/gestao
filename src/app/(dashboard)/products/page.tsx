@@ -24,21 +24,12 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, generateSku } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Package, RefreshCw, Upload, Loader2, Download } from "lucide-react";
+import { PRODUCT_CATEGORIES } from "@/lib/db-types";
 
 interface ProductSize {
   size: string;
   stock: number;
 }
-
-const PRODUCT_CATEGORIES = [
-  "Blusas",
-  "Regatas",
-  "Camisetas",
-  "Shorts",
-  "Calças",
-  "Saias",
-  "Conjuntos",
-] as const;
 
 interface Product {
   id: string;

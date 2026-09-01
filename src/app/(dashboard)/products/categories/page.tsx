@@ -7,18 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { Save, Search, Tags, RefreshCw, ImageIcon, ImageOff, Printer, Upload, Loader2 } from "lucide-react";
-
-const PRODUCT_CATEGORIES = [
-  "Blusas",
-  "Regatas",
-  "Camisetas",
-  "Shorts",
-  "Calças",
-  "Saias",
-  "Conjuntos",
-  "Acessórios",
-  "Vestidos"
-] as const;
+import { PRODUCT_CATEGORIES } from "@/lib/db-types";
 
 interface Product {
   id: string;
