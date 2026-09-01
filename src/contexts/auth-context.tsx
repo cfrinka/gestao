@@ -37,12 +37,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(firebaseUser);
 
       if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-        if (userDoc.exists()) {
-          setUserData({
-            id: firebaseUser.uid,
-            ...userDoc.data(),
-          } as UserData);
+        try {
+          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+          if (userDoc.exists()) {
+            setUserData({
+              id: firebaseUser.uid,
+              ...userDoc.data(),
+            } as UserData);
+          }
+        } catch (error) {
+          console.error("Failed to fetch user data:", error);
         }
       } else {
         setUserData(null);
