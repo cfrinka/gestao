@@ -47,6 +47,7 @@ scripts/seed.ts
 
 # Lint output
 eslint-report.json
+lint-output.txt
 
 # Local deployment notes (contains sensitive data)
 DEPLOYMENT.md

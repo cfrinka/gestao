@@ -12,7 +12,6 @@
     "lint": "next lint",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "seed": "tsx scripts/seed.ts",
     "build:demo": "cross-env DEMO_MODE=true NEXT_PUBLIC_DEMO_MODE=true next build",
     "start:demo": "cross-env DEMO_MODE=true NEXT_PUBLIC_DEMO_MODE=true next start"
   },
