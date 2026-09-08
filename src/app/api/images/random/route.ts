@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isDemoMode } from '@/lib/demo/demo-mode';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   if (isDemoMode()) {
     return NextResponse.json({ error: 'Indisponível no modo demonstração' }, { status: 404 });

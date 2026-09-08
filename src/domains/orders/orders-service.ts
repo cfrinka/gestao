@@ -12,11 +12,22 @@ export class OrdersService {
   async list(query: ListOrdersQuery): Promise<unknown[]> {
     const orders = await this.repository.getOrders(query.startDate, query.endDate);
 
+    // The same product usually appears across many orders in a report window — look each
+    // one up at most once instead of once per line item.
+    const productCache = new Map<string, ReturnType<typeof getProduct>>();
+    const loadProduct = (productId: string) => {
+      const cached = productCache.get(productId);
+      if (cached) return cached;
+      const pending = getProduct(productId);
+      productCache.set(productId, pending);
+      return pending;
+    };
+
     return Promise.all(
       orders.map(async (order) => {
         const itemsWithDetails = await Promise.all(
           (order.items || []).map(async (item) => {
-            const product = await getProduct(item.productId);
+            const product = await loadProduct(item.productId);
             return { ...item, product };
           })
         );

@@ -80,17 +80,21 @@ export async function cancelOrder(input: {
       ...itemDoc.data(),
     })) as OrderItem[];
 
-    // Get product documents for stock restoration
+    // Get product documents for stock restoration — read the distinct products in parallel
+    // rather than one awaited tx.get() per line item.
     const productRefs = new Map<string, FirebaseFirestore.DocumentReference>();
-    const productData = new Map<string, any>();
     for (const item of items) {
       if (!productRefs.has(item.productId)) {
-        const productRef = adminDb.collection("products").doc(item.productId);
-        productRefs.set(item.productId, productRef);
-        const productSnap = await tx.get(productRef);
-        if (productSnap.exists) {
-          productData.set(item.productId, productSnap.data());
-        }
+        productRefs.set(item.productId, adminDb.collection("products").doc(item.productId));
+      }
+    }
+    const productData = new Map<string, any>();
+    const productSnaps = await Promise.all(
+      Array.from(productRefs.values()).map((ref) => tx.get(ref))
+    );
+    for (const productSnap of productSnaps) {
+      if (productSnap.exists) {
+        productData.set(productSnap.id, productSnap.data());
       }
     }
 
@@ -398,24 +402,32 @@ export async function getOrders(startDate?: Date, endDate?: Date): Promise<Order
   }
 
   const ordersSnapshot = await query.get();
-  const orders: Order[] = [];
+  const orderIds = ordersSnapshot.docs.map((doc) => doc.id);
 
-  for (const orderDoc of ordersSnapshot.docs) {
-    const orderData = convertTimestamp<Omit<Order, "id">>(orderDoc.data());
+  // Fetch line items in batched `orderId in [...]` queries (30 ids each), run in parallel,
+  // instead of one query per order — a month of sales goes from hundreds of round trips to
+  // a handful.
+  const chunks: string[][] = [];
+  for (let i = 0; i < orderIds.length; i += 30) {
+    chunks.push(orderIds.slice(i, i + 30));
+  }
+  const chunkSnapshots = await Promise.all(
+    chunks.map((chunk) => adminDb.collection("orderItems").where("orderId", "in", chunk).get())
+  );
 
-    const itemsSnapshot = await adminDb.collection("orderItems").where("orderId", "==", orderDoc.id).get();
-
-    const items = itemsSnapshot.docs.map((itemDoc) => ({
-      id: itemDoc.id,
-      ...itemDoc.data(),
-    })) as OrderItem[];
-
-    orders.push({
-      id: orderDoc.id,
-      ...orderData,
-      items,
-    });
+  const itemsByOrderId = new Map<string, OrderItem[]>();
+  for (const chunkSnapshot of chunkSnapshots) {
+    for (const itemDoc of chunkSnapshot.docs) {
+      const item = { id: itemDoc.id, ...itemDoc.data() } as OrderItem;
+      const bucket = itemsByOrderId.get(item.orderId);
+      if (bucket) bucket.push(item);
+      else itemsByOrderId.set(item.orderId, [item]);
+    }
   }
 
-  return orders;
+  return ordersSnapshot.docs.map((orderDoc) => ({
+    id: orderDoc.id,
+    ...convertTimestamp<Omit<Order, "id">>(orderDoc.data()),
+    items: itemsByOrderId.get(orderDoc.id) ?? [],
+  }));
 }

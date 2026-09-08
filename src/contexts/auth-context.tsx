@@ -42,19 +42,25 @@ function FirebaseAuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
 
-      if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-        if (userDoc.exists()) {
-          setUserData({
-            id: firebaseUser.uid,
-            ...userDoc.data(),
-          } as UserData);
+      try {
+        if (firebaseUser) {
+          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+          setUserData(
+            userDoc.exists()
+              ? ({ id: firebaseUser.uid, ...userDoc.data() } as UserData)
+              : null
+          );
+        } else {
+          setUserData(null);
         }
-      } else {
+      } catch (error) {
+        // A failed profile read (offline, rules, transient) must not wedge the app on the
+        // loading screen forever. Drop to a signed-out state and let the guard redirect.
+        console.error("Failed to load user profile:", error);
         setUserData(null);
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     return () => unsubscribe();
