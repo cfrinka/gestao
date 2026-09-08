@@ -104,8 +104,11 @@ Variáveis usadas:
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase Client SDK (browser) |
 | `FIREBASE_PROJECT_ID` | Firebase Admin SDK (servidor) |
 | `FIREBASE_CLIENT_EMAIL` | Firebase Admin SDK (servidor) |
-| `FIREBASE_PRIVATE_KEY` | Firebase Admin SDK (servidor) |
+| `FIREBASE_PRIVATE_KEY` | Firebase Admin SDK (servidor) — PEM com `\n` escapado |
+| `FIREBASE_PRIVATE_KEY_BASE64` | (alternativa) a chave privada em base64; tem precedência sobre `FIREBASE_PRIVATE_KEY` quando definida |
+| `FIREBASE_STORAGE_BUCKET` | Bucket usado pelo upload de imagens de produto (rota server-side). Normalmente igual a `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` |
 | `FINANCIAL_AUTOMATION_SECRET` | (opcional) segredo para chamar `/api/automation/financial-health` sem login, a partir de um cron externo |
+| `DEMO_MODE` / `NEXT_PUBLIC_DEMO_MODE` / `DEMO_SESSION_SECRET` | Somente para a demo pública de portfólio — ver `.env.demo.example`. Deixe em branco num deploy normal |
 
 ### 3. Instale as dependências
 
@@ -129,14 +132,18 @@ npm run build    # build de produção
 npm run start    # servidor de produção
 npm run lint     # eslint
 npm test         # vitest run
+npm run coverage # vitest com relatório de cobertura (limite: 80%)
 ```
 
-## Deploy das regras do Firestore
+## Deploy das regras e índices do Firestore
 
-O projeto Firebase (`loja-7cb7b`) já está configurado em `.firebaserc`/`firebase.json`. Para publicar `firestore.rules`:
+O projeto Firebase já está configurado em `.firebaserc`/`firebase.json` (rules, indexes e storage rules).
+Publique tudo antes do primeiro deploy da aplicação — os índices compostos em
+`firestore.indexes.json` são obrigatórios (pagamento de fiado, cancelamento/edição de venda,
+trocas e relatórios falham sem eles):
 
 ```bash
-npx firebase deploy --only firestore:rules
+npx firebase deploy --only firestore:rules,firestore:indexes,storage
 ```
 
 ## Estrutura do Projeto
