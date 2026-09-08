@@ -11,8 +11,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "coverage": "vitest run --coverage",
-    "seed": "tsx scripts/seed.ts"
+    "coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",

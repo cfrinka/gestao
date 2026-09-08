@@ -1,0 +1,13 @@
+rules_version = '2';
+
+// Product images are written by server-side API routes using the Admin SDK (which
+// bypasses these rules) and read via long-lived signed URLs (also bypass these rules).
+// The Firebase client SDK never reads or writes Storage directly, so deny everything:
+// any direct client access is unexpected and should fail closed.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
