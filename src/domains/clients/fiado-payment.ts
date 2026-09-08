@@ -220,6 +220,35 @@ export async function applyCascadingFiadoPayment(
         },
       });
     }
+
+    // The overpayment was received and (above) added to the drawer and credited to the
+    // client. Record a matching movement for it too, so the sum of FIADO_PAYMENT movements
+    // equals what the register was incremented by (paymentAmount); otherwise the register
+    // closing report and the sales page would show less than the cash actually taken.
+    if (overpayment > 0) {
+      const overpaymentRef = adminDb.collection("financialMovements").doc();
+      const anchorOrderId = sortedOrderDocs[0]?.doc.id ?? clientId;
+      tx.set(overpaymentRef, {
+        type: "FIADO_PAYMENT",
+        direction: "IN",
+        amount: overpayment,
+        paymentMethod: mapOrderPaymentMethodToFinancial(method),
+        relatedEntity: { kind: "order", id: anchorOrderId },
+        occurredAt: nowTs,
+        competencyMonth: toCompetencyMonth(now),
+        createdBy: clientId,
+        metadata: {
+          clientId,
+          clientName,
+          description: `Pagamento adiantado (crédito em conta) de ${clientName}`,
+          isOverpayment: true,
+          isStoreCredit: true,
+          receivedByUserId: safeReceivedByUserId || null,
+          receivedByUserName: safeReceivedByUserName || null,
+          cashRegisterId,
+        },
+      });
+    }
   });
 
   return result;
