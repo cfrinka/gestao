@@ -176,12 +176,14 @@ export async function applyClientDebtCorrection(
   const now = new Date();
   const nowTs = Timestamp.fromDate(now);
 
-  // Build the orders query outside the transaction (equality filters only, no composite index needed)
+  // Build the orders query outside the transaction. Only two equality filters: a
+  // `where("isCancelled", "==", false)` would miss every order created before it was ever
+  // cancelled (checkout never writes the field), so cancelled orders are filtered out in
+  // memory below instead — matching how fiado-payment.ts handles the same collection.
   const ordersQuery = adminDb
     .collection("orders")
     .where("clientId", "==", clientId)
-    .where("isPaidLater", "==", true)
-    .where("isCancelled", "==", false);
+    .where("isPaidLater", "==", true);
 
   await adminDb.runTransaction(async (tx) => {
     // ALL READS FIRST
@@ -216,6 +218,7 @@ export async function applyClientDebtCorrection(
 
       const sortedDocs = ordersSnap.docs
         .map((doc) => ({ doc, data: convertTimestamp<Order>(doc.data()!) }))
+        .filter(({ data }) => data.isCancelled !== true)
         .sort((a, b) => {
           const dateA = a.data.createdAt ? new Date(a.data.createdAt).getTime() : 0;
           const dateB = b.data.createdAt ? new Date(b.data.createdAt).getTime() : 0;
@@ -289,7 +292,7 @@ export async function applyClientDebtCorrection(
       reason: reason.trim(),
       adminPassword: "***",
       createdAt: nowTs,
-      competencyMonth: now.toISOString().slice(0, 7),
+      competencyMonth: toCompetencyMonth(now),
     });
 
     for (const order of ordersToUpdate) {

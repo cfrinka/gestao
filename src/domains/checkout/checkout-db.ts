@@ -1,6 +1,11 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
+import { HttpError } from "@/lib/api/http-errors";
 import type { FinancialMovementPaymentMethod, Order, OrderItem, PaymentMethod, Product } from "@/lib/db-types";
+
+// Client/server promo-discount recomputation can differ by rounding fractions of a cent;
+// anything larger than this is a real mismatch worth rejecting rather than silently booking.
+const PAYMENT_RECONCILIATION_TOLERANCE = 0.05;
 
 interface CheckoutItem {
   productId: string;
@@ -125,6 +130,20 @@ export async function processCheckout(
     }
 
     const totalAmount = Math.max(0, subtotal - discount);
+
+    // For an immediate (non-fiado) sale the recorded payments must add up to the amount
+    // actually owed. The POS is responsible for recording change-given as change, not as
+    // cash taken, so a mismatch here means a broken/forged request — reject it instead of
+    // booking a sale whose payment breakdown won't reconcile against the cash drawer.
+    if (!isPaidLater && payments.length > 0) {
+      const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      if (Math.abs(totalPaid - totalAmount) > PAYMENT_RECONCILIATION_TOLERANCE) {
+        throw new HttpError(
+          400,
+          `Os pagamentos (R$ ${totalPaid.toFixed(2)}) não conferem com o total da venda (R$ ${totalAmount.toFixed(2)}).`
+        );
+      }
+    }
 
     tx.set(orderRef, {
       subtotal,

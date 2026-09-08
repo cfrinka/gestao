@@ -212,6 +212,15 @@ export default function POSPage() {
   
   // Cash register state
   const pendingCheckoutAction = useRef<"checkout" | "payLater" | null>(null);
+
+  // One idempotency key per checkout attempt. Generated when the payment modal opens and
+  // reused across every retry of that same sale (so a retry after a network timeout can't
+  // create a second order); rotated only once a sale actually succeeds.
+  const checkoutIdempotencyKey = useRef<string>("");
+  const ensureCheckoutIdempotencyKey = () => {
+    if (!checkoutIdempotencyKey.current) checkoutIdempotencyKey.current = crypto.randomUUID();
+    return checkoutIdempotencyKey.current;
+  };
   const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
   const [showOpenRegisterModal, setShowOpenRegisterModal] = useState(false);
   const [showCloseRegisterModal, setShowCloseRegisterModal] = useState(false);
@@ -722,6 +731,7 @@ export default function POSPage() {
     setShowPayLater(false);
     setAdminPassword("");
     setAdminAuthorized(false);
+    checkoutIdempotencyKey.current = crypto.randomUUID();
     setShowPaymentModal(true);
   };
 
@@ -1038,8 +1048,8 @@ export default function POSPage() {
     }
 
     setProcessing(true);
-    const idempotencyKey = crypto.randomUUID();
-    
+    const idempotencyKey = ensureCheckoutIdempotencyKey();
+
     try {
       const order = await apiPost("/api/checkout", {
         items: cart.map((item) => ({
@@ -1053,7 +1063,10 @@ export default function POSPage() {
         payLater: true,
         idempotencyKey,
       });
-      
+
+      // Sale committed — rotate the key so the next sale can't collide with this one.
+      checkoutIdempotencyKey.current = crypto.randomUUID();
+
       const selectedClient = clients.find(c => c.id === selectedClientId);
       
       toast({
@@ -1097,6 +1110,20 @@ export default function POSPage() {
       return;
     }
 
+    // Card/PIX charge an exact amount — they can't legitimately exceed the total. Only cash
+    // can be tendered over and given change back.
+    const nonCashPaid = payments
+      .filter((p) => p.method !== "DINHEIRO" && p.amount > 0)
+      .reduce((sum, p) => sum + p.amount, 0);
+    if (nonCashPaid > total + 0.01) {
+      toast({
+        title: "Pagamento em cartão/PIX acima do total",
+        description: "Ajuste os valores de débito, crédito ou PIX para não ultrapassarem o total da venda.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!cashRegister || cashRegister.status !== "OPEN") {
       pendingCheckoutAction.current = "checkout";
       openRegisterModal();
@@ -1105,8 +1132,18 @@ export default function POSPage() {
     }
 
     setProcessing(true);
-    const paymentsSnapshot = payments.filter(p => p.amount > 0);
-    const idempotencyKey = crypto.randomUUID();
+
+    // Record what the store actually keeps, not what was handed over: non-cash amounts as
+    // entered, and cash as whatever is left to reach the total (the rest is change). This
+    // keeps the sale's payment breakdown summing to the total so it reconciles against the
+    // cash drawer.
+    const nonCashPayments = payments.filter((p) => p.method !== "DINHEIRO" && p.amount > 0);
+    const cashToRecord = Math.max(0, Math.round((total - nonCashPaid) * 100) / 100);
+    const paymentsSnapshot = [
+      ...nonCashPayments,
+      ...(cashToRecord > 0.001 ? [{ method: "DINHEIRO" as const, amount: cashToRecord }] : []),
+    ];
+    const idempotencyKey = ensureCheckoutIdempotencyKey();
 
     try {
       const order = await apiPost("/api/checkout", {
@@ -1120,6 +1157,9 @@ export default function POSPage() {
         promoDiscount: totalAutoDiscount,
         idempotencyKey,
       });
+
+      // Sale committed — rotate the key so the next sale can't collide with this one.
+      checkoutIdempotencyKey.current = crypto.randomUUID();
       
       printReceipt(order.id, {
         items: Array.isArray(order.items) ? order.items : [],

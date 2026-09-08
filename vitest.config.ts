@@ -19,6 +19,15 @@ export default defineConfig({
         "src/domains/**/repository.ts",
         "src/domains/**/*-db.ts",
         "src/domains/**/firestore-*-repository.ts",
+        // Runtime-only wiring and the demo-mode (in-memory) twins of the Firestore
+        // repositories. Same rationale as firestore-*-repository.ts: these are the
+        // I/O adapters, not the logic under test — the logic lives in *-service.ts and
+        // the pure helpers, which the suites cover directly. Excluding them keeps the
+        // threshold meaningful instead of averaging in adapter boilerplate.
+        "src/domains/**/*-repository-factory.ts",
+        "src/domains/**/in-memory-*.ts",
+        "src/domains/**/*-facade.ts",
+        "src/domains/reports/demo-reports-service.ts",
         // Raw Firestore access that isn't behind a repository interface, despite not
         // matching the *-db.ts naming convention. Same as *-db.ts, this is validated via
         // disposable-data scripts against real Firestore, not vitest.

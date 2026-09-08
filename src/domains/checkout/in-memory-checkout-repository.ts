@@ -1,7 +1,10 @@
 import { randomUUID } from "crypto";
+import { HttpError } from "@/lib/api/http-errors";
 import type { CashRegister, Client, Order, OrderItem, PaymentMethod, Product } from "@/lib/db-types";
 import type { CheckoutRepository } from "@/domains/checkout/repository";
 import type { CheckoutCartItem, IdempotencyReservation } from "@/domains/checkout/types";
+
+const PAYMENT_RECONCILIATION_TOLERANCE = 0.05;
 
 export type CheckoutIdempotencyEntry = {
   requestHash: string;
@@ -159,6 +162,17 @@ export class InMemoryCheckoutRepository implements CheckoutRepository {
     }
 
     const totalAmount = Math.max(0, subtotal - input.discount);
+
+    if (!input.payLater && input.payments.length > 0) {
+      const totalPaid = input.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      if (Math.abs(totalPaid - totalAmount) > PAYMENT_RECONCILIATION_TOLERANCE) {
+        throw new HttpError(
+          400,
+          `Os pagamentos (R$ ${totalPaid.toFixed(2)}) não conferem com o total da venda (R$ ${totalAmount.toFixed(2)}).`
+        );
+      }
+    }
+
     const orderId = randomUUID();
     const now = new Date();
 

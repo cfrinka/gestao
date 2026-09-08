@@ -186,6 +186,8 @@ export async function applyCascadingFiadoPayment(
       });
     }
 
+    const competencyMonth = toCompetencyMonth(now);
+
     for (const allocation of result.allocations) {
       const movementRef = adminDb.collection("financialMovements").doc();
       const description = allocation.isFullyPaid
@@ -199,7 +201,7 @@ export async function applyCascadingFiadoPayment(
         paymentMethod: mapOrderPaymentMethodToFinancial(method),
         relatedEntity: { kind: "order", id: allocation.orderId },
         occurredAt: nowTs,
-        competencyMonth: nowTs.toDate().toISOString().slice(0, 7),
+        competencyMonth,
         createdBy: clientId,
         metadata: {
           clientId,
@@ -210,6 +212,34 @@ export async function applyCascadingFiadoPayment(
           isFullPayment: allocation.isFullyPaid,
           remainingBefore: allocation.remainingBefore,
           remainingAfter: allocation.remainingAfter,
+          receivedByUserId: safeReceivedByUserId || null,
+          cashRegisterId,
+        },
+      });
+    }
+
+    // The overpayment cash was received and (above) added to the drawer and credited to the
+    // client. Record a matching financial movement for it too, so the sum of FIADO_PAYMENT
+    // movements still equals what the register was incremented by (paymentAmount) — otherwise
+    // reports that sum movements would silently diverge from the cash drawer.
+    if (overpayment > 0) {
+      const overpaymentRef = adminDb.collection("financialMovements").doc();
+      const anchorOrderId = sortedOrderDocs[0]?.doc.id ?? clientId;
+      tx.set(overpaymentRef, {
+        type: "FIADO_PAYMENT",
+        direction: "IN",
+        amount: overpayment,
+        paymentMethod: mapOrderPaymentMethodToFinancial(method),
+        relatedEntity: { kind: "order", id: anchorOrderId },
+        occurredAt: nowTs,
+        competencyMonth,
+        createdBy: clientId,
+        metadata: {
+          clientId,
+          clientName,
+          description: `Pagamento adiantado (crédito em conta) de ${clientName}`,
+          isOverpayment: true,
+          isStoreCredit: true,
           receivedByUserId: safeReceivedByUserId || null,
           cashRegisterId,
         },
