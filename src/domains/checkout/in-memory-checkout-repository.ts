@@ -31,7 +31,9 @@ export type CheckoutIdempotencyEntry = {
 export class InMemoryCheckoutRepository implements CheckoutRepository {
   constructor(
     private readonly products: Map<string, Product>,
-    private readonly productSkuIndex: Map<string, string>,
+    // Positional arg kept for parity with the other in-memory repos / factory call sites;
+    // checkout itself never needs the SKU index, so it isn't stored.
+    _productSkuIndex: Map<string, string>,
     private readonly orders: Map<string, Order>,
     private readonly cashRegisters: Map<string, CashRegister>,
     private readonly clients: Map<string, Client>,
