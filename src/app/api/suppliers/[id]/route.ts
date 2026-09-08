@@ -4,6 +4,8 @@ import { deleteSupplier, getSupplier, updateSupplier } from "@/domains/suppliers
 
 export const dynamic = "force-dynamic";
 
+type RouteContext = { params: Promise<{ id: string }> };
+
 const METHOD_VALUES = ["DINHEIRO", "DEBITO", "CREDITO", "PIX", "FIADO"] as const;
 
 function normalizeMethods(value: unknown): (typeof METHOD_VALUES)[number][] | undefined {
@@ -15,11 +17,12 @@ function normalizeMethods(value: unknown): (typeof METHOD_VALUES)[number][] | un
   return Array.from(new Set(normalized));
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async () => {
-      const supplier = await getSupplier(params.id);
+      const supplier = await getSupplier(id);
       if (!supplier) {
         return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
       }
@@ -30,11 +33,12 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   );
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest }) => {
-      const existing = await getSupplier(params.id);
+      const existing = await getSupplier(id);
       if (!existing) {
         return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
       }
@@ -52,7 +56,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         return NextResponse.json({ error: "Name is required" }, { status: 400 });
       }
 
-      await updateSupplier(params.id, {
+      await updateSupplier(id, {
         ...(name !== undefined ? { name } : {}),
         ...(instagram !== undefined ? { instagram } : {}),
         ...(whatsapp !== undefined ? { whatsapp } : {}),
@@ -61,23 +65,24 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
         ...(acceptedPaymentMethods !== undefined ? { acceptedPaymentMethods } : {}),
       });
 
-      const updated = await getSupplier(params.id);
+      const updated = await getSupplier(id);
       return NextResponse.json(updated);
     },
     { roles: ["ADMIN"], operationName: "Supplier PUT" }
   );
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async () => {
-      const existing = await getSupplier(params.id);
+      const existing = await getSupplier(id);
       if (!existing) {
         return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
       }
 
-      await deleteSupplier(params.id);
+      await deleteSupplier(id);
       return NextResponse.json({ success: true });
     },
     { roles: ["ADMIN"], operationName: "Supplier DELETE" }

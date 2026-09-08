@@ -5,26 +5,30 @@ import { getClientsRepository } from "@/domains/clients/clients-repository-facto
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+type RouteContext = { params: Promise<{ id: string }> };
+
+export async function GET(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async () => {
       const service = new ClientsService(getClientsRepository());
-      const client = await service.get(params.id);
+      const client = await service.get(id);
       return NextResponse.json(client);
     },
     { roles: ["ADMIN"], operationName: "Client GET" }
   );
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest }) => {
       const body = await authorizedRequest.json();
       const service = new ClientsService(getClientsRepository());
       const updatedClient = await service.update({
-        clientId: params.id,
+        clientId: id,
         name: body.name,
         phone: body.phone,
         email: body.email,
@@ -36,19 +40,21 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   );
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async () => {
       const service = new ClientsService(getClientsRepository());
-      await service.remove(params.id);
+      await service.remove(id);
       return NextResponse.json({ success: true });
     },
     { roles: ["ADMIN"], operationName: "Client DELETE" }
   );
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest, user }) => {
@@ -57,13 +63,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       const service = new ClientsService(getClientsRepository());
 
       if (action === "correct_debt" && amount !== undefined && adminPassword && reason) {
-        const result = await service.correctDebt({ clientId: params.id, amount, adminPassword, reason });
+        const result = await service.correctDebt({ clientId: id, amount, adminPassword, reason });
         return NextResponse.json(result);
       }
 
       if (action === "pay_cascading" && amount) {
         const result = await service.payCascading({
-          clientId: params.id,
+          clientId: id,
           amount,
           method,
           receivedByUserId: user.uid,
@@ -73,7 +79,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
       if (action === "pay_order" && orderId) {
         const result = await service.payOrder({
-          clientId: params.id,
+          clientId: id,
           orderId,
           amount,
           method,
@@ -83,7 +89,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       }
 
       if (action === "remove_order_item" && orderId && orderItemId) {
-        const result = await service.removeOrderItem({ clientId: params.id, orderId, orderItemId });
+        const result = await service.removeOrderItem({ clientId: id, orderId, orderItemId });
         return NextResponse.json(result);
       }
 

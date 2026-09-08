@@ -5,7 +5,10 @@ import { getBillsRepository } from "@/domains/bills/bills-repository-factory";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+type RouteContext = { params: Promise<{ id: string }> };
+
+export async function PATCH(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest, user }) => {
@@ -15,7 +18,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
       if (action === "mark_paid") {
         const updated = await service.markPaid({
-          billId: params.id,
+          billId: id,
           method: body.method,
           actorId: user.uid,
           actorRole: user.role,
@@ -25,7 +28,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
       if (action === "mark_unpaid") {
         const updated = await service.markUnpaid({
-          billId: params.id,
+          billId: id,
           actorId: user.uid,
           actorRole: user.role,
         });
@@ -38,12 +41,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   );
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async ({ user }) => {
       const service = new BillsService(getBillsRepository());
-      await service.remove({ billId: params.id, actorId: user.uid, actorRole: user.role });
+      await service.remove({ billId: id, actorId: user.uid, actorRole: user.role });
       return NextResponse.json({ ok: true });
     },
     { roles: ["ADMIN"], operationName: "Bills DELETE" }

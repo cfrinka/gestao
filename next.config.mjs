@@ -2,24 +2,14 @@
 const nextConfig = {
   output: 'standalone',
 
-  experimental: {
-    serverComponentsExternalPackages: ['bcryptjs'],
+  // Pin the workspace root: there's a stray lockfile above this directory that Turbopack
+  // would otherwise try to use for root inference.
+  turbopack: {
+    root: import.meta.dirname,
   },
 
-  transpilePackages: ['firebase', 'undici'],
-
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-        child_process: false,
-      };
-    }
-    return config;
-  },
+  // bcryptjs must run as a real Node module on the server, not be bundled.
+  serverExternalPackages: ['bcryptjs'],
 };
 
 export default nextConfig;
