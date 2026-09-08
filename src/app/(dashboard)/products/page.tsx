@@ -143,7 +143,8 @@ export default function ProductsPage() {
       sizes: expected.map((size) => ({ size, stock: 0 })),
       stock: "0",
     }));
-  }, [formData.plusSized, editingProduct]);
+    // formData.sizes is read above; the sameShape early-return makes it loop-safe as a dep.
+  }, [formData.plusSized, formData.sizes, editingProduct]);
 
   const fetchProducts = useCallback(async () => {
     try {

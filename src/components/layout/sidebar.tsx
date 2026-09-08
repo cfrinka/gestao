@@ -3,57 +3,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  Package,
-  BarChart3,
-  Settings,
-  Store,
-  ClipboardList,
-  Boxes,
-  UserCheck,
-  Barcode,
-  Receipt,
-  Truck,
-  FileText,
-  Percent,
-  Tags,
-} from "lucide-react";
+import { Store } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NAVIGATION, type AppRole } from "@/lib/navigation";
 
 interface SidebarProps {
   mobile?: boolean;
   onNavigate?: () => void;
 }
 
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["ADMIN", "CASHIER"] },
-  { name: "PDV", href: "/pos", icon: ShoppingCart, roles: ["ADMIN", "CASHIER"] },
-  { name: "Produtos", href: "/products", icon: Package, roles: ["ADMIN"] },
-  { name: "Categorias", href: "/products/categories", icon: Tags, roles: ["ADMIN"] },
-  { name: "Vendas", href: "/sales", icon: ClipboardList, roles: ["ADMIN", "CASHIER"] },
-  { name: "Vendas Mensais", href: "/sales-month", icon: BarChart3, roles: ["ADMIN"] },
-  { name: "Comissão", href: "/comission", icon: Percent, roles: ["ADMIN", "CASHIER"] },
-  { name: "Trocas", href: "/exchanges", icon: ClipboardList, roles: ["ADMIN", "CASHIER"] },
-  { name: "Estoque", href: "/inventory", icon: Boxes, roles: ["ADMIN"] },
-  { name: "Entradas de Estoque", href: "/stock-entries", icon: Boxes, roles: ["ADMIN"] },
-  { name: "Clientes", href: "/clients", icon: UserCheck, roles: ["ADMIN"] },
-  { name: "Fornecedores", href: "/suppliers", icon: Truck, roles: ["ADMIN"] },
-  { name: "Contas", href: "/bills", icon: Receipt, roles: ["ADMIN"] },
-  { name: "Relatórios", href: "/reports", icon: BarChart3, roles: ["ADMIN"] },
-  { name: "Correções de Débito", href: "/debt-corrections", icon: FileText, roles: ["ADMIN"] },
-  { name: "Códigos de Barras", href: "/barcodes", icon: Barcode, roles: ["ADMIN"] },
-  { name: "Usuários", href: "/users", icon: Store, roles: ["ADMIN"] },
-  { name: "Configurações", href: "/settings", icon: Settings, roles: ["ADMIN"] },
-];
-
 export function Sidebar({ mobile = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const { userData } = useAuth();
-  const userRole = userData?.role || "CASHIER";
+  const userRole: AppRole = userData?.role === "ADMIN" ? "ADMIN" : "CASHIER";
 
-  const filteredNavigation = navigation.filter((item) =>
+  const filteredNavigation = NAVIGATION.filter((item) =>
     item.roles.includes(userRole)
   );
 

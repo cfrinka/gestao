@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { canAccessPath, type AppRole } from "@/lib/navigation";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
+  const { user, userData, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -20,6 +22,18 @@ export default function DashboardLayout({
       router.push("/login");
     }
   }, [user, loading, router]);
+
+  // Gate direct URL navigation by role: a cashier typing /users or /reports gets bounced
+  // back to the dashboard. (The API routes behind these pages enforce roles server-side —
+  // this just avoids showing a broken, permission-denied screen.)
+  const role: AppRole | null = userData ? (userData.role === "ADMIN" ? "ADMIN" : "CASHIER") : null;
+  const allowed = role ? canAccessPath(pathname, role) : true;
+
+  useEffect(() => {
+    if (!loading && user && role && !allowed) {
+      router.replace("/dashboard");
+    }
+  }, [loading, user, role, allowed, router]);
 
   if (loading) {
     return (
@@ -30,6 +44,10 @@ export default function DashboardLayout({
   }
 
   if (!user) {
+    return null;
+  }
+
+  if (role && !allowed) {
     return null;
   }
 
