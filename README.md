@@ -1,6 +1,6 @@
 # Gestão Loja
 
-Sistema de gestão para loja de roupas (PDV, estoque, financeiro e clientes), construído com Next.js 14 (App Router), Firebase (Auth + Firestore) e Shadcn UI.
+Sistema de gestão para loja de roupas (PDV, estoque, financeiro e clientes), construído com Next.js 16 (App Router), React 19, Firebase (Auth + Firestore) e Shadcn UI.
 
 ## Funcionalidades
 
@@ -66,13 +66,22 @@ Mecanismos compartilhados entre domínios:
 
 ## Tecnologias
 
-- **Framework**: Next.js 14 (App Router) + React 18 + TypeScript
+- **Framework**: Next.js 16 (App Router, Turbopack) + React 19 + TypeScript 5.9
 - **Banco de Dados**: Firebase Firestore (via `firebase-admin` no servidor)
 - **Autenticação**: Firebase Authentication (Email/Password)
-- **UI**: Shadcn UI + Tailwind CSS + Lucide React
-- **Validação**: Zod
-- **Exportação**: jsPDF + jspdf-autotable, JsBarcode
+- **UI**: Shadcn UI + Tailwind CSS 3 + Lucide React
+- **Validação**: Zod 4
+- **Exportação**: jsPDF + jspdf-autotable; JsBarcode (carregado via CDN na tela de códigos de barras)
 - **Testes**: Vitest (testes unitários de service contra repositório fake em memória)
+
+### Atualizações de dependência pendentes
+
+- **Tailwind CSS 3 → 4**: adiado. A v4 troca o modelo de configuração (tema em CSS via
+  `@theme`), renomeia utilitários de `shadow`/`ring`/`radius` e exige trocar
+  `tailwindcss-animate` por `tw-animate-css` — mudanças com risco visual em ~20 telas que
+  precisam de revisão manual da UI. A 3.4.x é mantida e está limpa no `npm audit`.
+- **TypeScript 7 / ESLint 10**: adiados até `typescript-eslint` e `eslint-plugin-react`
+  (empacotado no `eslint-config-next`) suportarem essas versões.
 
 ## Instalação
 
