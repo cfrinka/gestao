@@ -89,46 +89,57 @@ export async function getClientPendingOrders(clientId: string): Promise<Order[]>
     return true;
   });
 
-  return Promise.all(
-    pendingOrders.map(async (order) => {
-      const itemsSnapshot = await adminDb.collection("orderItems").where("orderId", "==", order.id).get();
+  if (pendingOrders.length === 0) return [];
 
-      const itemsWithProductName = await Promise.all(
-        itemsSnapshot.docs.map(async (itemDoc) => {
-          const itemData = convertTimestamp<Omit<OrderItem, "id">>(itemDoc.data());
+  // Fetch all order items in batched "in" queries (max 30 values each) instead of one
+  // query per order, then all product names via getAll instead of one get() per item —
+  // turns N+1 (and N*M) sequential round-trips into a handful of batched reads.
+  const orderIds = pendingOrders.map((order) => order.id);
+  const itemsByOrderId = new Map<string, Array<{ id: string } & Omit<OrderItem, "id">>>();
+  for (let i = 0; i < orderIds.length; i += 30) {
+    const chunk = orderIds.slice(i, i + 30);
+    const itemsSnapshot = await adminDb.collection("orderItems").where("orderId", "in", chunk).get();
+    for (const itemDoc of itemsSnapshot.docs) {
+      const itemData = convertTimestamp<Omit<OrderItem, "id">>(itemDoc.data());
+      const list = itemsByOrderId.get(itemData.orderId) ?? [];
+      list.push({ id: itemDoc.id, ...itemData });
+      itemsByOrderId.set(itemData.orderId, list);
+    }
+  }
 
-          const productDoc = await adminDb.collection("products").doc(itemData.productId).get();
-          const productName = productDoc.exists
-            ? String(productDoc.data()?.name || "Produto removido")
-            : "Produto removido";
+  const productIds = Array.from(new Set(Array.from(itemsByOrderId.values()).flat().map((item) => item.productId)));
+  const productNameById = new Map<string, string>();
+  if (productIds.length > 0) {
+    const productDocs = await adminDb.getAll(...productIds.map((id) => adminDb.collection("products").doc(id)));
+    for (const doc of productDocs) {
+      productNameById.set(doc.id, doc.exists ? String(doc.data()?.name || "Produto removido") : "Produto removido");
+    }
+  }
 
-          return {
-            id: itemDoc.id,
-            ...itemData,
-            productName,
-          };
-        })
-      );
+  return pendingOrders.map((order) => {
+    const itemsWithProductName = (itemsByOrderId.get(order.id) ?? []).map((item) => ({
+      ...item,
+      productName: productNameById.get(item.productId) || "Produto removido",
+    }));
 
-      const paymentHistory: FiadoPayment[] = Array.isArray(order.paymentHistory)
-        ? (order.paymentHistory as unknown as Array<{ id: string; amount: number; method: PaymentMethod["method"]; createdAt: unknown }>).map((entry) => ({
-            id: entry.id,
-            amount: entry.amount,
-            method: entry.method,
-            createdAt:
-              entry.createdAt && typeof entry.createdAt === "object" && "toDate" in (entry.createdAt as object)
-                ? (entry.createdAt as { toDate: () => Date }).toDate()
-                : new Date(String(entry.createdAt || "")),
-          }))
-        : [];
+    const paymentHistory: FiadoPayment[] = Array.isArray(order.paymentHistory)
+      ? (order.paymentHistory as unknown as Array<{ id: string; amount: number; method: PaymentMethod["method"]; createdAt: unknown }>).map((entry) => ({
+          id: entry.id,
+          amount: entry.amount,
+          method: entry.method,
+          createdAt:
+            entry.createdAt && typeof entry.createdAt === "object" && "toDate" in (entry.createdAt as object)
+              ? (entry.createdAt as { toDate: () => Date }).toDate()
+              : new Date(String(entry.createdAt || "")),
+        }))
+      : [];
 
-      return {
-        ...order,
-        items: itemsWithProductName,
-        paymentHistory,
-      };
-    })
-  );
+    return {
+      ...order,
+      items: itemsWithProductName,
+      paymentHistory,
+    };
+  });
 }
 
 export async function applyCascadingFiadoPayment(
