@@ -2,6 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { CashRegister, FinancialMovementPaymentMethod, Order, PaymentMethod } from "@/lib/db-types";
 import { HttpError } from "@/lib/api/http-errors";
+import { roundMoney } from "@/lib/money";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { createFinancialAuditLog } from "@/domains/financial/financial-db";
 
@@ -123,26 +124,6 @@ export async function closeCashRegister(registerId: string, closingBalance: numb
   return { id: doc.id, ...convertTimestamp<Omit<CashRegister, "id">>(doc.data()!) };
 }
 
-export async function updateCashRegisterSales(
-  registerId: string,
-  payments: PaymentMethod[],
-  saleTotal: number
-): Promise<void> {
-  const cashAmount = payments.find((p) => p.method === "DINHEIRO")?.amount || 0;
-  const debitAmount = payments.find((p) => p.method === "DEBITO")?.amount || 0;
-  const creditAmount = payments.find((p) => p.method === "CREDITO")?.amount || 0;
-  const pixAmount = payments.find((p) => p.method === "PIX")?.amount || 0;
-
-  await adminDb.collection("cashRegisters").doc(registerId).update({
-    totalSales: FieldValue.increment(saleTotal),
-    totalCash: FieldValue.increment(cashAmount),
-    totalDebit: FieldValue.increment(debitAmount),
-    totalCredit: FieldValue.increment(creditAmount),
-    totalPix: FieldValue.increment(pixAmount),
-    salesCount: FieldValue.increment(1),
-  });
-}
-
 export async function applyCashRegisterAdjustment(input: {
   registerId: string;
   type: CashAdjustmentType;
@@ -151,7 +132,7 @@ export async function applyCashRegisterAdjustment(input: {
   actorId: string;
   actorRole: string;
 }): Promise<CashRegister> {
-  const amount = Number(input.amount || 0);
+  const amount = roundMoney(Number(input.amount || 0));
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new HttpError(400, "Valor da movimentação deve ser maior que zero");
   }
@@ -301,10 +282,19 @@ export async function getCashRegisterOrders(registerId: string): Promise<Order[]
     } as Order;
   });
 
-  const orders = snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...convertTimestamp<Omit<Order, "id">>(doc.data()),
-  }));
+  // The time window alone would also pick up other operators' sales made while this register
+  // was open, and sales cancelled since. A sale belongs to this register when it was stamped
+  // with it; sales from before that stamp existed fall back to who made them.
+  const orders = snapshot.docs
+    .map((doc) => ({
+      id: doc.id,
+      ...convertTimestamp<Omit<Order, "id">>(doc.data()),
+    }))
+    .filter((order) => {
+      if (order.isCancelled === true) return false;
+      if (order.cashRegisterId) return order.cashRegisterId === registerId;
+      return !order.createdById || order.createdById === registerData.userId;
+    });
 
   return [...orders, ...fiadoPaymentEntries, ...exchangeDiffEntries].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()

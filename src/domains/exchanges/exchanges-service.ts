@@ -1,6 +1,8 @@
 import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import type { ExchangesRepository } from "@/domains/exchanges/repository";
 import type { CreateExchangeCommand, ExchangeExecutionResult } from "@/domains/exchanges/types";
+import { roundMoney } from "@/lib/money";
+import { CASHIER_DISCOUNT_CAP } from "@/domains/checkout/checkout-service";
 
 function toPublicErrorMessage(error: unknown): string {
   if (error instanceof HttpError) return error.message;
@@ -44,22 +46,15 @@ export class ExchangesService {
     }
     const estimatedGrossDifference = Math.max(0, estimatedOut - estimatedIn);
 
-    const requestedDiscountAmount = Number(command.discountAmount || 0);
-    let allowedDiscountAmount = requestedDiscountAmount;
+    const requestedDiscountAmount = roundMoney(Number(command.discountAmount || 0));
 
-    if (command.userRole === "CASHIER") {
-      const maxDiscount = estimatedGrossDifference * 0.10;
-      if (requestedDiscountAmount > maxDiscount) {
-        const isAuthorized = await this.repository.consumeDiscountAuthorization(command.userId);
-        allowedDiscountAmount = isAuthorized ? requestedDiscountAmount : maxDiscount;
-      }
-    }
-
+    // Hash what was asked for: a grant consumed by the first attempt must not make a retry of
+    // the same exchange look like a different request.
     const requestHash = JSON.stringify({
       customerName: command.customerName || "",
       notes: command.notes || "",
       paymentMethod: command.paymentMethod || "",
-      discountAmount: allowedDiscountAmount,
+      discountAmount: requestedDiscountAmount,
       items: command.items,
       userId: command.userId,
     });
@@ -83,6 +78,19 @@ export class ExchangesService {
     }
 
     try {
+      // Same rule as checkout: a cashier's discount above 10% needs the admin password, and
+      // without it the exchange is refused instead of saved with a smaller discount than quoted.
+      if (command.userRole === "CASHIER") {
+        const maxDiscount = roundMoney(estimatedGrossDifference * CASHIER_DISCOUNT_CAP);
+        if (requestedDiscountAmount > maxDiscount) {
+          const isAuthorized = await this.repository.consumeDiscountAuthorization(command.userId);
+          if (!isAuthorized) {
+            throw new HttpError(403, "Desconto acima de 10% precisa da senha do administrador.");
+          }
+        }
+      }
+      const allowedDiscountAmount = requestedDiscountAmount;
+
       const openRegisterId = await this.repository.getOpenCashRegisterId(command.userId);
 
       const exchange = await this.repository.createExchange({

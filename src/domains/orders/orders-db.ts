@@ -2,6 +2,8 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { Order, OrderItem } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { roundMoney } from "@/lib/money";
+import { normalizePayments } from "@/domains/checkout/cart-validation";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 
 function normalizePositivePayments(
@@ -15,18 +17,30 @@ function normalizePositivePayments(
     .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
 }
 
+/**
+ * The register that took this sale. Sales now carry their register id; older sales are matched
+ * by time window, but only among registers of the operator who made the sale — the most recent
+ * register of any operator would put a cancellation on someone else's drawer.
+ */
 async function findMatchingCashRegister(
   tx: FirebaseFirestore.Transaction,
+  order: Pick<Order, "cashRegisterId" | "createdById">,
   orderCreatedAt: Date
-): Promise<FirebaseFirestore.QueryDocumentSnapshot | undefined> {
+): Promise<FirebaseFirestore.DocumentSnapshot | undefined> {
+  if (order.cashRegisterId) {
+    const snap = await tx.get(adminDb.collection("cashRegisters").doc(order.cashRegisterId));
+    return snap.exists ? snap : undefined;
+  }
+
   const registerQuery = adminDb
     .collection("cashRegisters")
     .where("openedAt", "<=", Timestamp.fromDate(orderCreatedAt))
     .orderBy("openedAt", "desc")
-    .limit(10);
+    .limit(30);
   const registerSnapshot = await tx.get(registerQuery);
   return registerSnapshot.docs.find((doc) => {
     const data = doc.data();
+    if (order.createdById && data.userId && data.userId !== order.createdById) return false;
     const closedAt = data.closedAt && typeof data.closedAt.toDate === "function" ? data.closedAt.toDate() : null;
     return !closedAt || closedAt.getTime() >= orderCreatedAt.getTime();
   });
@@ -110,7 +124,7 @@ export async function cancelOrder(input: {
     const cogsMovementSnapshot = await tx.get(cogsMovementQuery);
 
     const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
-    const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
+    const matchingRegister = await findMatchingCashRegister(tx, order, orderCreatedAt);
 
     // Cancelling would zero out this order's SALE_REVENUE/COGS movements — if its
     // competency month is already closed, that would silently diverge the frozen
@@ -269,12 +283,12 @@ export async function updateOrder(input: {
     throw new HttpError(403, "Só administradores podem editar vendas");
   }
 
-  const safeDiscount = Number(input.discount || 0);
+  const safeDiscount = roundMoney(Number(input.discount || 0));
   if (!Number.isFinite(safeDiscount) || safeDiscount < 0) {
     throw new HttpError(400, "Desconto inválido");
   }
 
-  const normalizedPayments = normalizePositivePayments(input.payments);
+  const normalizedPayments = normalizePayments(input.payments);
 
   const orderRef = adminDb.collection("orders").doc(input.orderId);
 
@@ -308,7 +322,7 @@ export async function updateOrder(input: {
     const saleMovementSnapshot = await tx.get(saleMovementQuery);
 
     const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
-    const matchingRegister = await findMatchingCashRegister(tx, orderCreatedAt);
+    const matchingRegister = await findMatchingCashRegister(tx, order, orderCreatedAt);
 
     // Editing would change this order's SALE_REVENUE movement — block it for a
     // closed competency month so the frozen financialClosures snapshot can't diverge.
@@ -319,13 +333,13 @@ export async function updateOrder(input: {
     }
 
     // ── VALIDATION ──
-    const subtotal = items.reduce((sum, item) => sum + Number(item.totalRevenue || 0), 0);
+    const subtotal = roundMoney(items.reduce((sum, item) => sum + Number(item.totalRevenue || 0), 0));
     if (safeDiscount > subtotal) {
       throw new HttpError(400, "O desconto não pode ser maior que o subtotal");
     }
 
-    const nextTotalAmount = Math.max(0, subtotal - safeDiscount);
-    const totalPaid = normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0);
+    const nextTotalAmount = roundMoney(Math.max(0, subtotal - safeDiscount));
+    const totalPaid = roundMoney(normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0));
     if (Math.abs(totalPaid - nextTotalAmount) > 0.01) {
       throw new HttpError(400, "A soma dos pagamentos precisa ser igual ao total da venda");
     }
@@ -359,21 +373,23 @@ export async function updateOrder(input: {
       });
     }
 
-    if (matchingRegister) {
+    // A CLOSED register is a frozen record of what was counted that day (see cancelOrder) —
+    // editing an old sale must not rewrite it.
+    if (matchingRegister && matchingRegister.data()?.status === "OPEN") {
       const previousByMethod = paymentAmountByMethod((order.payments || []) as Array<{
         method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX";
         amount: number;
       }>);
       const nextByMethod = paymentAmountByMethod(normalizedPayments);
       const previousTotal = Number(order.totalAmount || 0);
-      const totalDelta = nextTotalAmount - previousTotal;
+      const totalDelta = roundMoney(nextTotalAmount - previousTotal);
 
       tx.update(matchingRegister.ref, {
         totalSales: FieldValue.increment(totalDelta),
-        totalCash: FieldValue.increment(nextByMethod.DINHEIRO - previousByMethod.DINHEIRO),
-        totalDebit: FieldValue.increment(nextByMethod.DEBITO - previousByMethod.DEBITO),
-        totalCredit: FieldValue.increment(nextByMethod.CREDITO - previousByMethod.CREDITO),
-        totalPix: FieldValue.increment(nextByMethod.PIX - previousByMethod.PIX),
+        totalCash: FieldValue.increment(roundMoney(nextByMethod.DINHEIRO - previousByMethod.DINHEIRO)),
+        totalDebit: FieldValue.increment(roundMoney(nextByMethod.DEBITO - previousByMethod.DEBITO)),
+        totalCredit: FieldValue.increment(roundMoney(nextByMethod.CREDITO - previousByMethod.CREDITO)),
+        totalPix: FieldValue.increment(roundMoney(nextByMethod.PIX - previousByMethod.PIX)),
       });
     }
 

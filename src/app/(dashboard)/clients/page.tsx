@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiGet, apiPost, apiPut, apiDelete, apiPatch } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -87,6 +87,10 @@ export default function ClientsPage() {
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<"DINHEIRO" | "DEBITO" | "CREDITO" | "PIX">("DINHEIRO");
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [submittingPayment, setSubmittingPayment] = useState(false);
+  // One key per receipt dialog: a double tap, or Confirmar pressed again after a dropped
+  // response, reaches the server with the same key and is recorded once.
+  const paymentAttemptKey = useRef<string>("");
   const [lastPaymentResult, setLastPaymentResult] = useState<FiadoPaymentResult | null>(null);
   const [debtCorrectionDialogOpen, setDebtCorrectionDialogOpen] = useState(false);
   const [correctionAmount, setCorrectionAmount] = useState<string>("");
@@ -314,6 +318,7 @@ export default function ClientsPage() {
     if (!selectedClient) return;
     setPaymentAmount("");
     setPaymentMethod("DINHEIRO");
+    paymentAttemptKey.current = crypto.randomUUID();
     setPaymentDialogOpen(true);
   };
 
@@ -383,11 +388,14 @@ export default function ClientsPage() {
       return;
     }
 
+    if (submittingPayment) return;
+    setSubmittingPayment(true);
     try {
       const updated = await apiPatch(`/api/clients/${selectedClient.id}`, {
         action: "pay_cascading",
         amount: parsed,
         method: paymentMethod,
+        idempotencyKey: paymentAttemptKey.current,
       });
       setSelectedClient({ ...updated, pendingOrders: updated.pendingOrders || [] });
       setLastPaymentResult(updated.paymentResult);
@@ -408,6 +416,8 @@ export default function ClientsPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Erro ao registrar pagamento";
       toast({ title: message, variant: "destructive" });
+    } finally {
+      setSubmittingPayment(false);
     }
   };
 
@@ -669,7 +679,7 @@ export default function ClientsPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs font-semibold uppercase tracking-[0.08em] text-ink-3">Saldo devedor</p>
-                  <div className={selectedClient.balance > 0 ? "text-vermelho" : "text-verde"}>
+                  <div className={selectedClient.balance > 0.009 ? "text-vermelho" : "text-verde"}>
                     <PriceTag value={selectedClient.balance} className="text-[36px]" />
                   </div>
                 </div>
@@ -677,7 +687,7 @@ export default function ClientsPage() {
 
               <div>
                 <div className="mb-4 flex flex-wrap gap-2">
-                  {selectedClient.balance > 0 && (
+                  {selectedClient.balance > 0.009 && (
                     <Button
                       variant="default"
                       size="sm"
@@ -840,7 +850,7 @@ export default function ClientsPage() {
                 placeholder="0,00"
                 className="h-12 text-right text-lg font-semibold tabular-nums"
               />
-              {selectedClient && selectedClient.balance > 0 && (
+              {selectedClient && selectedClient.balance > 0.009 && (
                 <Button
                   type="button"
                   variant="link"
@@ -870,8 +880,8 @@ export default function ClientsPage() {
               <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button onClick={handleConfirmPayment}>
-                Confirmar recebimento
+              <Button onClick={handleConfirmPayment} disabled={submittingPayment}>
+                {submittingPayment ? "Registrando…" : "Confirmar recebimento"}
               </Button>
             </div>
           </div>

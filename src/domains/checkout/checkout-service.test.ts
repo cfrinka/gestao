@@ -1,30 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
 import { CheckoutService } from "./checkout-service";
-import type { CheckoutRepository } from "./repository";
+import type { CheckoutRepository, ProcessCheckoutInput } from "./repository";
 import type { CheckoutCommand, IdempotencyReservation } from "./types";
-import type { Order, PaymentMethod } from "@/lib/db-types";
+import type { Order } from "@/lib/db-types";
 import { HttpError } from "@/lib/api/http-errors";
 
 /** Fully in-memory fake — mirrors the real reserve/complete/fail state machine without Firestore. */
 class FakeCheckoutRepository implements CheckoutRepository {
   idempotencyStore = new Map<string, { requestHash: string; status: "PROCESSING" | "COMPLETED" | "FAILED"; response?: unknown }>();
   processCheckoutMock = vi.fn(
-    async (_input: Parameters<CheckoutRepository["processCheckout"]>[0]): Promise<Order> => ({
+    async (input: ProcessCheckoutInput): Promise<Order> => ({
       id: "order-1",
       subtotal: 100,
-      discount: 0,
-      totalAmount: 100,
+      discount: input.discount,
+      totalAmount: input.expectedTotal,
       cogsTotal: 50,
-      payments: [{ method: "DINHEIRO", amount: 100 }] as PaymentMethod[],
+      payments: input.payments,
+      cashRegisterId: input.cashRegisterId,
       createdAt: new Date(),
       items: [],
     })
   );
   consumeDiscountAuthorizationMock = vi.fn(async (_userId: string) => false);
-  getOpenCashRegisterMock = vi.fn(async (_userId: string): Promise<{ id: string } | null> => null);
-  updateCashRegisterSalesMock = vi.fn(async (_registerId: string, _payments: PaymentMethod[], _totalAmount: number) => {});
-  updateClientBalanceMock = vi.fn(async (_clientId: string, _amount: number) => {});
-  getClientNameByIdMock = vi.fn(async (_clientId: string) => "Cliente Teste");
+  getOpenCashRegisterIdMock = vi.fn(async (_userId: string): Promise<string | null> => "register-1");
+  getClientNameByIdMock = vi.fn(async (_clientId: string): Promise<string | null> => "Cliente Teste");
 
   async getClientNameById(clientId: string) {
     return this.getClientNameByIdMock(clientId);
@@ -54,8 +53,7 @@ class FakeCheckoutRepository implements CheckoutRepository {
   }
 
   async markIdempotencyCompleted(input: { ownerId: string; idempotencyKey: string; response: unknown }) {
-    const key = `${input.ownerId}:${input.idempotencyKey}`;
-    const existing = this.idempotencyStore.get(key);
+    const existing = this.idempotencyStore.get(`${input.ownerId}:${input.idempotencyKey}`);
     if (existing) {
       existing.status = "COMPLETED";
       existing.response = input.response;
@@ -63,22 +61,15 @@ class FakeCheckoutRepository implements CheckoutRepository {
   }
 
   async markIdempotencyFailed(input: { ownerId: string; idempotencyKey: string; errorMessage: string }) {
-    const key = `${input.ownerId}:${input.idempotencyKey}`;
-    const existing = this.idempotencyStore.get(key);
+    const existing = this.idempotencyStore.get(`${input.ownerId}:${input.idempotencyKey}`);
     if (existing) existing.status = "FAILED";
   }
 
-  async processCheckout(input: Parameters<CheckoutRepository["processCheckout"]>[0]) {
+  async processCheckout(input: ProcessCheckoutInput) {
     return this.processCheckoutMock(input);
   }
-  async updateClientBalance(clientId: string, amount: number) {
-    return this.updateClientBalanceMock(clientId, amount);
-  }
-  async getOpenCashRegister(userId: string) {
-    return this.getOpenCashRegisterMock(userId);
-  }
-  async updateCashRegisterSales(registerId: string, payments: PaymentMethod[], totalAmount: number) {
-    return this.updateCashRegisterSalesMock(registerId, payments, totalAmount);
+  async getOpenCashRegisterId(userId: string) {
+    return this.getOpenCashRegisterIdMock(userId);
   }
   async consumeDiscountAuthorization(userId: string) {
     return this.consumeDiscountAuthorizationMock(userId);
@@ -100,7 +91,7 @@ function baseCommand(overrides: Partial<CheckoutCommand> = {}): CheckoutCommand 
   };
 }
 
-describe("CheckoutService", () => {
+describe("CheckoutService — validation", () => {
   it("rejects a missing idempotency key", async () => {
     const service = new CheckoutService(new FakeCheckoutRepository());
     await expect(service.execute(baseCommand({ idempotencyKey: "" }))).rejects.toThrow(HttpError);
@@ -111,16 +102,45 @@ describe("CheckoutService", () => {
     await expect(service.execute(baseCommand({ items: [] }))).rejects.toThrow(HttpError);
   });
 
+  it.each([0, -2, 1.5])("rejects quantity %p before anything is reserved", async (quantity) => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    await expect(
+      service.execute(baseCommand({ items: [{ productId: "p1", size: "", quantity }] }))
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repo.idempotencyStore.size).toBe(0);
+  });
+
+  it("rejects a negative manual discount", async () => {
+    const service = new CheckoutService(new FakeCheckoutRepository());
+    await expect(service.execute(baseCommand({ discount: -10 }))).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("requires a payment for an immediate sale", async () => {
+    const service = new CheckoutService(new FakeCheckoutRepository());
+    await expect(service.execute(baseCommand({ payments: [] }))).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("refuses a payment short of the total", async () => {
+    const service = new CheckoutService(new FakeCheckoutRepository());
+    await expect(
+      service.execute(baseCommand({ payments: [{ method: "PIX", amount: 90 }] }))
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("refuses a sale when the cashier has no open register", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.getOpenCashRegisterIdMock.mockResolvedValueOnce(null);
+    const service = new CheckoutService(repo);
+    await expect(service.execute(baseCommand())).rejects.toMatchObject({ statusCode: 409 });
+    expect(repo.processCheckoutMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("CheckoutService — pay later", () => {
   it("blocks payLater for roles other than ADMIN or CASHIER", async () => {
     const service = new CheckoutService(new FakeCheckoutRepository());
     await expect(service.execute(baseCommand({ payLater: true, clientId: "c1", userRole: "SYSTEM" }))).rejects.toThrow(HttpError);
-  });
-
-  it("allows payLater for CASHIER", async () => {
-    const repo = new FakeCheckoutRepository();
-    const service = new CheckoutService(repo);
-    const result = await service.execute(baseCommand({ payLater: true, clientId: "client-1", userRole: "CASHIER" }));
-    expect(result.status).toBe(201);
   });
 
   it("requires a clientId for payLater", async () => {
@@ -130,172 +150,170 @@ describe("CheckoutService", () => {
 
   it("rejects payLater when the client doesn't exist", async () => {
     const repo = new FakeCheckoutRepository();
-    repo.getClientNameByIdMock.mockResolvedValueOnce(null as unknown as string);
+    repo.getClientNameByIdMock.mockResolvedValueOnce(null);
     const service = new CheckoutService(repo);
     await expect(
       service.execute(baseCommand({ payLater: true, clientId: "missing-client", userRole: "ADMIN" }))
-    ).rejects.toThrow(HttpError);
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it("completes a payLater checkout, updating the client balance instead of the cash register", async () => {
+  it("hands the client and register to the single checkout transaction, with no payments", async () => {
     const repo = new FakeCheckoutRepository();
     const service = new CheckoutService(repo);
-    const result = await service.execute(baseCommand({ payLater: true, clientId: "client-1", userRole: "ADMIN" }));
+    const result = await service.execute(baseCommand({ payLater: true, clientId: "client-1", userRole: "CASHIER" }));
 
     expect(result.status).toBe(201);
     expect(repo.processCheckoutMock).toHaveBeenCalledWith(
-      expect.objectContaining({ clientId: "client-1", clientName: "Cliente Teste", payLater: true })
+      expect.objectContaining({
+        clientId: "client-1",
+        clientName: "Cliente Teste",
+        payLater: true,
+        payments: [],
+        change: 0,
+        cashRegisterId: "register-1",
+      })
     );
-    expect(repo.updateClientBalanceMock).toHaveBeenCalledWith("client-1", 100);
-    expect(repo.updateCashRegisterSalesMock).not.toHaveBeenCalled();
   });
+});
 
-  it("updates the open cash register's sales totals for an immediate (non-payLater) sale", async () => {
+describe("CheckoutService — payments and change", () => {
+  it("keeps only the sale total in cash and records the rest as change", async () => {
     const repo = new FakeCheckoutRepository();
-    repo.getOpenCashRegisterMock.mockResolvedValue({ id: "register-1" });
     const service = new CheckoutService(repo);
-    await service.execute(baseCommand());
+    await service.execute(baseCommand({ subtotal: 80, payments: [{ method: "DINHEIRO", amount: 100 }] }));
 
-    expect(repo.updateCashRegisterSalesMock).toHaveBeenCalledWith(
-      "register-1",
-      expect.any(Array),
-      100
+    expect(repo.processCheckoutMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payments: [{ method: "DINHEIRO", amount: 80 }],
+        change: 20,
+        expectedTotal: 80,
+      })
     );
-    expect(repo.updateClientBalanceMock).not.toHaveBeenCalled();
   });
 
-  describe("cashier discount cap", () => {
-    it("allows a manual discount at or under 10% of subtotal without authorization", async () => {
-      const repo = new FakeCheckoutRepository();
-      const service = new CheckoutService(repo);
-      await service.execute(baseCommand({ discount: 10, subtotal: 100 }));
-      expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ discount: 10 }));
-      expect(repo.consumeDiscountAuthorizationMock).not.toHaveBeenCalled();
-    });
+  it("refuses an overpayment by card, which cannot be given back as change", async () => {
+    const service = new CheckoutService(new FakeCheckoutRepository());
+    await expect(
+      service.execute(baseCommand({ subtotal: 80, payments: [{ method: "CREDITO", amount: 100 }] }))
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+});
 
-    it("caps a manual discount over 10% when there is no authorization grant", async () => {
-      const repo = new FakeCheckoutRepository();
-      repo.consumeDiscountAuthorizationMock.mockResolvedValue(false);
-      const service = new CheckoutService(repo);
-      await service.execute(baseCommand({ discount: 50, subtotal: 100 }));
-      expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ discount: 10 }));
-    });
-
-    it("honors the full manual discount when a valid authorization grant is consumed", async () => {
-      const repo = new FakeCheckoutRepository();
-      repo.consumeDiscountAuthorizationMock.mockResolvedValue(true);
-      const service = new CheckoutService(repo);
-      await service.execute(baseCommand({ discount: 50, subtotal: 100 }));
-      expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ discount: 50 }));
-    });
-
-    it("never caps an ADMIN's manual discount, and never consumes a grant for admins", async () => {
-      const repo = new FakeCheckoutRepository();
-      const service = new CheckoutService(repo);
-      await service.execute(baseCommand({ discount: 90, subtotal: 100, userRole: "ADMIN" }));
-      expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ discount: 90 }));
-      expect(repo.consumeDiscountAuthorizationMock).not.toHaveBeenCalled();
-    });
-
-    it("always adds promoDiscount on top of the (possibly capped) manual discount", async () => {
-      const repo = new FakeCheckoutRepository();
-      const service = new CheckoutService(repo);
-      await service.execute(baseCommand({ discount: 50, promoDiscount: 20, subtotal: 100 }));
-      // manual capped to 10 + promo 20 = 30
-      expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ discount: 30 }));
-    });
+describe("CheckoutService — cashier discount cap", () => {
+  it("allows a manual discount at or under 10% of subtotal without authorization", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    await service.execute(baseCommand({ discount: 10, payments: [{ method: "DINHEIRO", amount: 90 }] }));
+    expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ discount: 10, expectedTotal: 90 }));
+    expect(repo.consumeDiscountAuthorizationMock).not.toHaveBeenCalled();
   });
 
-  describe("idempotency", () => {
-    it("returns the cached response on a completed retry without re-running processCheckout", async () => {
-      const repo = new FakeCheckoutRepository();
-      const service = new CheckoutService(repo);
-      const command = baseCommand();
+  it("refuses a manual discount over 10% when there is no authorization grant", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    await expect(
+      service.execute(baseCommand({ discount: 50, payments: [{ method: "DINHEIRO", amount: 50 }] }))
+    ).rejects.toMatchObject({ statusCode: 403 });
+    expect(repo.processCheckoutMock).not.toHaveBeenCalled();
+  });
 
-      const first = await service.execute(command);
-      expect(first.status).toBe(201);
-      expect(repo.processCheckoutMock).toHaveBeenCalledTimes(1);
+  it("honors the full manual discount when a valid authorization grant is consumed", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.consumeDiscountAuthorizationMock.mockResolvedValue(true);
+    const service = new CheckoutService(repo);
+    await service.execute(baseCommand({ discount: 50, payments: [{ method: "DINHEIRO", amount: 50 }] }));
+    expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ discount: 50 }));
+  });
 
-      const second = await service.execute(command);
-      expect(second.status).toBe(200);
-      expect(repo.processCheckoutMock).toHaveBeenCalledTimes(1);
-      expect((second.body as Order).id).toBe((first.body as Order).id);
-    });
+  it("never caps an ADMIN's manual discount, and never consumes a grant for admins", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    await service.execute(baseCommand({ discount: 90, userRole: "ADMIN", payments: [{ method: "DINHEIRO", amount: 10 }] }));
+    expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ discount: 90 }));
+    expect(repo.consumeDiscountAuthorizationMock).not.toHaveBeenCalled();
+  });
 
-    it("marks idempotency completed BEFORE running post-sale side effects, so a failure there doesn't allow a duplicate order", async () => {
-      const repo = new FakeCheckoutRepository();
-      repo.getOpenCashRegisterMock.mockImplementation(async () => {
-        throw new Error("simulated post-sale failure");
-      });
-      const service = new CheckoutService(repo);
-      const command = baseCommand();
+  it("adds promoDiscount on top of the manual discount without counting it toward the cap", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    await service.execute(baseCommand({ discount: 10, promoDiscount: 20, payments: [{ method: "DINHEIRO", amount: 70 }] }));
+    expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ discount: 30, expectedTotal: 70 }));
+    expect(repo.consumeDiscountAuthorizationMock).not.toHaveBeenCalled();
+  });
+});
 
-      const first = await service.execute(command);
-      expect(first.status).toBe(201);
-      expect(repo.processCheckoutMock).toHaveBeenCalledTimes(1);
+describe("CheckoutService — idempotency", () => {
+  it("returns the cached response on a completed retry without re-running processCheckout", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    const command = baseCommand();
 
-      const second = await service.execute(command);
-      expect(second.status).toBe(200);
-      expect(repo.processCheckoutMock).toHaveBeenCalledTimes(1);
-    });
+    const first = await service.execute(command);
+    expect(first.status).toBe(201);
 
-    it("marks idempotency failed (allowing retry) when processCheckout itself throws", async () => {
-      const repo = new FakeCheckoutRepository();
-      repo.processCheckoutMock.mockRejectedValueOnce(new Error("insufficient stock"));
-      const service = new CheckoutService(repo);
-      const command = baseCommand();
+    const second = await service.execute(command);
+    expect(second.status).toBe(200);
+    expect(repo.processCheckoutMock).toHaveBeenCalledTimes(1);
+    expect((second.body as Order).id).toBe((first.body as Order).id);
+  });
 
-      await expect(service.execute(command)).rejects.toThrow("insufficient stock");
-      expect(repo.processCheckoutMock).toHaveBeenCalledTimes(1);
+  it("recovers a sale whose response was lost even after its discount grant was used up", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.consumeDiscountAuthorizationMock.mockResolvedValueOnce(true).mockResolvedValue(false);
+    const service = new CheckoutService(repo);
+    const command = baseCommand({ discount: 50, payments: [{ method: "DINHEIRO", amount: 50 }] });
 
-      // Retry should be allowed to run processCheckout again since nothing was created.
-      const retry = await service.execute(command);
-      expect(retry.status).toBe(201);
-      expect(repo.processCheckoutMock).toHaveBeenCalledTimes(2);
-    });
+    await service.execute(command);
+    const retry = await service.execute(command);
 
-    it("rejects idempotency key reuse with a different payload as a conflict", async () => {
-      const repo = new FakeCheckoutRepository();
-      const service = new CheckoutService(repo);
-      await service.execute(baseCommand({ idempotencyKey: "same-key", discount: 0 }));
-      await expect(service.execute(baseCommand({ idempotencyKey: "same-key", discount: 5 }))).rejects.toThrow(HttpError);
-    });
+    expect(retry.status).toBe(200);
+    expect(repo.processCheckoutMock).toHaveBeenCalledTimes(1);
+  });
 
-    it("returns 409 when the same idempotency key is already being processed", async () => {
-      const repo = new FakeCheckoutRepository();
-      const command = baseCommand({ idempotencyKey: "in-progress-key" });
-      const requestHash = JSON.stringify({
-        items: command.items,
-        payments: command.payments,
-        discount: 0,
-        clientId: undefined,
-        payLater: false,
-        userId: command.userId,
-      });
-      repo.idempotencyStore.set("user-1:in-progress-key", { requestHash, status: "PROCESSING" });
+  it("marks idempotency failed (allowing retry) when processCheckout itself throws", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.processCheckoutMock.mockRejectedValueOnce(new HttpError(409, "Estoque insuficiente"));
+    const service = new CheckoutService(repo);
+    const command = baseCommand();
 
-      const service = new CheckoutService(repo);
-      const result = await service.execute(command);
-      expect(result.status).toBe(409);
-    });
+    await expect(service.execute(command)).rejects.toMatchObject({ statusCode: 409 });
 
-    it("preserves an HttpError's identity when processCheckout throws one", async () => {
-      const repo = new FakeCheckoutRepository();
-      repo.processCheckoutMock.mockRejectedValueOnce(new HttpError(422, "stock mismatch"));
-      const service = new CheckoutService(repo);
-      await expect(service.execute(baseCommand({ idempotencyKey: "http-fail-key" }))).rejects.toMatchObject({
-        statusCode: 422,
-        message: "stock mismatch",
-      });
-    });
+    const retry = await service.execute(command);
+    expect(retry.status).toBe(201);
+    expect(repo.processCheckoutMock).toHaveBeenCalledTimes(2);
+  });
 
-    it("falls back to a generic error message when processCheckout throws a non-Error value", async () => {
-      const repo = new FakeCheckoutRepository();
-      repo.processCheckoutMock.mockRejectedValueOnce("not an Error instance");
-      const service = new CheckoutService(repo);
-      await expect(service.execute(baseCommand({ idempotencyKey: "non-error-fail-key" }))).rejects.toBe(
-        "not an Error instance"
-      );
-    });
+  it("rejects idempotency key reuse with a different payload as a conflict", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    await service.execute(baseCommand({ idempotencyKey: "same-key" }));
+    await expect(
+      service.execute(baseCommand({ idempotencyKey: "same-key", discount: 5, payments: [{ method: "DINHEIRO", amount: 95 }] }))
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("returns 409 while the same idempotency key is still being processed", async () => {
+    const repo = new FakeCheckoutRepository();
+    let finish: (order: Order) => void = () => {};
+    repo.processCheckoutMock.mockImplementationOnce(() => new Promise<Order>((resolve) => (finish = resolve)));
+    const service = new CheckoutService(repo);
+    const command = baseCommand({ idempotencyKey: "in-progress-key" });
+
+    const first = service.execute(command);
+    await vi.waitFor(() => expect(repo.processCheckoutMock).toHaveBeenCalledTimes(1));
+    const second = await service.execute(command);
+    expect(second.status).toBe(409);
+
+    finish({ id: "order-1", subtotal: 100, discount: 0, totalAmount: 100, payments: [], createdAt: new Date() });
+    await first;
+  });
+
+  it("lets an unexpected non-Error value propagate unchanged", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.processCheckoutMock.mockRejectedValueOnce("not an Error instance");
+    const service = new CheckoutService(repo);
+    await expect(service.execute(baseCommand({ idempotencyKey: "non-error-fail-key" }))).rejects.toBe(
+      "not an Error instance"
+    );
   });
 });

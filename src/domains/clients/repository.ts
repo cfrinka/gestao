@@ -1,5 +1,6 @@
 import type { Client, Order } from "@/lib/db-types";
 import type { ClientPaymentMethod } from "@/domains/clients/types";
+import type { IdempotencyReservation } from "@/domains/shared/idempotency";
 
 export interface ClientsRepository {
   listClients(): Promise<Client[]>;
@@ -25,4 +26,7 @@ export interface ClientsRepository {
     receivedByUserName?: string
   ): Promise<void>;
   removeFiadoOrderItem(clientId: string, orderId: string, orderItemId: string): Promise<void>;
+  reserveIdempotency(input: { ownerId: string; idempotencyKey: string; requestHash: string }): Promise<IdempotencyReservation>;
+  markIdempotencyCompleted(input: { ownerId: string; idempotencyKey: string; response: unknown }): Promise<void>;
+  markIdempotencyFailed(input: { ownerId: string; idempotencyKey: string; errorMessage: string }): Promise<void>;
 }

@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/contexts/auth-context";
+import { roundMoney } from "@/lib/money";
 import { apiGet, apiPost, apiPatch } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +61,7 @@ interface ExchangeRecord {
 
 export default function ExchangesPage() {
   const { toast } = useToast();
+  const { userData } = useAuth();
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
@@ -74,6 +77,9 @@ export default function ExchangesPage() {
   const [discountAmount, setDiscountAmount] = useState("");
   const [differencePaymentMethod, setDifferencePaymentMethod] = useState<ExchangePaymentMethod | "">("")
   const [addingToRegister, setAddingToRegister] = useState<string | null>(null);
+  const [adminPassword, setAdminPassword] = useState("");
+  // Same retry rule as the POS: an unchanged exchange resent after a dropped response reuses its key.
+  const exchangeAttempt = useRef<{ key: string; signature: string } | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -188,9 +194,12 @@ export default function ExchangesPage() {
   const entryItems = cart.filter((item) => item.direction === "IN");
   const outputItems = cart.filter((item) => item.direction === "OUT");
   const grossDifference = totalOutValue - totalInValue;
-  const numericDiscountAmount = Math.max(0, Number(discountAmount || 0));
-  const appliedDiscountAmount = Math.min(numericDiscountAmount, Math.max(0, grossDifference));
-  const totalDifference = grossDifference - appliedDiscountAmount;
+  const numericDiscountAmount = roundMoney(Math.max(0, Number(discountAmount || 0)));
+  const appliedDiscountAmount = roundMoney(Math.min(numericDiscountAmount, Math.max(0, grossDifference)));
+  const totalDifference = roundMoney(grossDifference - appliedDiscountAmount);
+  // Cashiers may give up to 10% of the difference; more needs an admin's password, checked by the server.
+  const needsAdminForDiscount =
+    userData?.role === "CASHIER" && appliedDiscountAmount > roundMoney(Math.max(0, grossDifference) * 0.1);
 
   const handleAddToRegister = async (exchangeId: string) => {
     setAddingToRegister(exchangeId);
@@ -227,23 +236,41 @@ export default function ExchangesPage() {
       return;
     }
 
+    if (needsAdminForDiscount && !adminPassword.trim()) {
+      toast({
+        title: "Senha do administrador",
+        description: "Desconto acima de 10% precisa da senha de um administrador.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setProcessing(true);
     try {
-      const idempotencyKey = crypto.randomUUID();
+      if (needsAdminForDiscount) {
+        await apiPost("/api/admin/verify-password", { adminPassword: adminPassword.trim() });
+      }
 
-      await apiPost("/api/exchanges", {
+      const exchangePayload = {
         customerName,
         notes,
         discountAmount: appliedDiscountAmount,
         paymentMethod: totalDifference > 0 ? differencePaymentMethod : undefined,
-        idempotencyKey,
         items: cart.map((item) => ({
           productId: item.product.id,
           size: item.size,
           quantity: item.quantity,
           direction: item.direction,
         })),
-      });
+      };
+      const signature = JSON.stringify(exchangePayload);
+      if (exchangeAttempt.current?.signature !== signature) {
+        exchangeAttempt.current = { key: crypto.randomUUID(), signature };
+      }
+
+      await apiPost("/api/exchanges", { ...exchangePayload, idempotencyKey: exchangeAttempt.current.key });
+      exchangeAttempt.current = null;
+      setAdminPassword("");
 
       toast({ title: "Troca registrada com sucesso" });
       setCustomerName("");
@@ -539,6 +566,19 @@ export default function ExchangesPage() {
                     <div className="flex justify-between text-sm font-medium text-verde">
                       <span>Desconto aplicado</span>
                       <span className="tabular-nums">−{formatCurrency(appliedDiscountAmount)}</span>
+                    </div>
+                  )}
+                  {needsAdminForDiscount && (
+                    <div className="mt-2 space-y-1.5">
+                      <Label htmlFor="exchange-admin-password">Senha do administrador</Label>
+                      <Input
+                        id="exchange-admin-password"
+                        type="password"
+                        autoComplete="off"
+                        value={adminPassword}
+                        onChange={(e) => setAdminPassword(e.target.value)}
+                      />
+                      <p className="text-xs text-ink-3">Desconto acima de 10% da diferença precisa de autorização.</p>
                     </div>
                   )}
                   <div className="mt-1 flex items-end justify-between gap-3 py-1">

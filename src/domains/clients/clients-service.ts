@@ -1,4 +1,9 @@
-import { HttpError } from "@/lib/api/http-errors";
+import {
+  HttpError,
+  IDEMPOTENCY_CONFLICT_MESSAGE,
+  IDEMPOTENCY_IN_PROGRESS_MESSAGE,
+  IDEMPOTENCY_KEY_REQUIRED_MESSAGE,
+} from "@/lib/api/http-errors";
 import type { ClientsRepository } from "@/domains/clients/repository";
 import type {
   ClientPaymentMethod,
@@ -10,6 +15,7 @@ import type {
   UpdateClientCommand,
 } from "@/domains/clients/types";
 import type { Client, Order } from "@/lib/db-types";
+import { isZeroMoney } from "@/lib/money";
 
 const ALLOWED_METHODS = ["DINHEIRO", "DEBITO", "CREDITO", "PIX"] as const;
 
@@ -19,6 +25,41 @@ function toPaymentMethod(value: unknown): ClientPaymentMethod {
 
 export class ClientsService {
   constructor(private readonly repository: ClientsRepository) {}
+
+  /**
+   * A fiado receipt moves money into the register and out of the client's balance, so a double
+   * tap (or a retry after a dropped response) must not record it twice. The browser sends one
+   * key per receipt; a repeat with the same key returns the first result instead of paying again.
+   */
+  private async runOnce<T>(ownerId: string, rawKey: unknown, payload: unknown, work: () => Promise<T>): Promise<T> {
+    const idempotencyKey = typeof rawKey === "string" ? rawKey.trim() : "";
+    if (!idempotencyKey) {
+      throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
+    }
+
+    const reservation = await this.repository.reserveIdempotency({
+      ownerId,
+      idempotencyKey,
+      requestHash: JSON.stringify(payload),
+    });
+
+    if (reservation.type === "conflict") throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
+    if (reservation.type === "in_progress") throw new HttpError(409, IDEMPOTENCY_IN_PROGRESS_MESSAGE);
+    if (reservation.type === "completed") return reservation.response as T;
+
+    try {
+      const result = await work();
+      await this.repository.markIdempotencyCompleted({ ownerId, idempotencyKey, response: result });
+      return result;
+    } catch (error) {
+      await this.repository.markIdempotencyFailed({
+        ownerId,
+        idempotencyKey,
+        errorMessage: error instanceof Error ? error.message : "erro",
+      });
+      throw error;
+    }
+  }
 
   async list(): Promise<Client[]> {
     return this.repository.listClients();
@@ -68,7 +109,7 @@ export class ClientsService {
   async remove(clientId: string): Promise<void> {
     const client = await this.repository.getClient(clientId);
     if (!client) throw new HttpError(404, "Cliente não encontrado");
-    if (client.balance !== 0) {
+    if (!isZeroMoney(client.balance)) {
       throw new HttpError(400, "Não é possível excluir um cliente com saldo em aberto");
     }
     await this.repository.deleteClient(clientId);
@@ -110,17 +151,22 @@ export class ClientsService {
       throw new HttpError(400, "Valor de pagamento inválido");
     }
 
-    const paymentResult = await this.repository.applyCascadingFiadoPayment(
-      command.clientId,
-      finalAmount,
-      toPaymentMethod(command.method),
-      command.receivedByUserId,
-      command.receivedByUserName
-    );
+    const method = toPaymentMethod(command.method);
+    const payload = { action: "pay_cascading", clientId: command.clientId, amount: finalAmount, method };
 
-    const result = await this.withPendingOrders(command.clientId);
-    if (!result) throw new HttpError(404, "Cliente não encontrado");
-    return { ...result, paymentResult };
+    return this.runOnce(command.receivedByUserId, command.idempotencyKey, payload, async () => {
+      const paymentResult = await this.repository.applyCascadingFiadoPayment(
+        command.clientId,
+        finalAmount,
+        method,
+        command.receivedByUserId,
+        command.receivedByUserName
+      );
+
+      const result = await this.withPendingOrders(command.clientId);
+      if (!result) throw new HttpError(404, "Cliente não encontrado");
+      return { ...result, paymentResult };
+    });
   }
 
   async payOrder(command: PayOrderCommand): Promise<Client & { pendingOrders: Order[] }> {
@@ -142,18 +188,23 @@ export class ClientsService {
     // papered over by force-marking the order paid and blindly debiting the client's full
     // original total, which would double-count an already-applied payment or bypass the
     // closed-month guard entirely.
-    await this.repository.applyFiadoPayment(
-      command.clientId,
-      command.orderId,
-      finalAmount,
-      toPaymentMethod(command.method),
-      command.receivedByUserId,
-      command.receivedByUserName
-    );
+    const method = toPaymentMethod(command.method);
+    const payload = { action: "pay_order", clientId: command.clientId, orderId: command.orderId, amount: finalAmount, method };
 
-    const result = await this.withPendingOrders(command.clientId);
-    if (!result) throw new HttpError(404, "Cliente não encontrado");
-    return result;
+    return this.runOnce(command.receivedByUserId, command.idempotencyKey, payload, async () => {
+      await this.repository.applyFiadoPayment(
+        command.clientId,
+        command.orderId,
+        finalAmount,
+        method,
+        command.receivedByUserId,
+        command.receivedByUserName
+      );
+
+      const result = await this.withPendingOrders(command.clientId);
+      if (!result) throw new HttpError(404, "Cliente não encontrado");
+      return result;
+    });
   }
 
   async removeOrderItem(command: RemoveOrderItemCommand): Promise<Client & { pendingOrders: Order[] }> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateAutoDiscount } from "./discount-calculator";
+import { calculateAutoDiscount, calculateAutoDiscountBreakdown } from "./discount-calculator";
 import type { DiscountSettings, PaymentMethod } from "@/lib/db-types";
 
 const baseSettings: DiscountSettings = {
@@ -117,5 +117,13 @@ describe("calculateAutoDiscount", () => {
     // progressive (2 items): 15% of 200 = 30
     // pix: 10% of 200 = 20
     expect(calculateAutoDiscount(items, 200, settings, payments)).toBeCloseTo(70);
+  });
+
+  it("rounds each part to whole cents so saved totals never carry fractions", () => {
+    const settings: DiscountSettings = { ...baseSettings, pixDiscountEnabled: true, pixDiscountPercent: 5 };
+    const payments: PaymentMethod[] = [{ method: "PIX", amount: 95.24 }];
+    // 5% of 95.24 = 4.762 → 4.76
+    expect(calculateAutoDiscountBreakdown([], 100, settings, payments)).toEqual({ cart: 0, pix: 4.76 });
+    expect(calculateAutoDiscount([], 100, settings, payments)).toBe(4.76);
   });
 });

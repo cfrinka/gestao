@@ -1,4 +1,5 @@
 import type { DiscountSettings, PaymentMethod } from "@/lib/db-types";
+import { roundMoney } from "@/lib/money";
 
 export interface DiscountableItem {
   productId: string;
@@ -6,12 +7,58 @@ export interface DiscountableItem {
   salePrice: number;
 }
 
-function progressivePercentForItemCount(settings: DiscountSettings, totalItems: number): number {
+export function progressivePercentForItemCount(settings: DiscountSettings, totalItems: number): number {
   if (totalItems >= 4) return settings.progressiveDiscount4PlusItems;
   if (totalItems === 3) return settings.progressiveDiscount3PlusItems;
   if (totalItems === 2) return settings.progressiveDiscount2Items;
   if (totalItems === 1) return settings.progressiveDiscount1Item;
   return 0;
+}
+
+/**
+ * The store's automatic discounts, split the way the POS shows them: everything that depends
+ * on the cart (product, fixed, progressive) and the PIX discount, which depends on how much is
+ * paid by PIX. Each part is rounded to cents on its own, and the POS imports this same function,
+ * so the total on screen and the total saved can never differ by a fraction of a cent.
+ */
+export function calculateAutoDiscountBreakdown(
+  items: DiscountableItem[],
+  subtotal: number,
+  settings: DiscountSettings,
+  payments: PaymentMethod[]
+): { cart: number; pix: number } {
+  let cartDiscount = 0;
+
+  if (settings.productDiscountsEnabled) {
+    for (const item of items) {
+      const productDiscount = settings.productDiscounts.find((pd) => pd.productId === item.productId);
+      if (productDiscount && productDiscount.discountPercent > 0) {
+        cartDiscount += (item.salePrice * item.quantity * productDiscount.discountPercent) / 100;
+      }
+    }
+  }
+
+  if (settings.fixedDiscountEnabled && settings.fixedDiscountPercent > 0) {
+    cartDiscount += (subtotal * settings.fixedDiscountPercent) / 100;
+  }
+
+  if (settings.progressiveDiscountEnabled) {
+    const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
+    const progressivePercent = progressivePercentForItemCount(settings, totalItems);
+    if (progressivePercent > 0) {
+      cartDiscount += (subtotal * progressivePercent) / 100;
+    }
+  }
+
+  let pixDiscount = 0;
+  if (settings.pixDiscountEnabled) {
+    const pixPayment = payments.find((p) => p.method === "PIX");
+    if (pixPayment && pixPayment.amount > 0) {
+      pixDiscount = (pixPayment.amount * settings.pixDiscountPercent) / 100;
+    }
+  }
+
+  return { cart: roundMoney(cartDiscount), pix: roundMoney(pixDiscount) };
 }
 
 /**
@@ -25,35 +72,6 @@ export function calculateAutoDiscount(
   settings: DiscountSettings,
   payments: PaymentMethod[]
 ): number {
-  let autoDiscount = 0;
-
-  if (settings.productDiscountsEnabled) {
-    for (const item of items) {
-      const productDiscount = settings.productDiscounts.find((pd) => pd.productId === item.productId);
-      if (productDiscount && productDiscount.discountPercent > 0) {
-        autoDiscount += (item.salePrice * item.quantity * productDiscount.discountPercent) / 100;
-      }
-    }
-  }
-
-  if (settings.fixedDiscountEnabled && settings.fixedDiscountPercent > 0) {
-    autoDiscount += (subtotal * settings.fixedDiscountPercent) / 100;
-  }
-
-  if (settings.progressiveDiscountEnabled) {
-    const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-    const progressivePercent = progressivePercentForItemCount(settings, totalItems);
-    if (progressivePercent > 0) {
-      autoDiscount += (subtotal * progressivePercent) / 100;
-    }
-  }
-
-  if (settings.pixDiscountEnabled) {
-    const pixPayment = payments.find((p) => p.method === "PIX");
-    if (pixPayment && pixPayment.amount > 0) {
-      autoDiscount += (pixPayment.amount * settings.pixDiscountPercent) / 100;
-    }
-  }
-
-  return autoDiscount;
+  const { cart, pix } = calculateAutoDiscountBreakdown(items, subtotal, settings, payments);
+  return roundMoney(cart + pix);
 }

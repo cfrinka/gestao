@@ -1,11 +1,11 @@
-import type { Order, PaymentMethod } from "@/lib/db-types";
-import { getClient, updateClientBalance } from "@/domains/clients/clients-db";
-import { getOpenCashRegister, updateCashRegisterSales } from "@/domains/cash-register/cash-register-db";
+import type { Order } from "@/lib/db-types";
+import { getClient } from "@/domains/clients/clients-db";
+import { getOpenCashRegister } from "@/domains/cash-register/cash-register-db";
 import { processCheckout } from "@/domains/checkout/checkout-db";
 import { consumeDiscountAuthorization } from "@/lib/discount-authorization";
 import { markIdempotencyCompleted, markIdempotencyFailed, reserveIdempotency } from "@/domains/shared/idempotency";
-import type { CheckoutRepository } from "@/domains/checkout/repository";
-import type { CheckoutCartItem, IdempotencyReservation } from "@/domains/checkout/types";
+import type { CheckoutRepository, ProcessCheckoutInput } from "@/domains/checkout/repository";
+import type { IdempotencyReservation } from "@/domains/checkout/types";
 
 const SCOPE = "checkout";
 
@@ -39,42 +39,13 @@ export class FirestoreCheckoutRepository implements CheckoutRepository {
     await markIdempotencyFailed(SCOPE, input.ownerId, input.idempotencyKey, input.errorMessage);
   }
 
-  async processCheckout(input: {
-    items: CheckoutCartItem[];
-    payments: PaymentMethod[];
-    discount: number;
-    clientId?: string;
-    clientName?: string;
-    payLater: boolean;
-    createdById: string;
-    createdByName: string;
-    createdByRole: string;
-  }): Promise<Order> {
-    return processCheckout(
-      input.items,
-      input.payments,
-      input.discount,
-      input.clientId,
-      input.clientName,
-      input.payLater,
-      input.createdById,
-      input.createdByRole,
-      input.createdByName
-    );
+  async processCheckout(input: ProcessCheckoutInput): Promise<Order> {
+    return processCheckout(input);
   }
 
-  async updateClientBalance(clientId: string, amount: number): Promise<void> {
-    await updateClientBalance(clientId, amount);
-  }
-
-  async getOpenCashRegister(userId: string): Promise<{ id: string } | null> {
+  async getOpenCashRegisterId(userId: string): Promise<string | null> {
     const register = await getOpenCashRegister(userId);
-    if (!register) return null;
-    return { id: register.id };
-  }
-
-  async updateCashRegisterSales(registerId: string, payments: PaymentMethod[], totalAmount: number): Promise<void> {
-    await updateCashRegisterSales(registerId, payments, totalAmount);
+    return register?.id ?? null;
   }
 
   async consumeDiscountAuthorization(userId: string): Promise<boolean> {

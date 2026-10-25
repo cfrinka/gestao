@@ -2,6 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { Client, FiadoPayment, Order, OrderItem, PaymentMethod } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { isZeroMoney, roundMoney } from "@/lib/money";
 import { verifyAdminPassword } from "@/lib/admin-password";
 import { assertFinancialMonthOpenTx, toCompetencyMonth } from "@/domains/financial/financial-db";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
@@ -62,13 +63,6 @@ export async function updateClient(
   });
 }
 
-export async function updateClientBalance(id: string, amount: number): Promise<void> {
-  await adminDb.collection("clients").doc(id).update({
-    balance: FieldValue.increment(amount),
-    updatedAt: Timestamp.fromDate(new Date()),
-  });
-}
-
 export async function deleteClient(id: string): Promise<void> {
   await adminDb.collection("clients").doc(id).delete();
 }
@@ -86,7 +80,8 @@ export async function getClientPendingOrders(clientId: string): Promise<Order[]>
   }));
 
   const pendingOrders = orders.filter((order) => {
-    if (typeof order.remainingAmount === "number") return order.remainingAmount > 0;
+    if (order.isCancelled === true) return false;
+    if (typeof order.remainingAmount === "number") return order.remainingAmount > 0 && !isZeroMoney(order.remainingAmount);
     return true;
   });
 
@@ -174,9 +169,10 @@ export async function correctClientDebt(
  */
 export async function applyClientDebtCorrection(
   clientId: string,
-  correctionAmount: number,
+  rawCorrectionAmount: number,
   reason: string
 ): Promise<void> {
+  const correctionAmount = roundMoney(rawCorrectionAmount);
   if (!correctionAmount || correctionAmount === 0) {
     throw new HttpError(400, "O valor da correção deve ser diferente de zero");
   }
@@ -189,12 +185,13 @@ export async function applyClientDebtCorrection(
   const now = new Date();
   const nowTs = Timestamp.fromDate(now);
 
-  // Build the orders query outside the transaction (equality filters only, no composite index needed)
+  // Build the orders query outside the transaction (equality filters only, no composite index needed).
+  // Cancelled orders are skipped in memory: checkout never wrote isCancelled until recently, and
+  // an equality filter on it silently matched none of those orders.
   const ordersQuery = adminDb
     .collection("orders")
     .where("clientId", "==", clientId)
-    .where("isPaidLater", "==", true)
-    .where("isCancelled", "==", false);
+    .where("isPaidLater", "==", true);
 
   await adminDb.runTransaction(async (tx) => {
     // ALL READS FIRST
@@ -204,8 +201,8 @@ export async function applyClientDebtCorrection(
     }
 
     const clientData = clientSnap.data();
-    const currentBalance = Number(clientData?.balance || 0);
-    const newBalance = currentBalance + correctionAmount;
+    const currentBalance = roundMoney(Number(clientData?.balance || 0));
+    const newBalance = roundMoney(currentBalance + correctionAmount);
 
     // Don't allow correction that would leave negative balance (unless it's actually reducing debt)
     if (correctionAmount > 0 && newBalance < 0) {
@@ -229,6 +226,7 @@ export async function applyClientDebtCorrection(
 
       const sortedDocs = ordersSnap.docs
         .map((doc) => ({ doc, data: convertTimestamp<Order>(doc.data()!) }))
+        .filter(({ data }) => data.isCancelled !== true)
         .sort((a, b) => {
           const dateA = a.data.createdAt ? new Date(a.data.createdAt).getTime() : 0;
           const dateB = b.data.createdAt ? new Date(b.data.createdAt).getTime() : 0;
@@ -238,7 +236,9 @@ export async function applyClientDebtCorrection(
       for (const { doc: orderDoc, data: order } of sortedDocs) {
         if (remainingToCorrect <= 0) break;
 
-        const currentRemaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
+        const currentRemaining = roundMoney(
+          typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount
+        );
 
         if (currentRemaining <= 0) continue;
 
@@ -252,11 +252,11 @@ export async function applyClientDebtCorrection(
           throw closedMonthError(orderMonth);
         }
 
-        const correctionToOrder = Math.min(remainingToCorrect, currentRemaining);
-        const newRemaining = currentRemaining - correctionToOrder;
+        const correctionToOrder = roundMoney(Math.min(remainingToCorrect, currentRemaining));
+        const newRemaining = roundMoney(currentRemaining - correctionToOrder);
         const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
-        const newPaid = currentPaid + correctionToOrder;
-        const isFullyPaid = newRemaining <= 0;
+        const newPaid = roundMoney(currentPaid + correctionToOrder);
+        const isFullyPaid = isZeroMoney(newRemaining);
 
         ordersToUpdate.push({
           ref: orderDoc.ref,
@@ -268,7 +268,7 @@ export async function applyClientDebtCorrection(
           isFullyPaid,
         });
 
-        remainingToCorrect -= correctionToOrder;
+        remainingToCorrect = roundMoney(remainingToCorrect - correctionToOrder);
       }
 
       // A debt write-off means this revenue will never be collected — find each affected
@@ -298,7 +298,7 @@ export async function applyClientDebtCorrection(
       clientName: clientData?.name || "Cliente",
       correctionAmount,
       previousBalance: currentBalance,
-      newBalance: currentBalance + correctionAmount,
+      newBalance,
       reason: reason.trim(),
       adminPassword: "***",
       createdAt: nowTs,
@@ -334,11 +334,12 @@ export async function applyClientDebtCorrection(
 export async function applyFiadoPayment(
   clientId: string,
   orderId: string,
-  amount: number,
+  rawAmount: number,
   method: PaymentMethod["method"],
   receivedByUserId?: string,
   receivedByUserName?: string
 ): Promise<void> {
+  const amount = roundMoney(rawAmount);
   if (!amount || amount <= 0) {
     throw new HttpError(400, "O valor do pagamento deve ser maior que zero");
   }
@@ -367,16 +368,17 @@ export async function applyFiadoPayment(
     const clientName = String(clientSnap.data()?.name || order.clientName || "Cliente").trim();
 
     const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : order.paidAt ? order.totalAmount : 0;
-    const currentRemaining =
-      typeof order.remainingAmount === "number" ? order.remainingAmount : order.paidAt ? 0 : order.totalAmount;
+    const currentRemaining = roundMoney(
+      typeof order.remainingAmount === "number" ? order.remainingAmount : order.paidAt ? 0 : order.totalAmount
+    );
 
     if (currentRemaining <= 0) {
       throw new HttpError(409, "Esta venda já está quitada");
     }
 
-    const appliedAmount = Math.min(amount, currentRemaining);
-    const nextPaid = currentPaid + appliedAmount;
-    const nextRemaining = Math.max(0, currentRemaining - appliedAmount);
+    const appliedAmount = roundMoney(Math.min(amount, currentRemaining));
+    const nextPaid = roundMoney(currentPaid + appliedAmount);
+    const nextRemaining = roundMoney(Math.max(0, currentRemaining - appliedAmount));
     const now = new Date();
     await assertFinancialMonthOpenTx(tx, now);
     const nowTs = Timestamp.fromDate(now);

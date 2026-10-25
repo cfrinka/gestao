@@ -1,6 +1,15 @@
-import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
+import {
+  HttpError,
+  IDEMPOTENCY_CONFLICT_MESSAGE,
+  IDEMPOTENCY_IN_PROGRESS_MESSAGE,
+  IDEMPOTENCY_KEY_REQUIRED_MESSAGE,
+} from "@/lib/api/http-errors";
+import { roundMoney } from "@/lib/money";
 import type { CheckoutRepository } from "@/domains/checkout/repository";
 import type { CheckoutCommand, CheckoutExecutionResult } from "@/domains/checkout/types";
+import { normalizeCartItems, normalizePayments, settlePayments } from "@/domains/checkout/cart-validation";
+
+export const CASHIER_DISCOUNT_CAP = 0.1;
 
 function toPublicErrorMessage(error: unknown): string {
   if (error instanceof HttpError) return error.message;
@@ -17,11 +26,8 @@ export class CheckoutService {
       throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
     }
 
-    if (!Array.isArray(command.items) || command.items.length === 0) {
-      throw new HttpError(400, "Adicione ao menos um produto à venda");
-    }
+    const items = normalizeCartItems(command.items);
 
-    const canUseAdvancedFeatures = command.userRole === "ADMIN";
     const canUsePayLater = command.userRole === "ADMIN" || command.userRole === "CASHIER";
     const payLater = Boolean(command.payLater);
 
@@ -33,44 +39,23 @@ export class CheckoutService {
       throw new HttpError(400, "Selecione o cliente da venda fiado");
     }
 
-    const subtotal = Number(command.subtotal || 0);
     const requestedDiscount = Number(command.discount || 0);
-    // Store promotions (progressive discount, PIX discount, product discounts, etc.)
-    // are not subject to the cashier's manual discount limit below.
-    const promoDiscount = Number(command.promoDiscount || 0);
-    let allowedManualDiscount = 0;
-
-    if (canUseAdvancedFeatures) {
-      // Admins can apply any discount
-      allowedManualDiscount = requestedDiscount;
-    } else if (command.userRole === "CASHIER") {
-      // Cashiers can apply up to 10% discount, unless a server-verified admin
-      // authorization grant is on file for this user (see /api/admin/verify-password).
-      const maxDiscount = subtotal * 0.10;
-      if (requestedDiscount > maxDiscount) {
-        const isAuthorized = await this.repository.consumeDiscountAuthorization(command.userId);
-        allowedManualDiscount = isAuthorized ? requestedDiscount : maxDiscount;
-      } else {
-        allowedManualDiscount = requestedDiscount;
-      }
+    if (!Number.isFinite(requestedDiscount) || requestedDiscount < 0) {
+      throw new HttpError(400, "Desconto inválido");
     }
 
-    const allowedDiscount = promoDiscount + allowedManualDiscount;
-    const normalizedPayments = payLater ? [] : command.payments || [];
-
-    let clientName: string | undefined;
-    if (payLater && command.clientId) {
-      const fetchedClientName = await this.repository.getClientNameById(command.clientId);
-      if (!fetchedClientName) {
-        throw new HttpError(404, "Cliente não encontrado");
-      }
-      clientName = fetchedClientName;
+    const receivedPayments = payLater ? [] : normalizePayments(command.payments);
+    if (!payLater && receivedPayments.length === 0) {
+      throw new HttpError(400, "Informe a forma de pagamento");
     }
 
+    // The hash covers what the cashier asked for, not what the server derives from it (a
+    // consumed discount grant, the change): a retry of the same sale must hash the same, or a
+    // sale whose response was lost on a bad connection could never be recovered.
     const requestHash = JSON.stringify({
-      items: command.items,
-      payments: normalizedPayments,
-      discount: allowedDiscount,
+      items,
+      payments: receivedPayments,
+      discount: roundMoney(requestedDiscount),
       clientId: payLater ? command.clientId : undefined,
       payLater,
       userId: command.userId,
@@ -96,13 +81,58 @@ export class CheckoutService {
 
     let order;
     try {
+      const subtotal = roundMoney(Number(command.subtotal || 0));
+      // Store promotions (progressive discount, PIX discount, product discounts, etc.)
+      // are not subject to the cashier's manual discount limit below.
+      const promoDiscount = roundMoney(Number(command.promoDiscount || 0));
+      let allowedManualDiscount = roundMoney(requestedDiscount);
+
+      if (command.userRole === "CASHIER") {
+        // Cashiers can apply up to 10% discount, unless a server-verified admin
+        // authorization grant is on file for this user (see /api/admin/verify-password).
+        // Above the cap without a grant the sale is refused rather than quietly charged a
+        // different total than the one the cashier quoted.
+        const maxDiscount = roundMoney(subtotal * CASHIER_DISCOUNT_CAP);
+        if (allowedManualDiscount > maxDiscount) {
+          const isAuthorized = await this.repository.consumeDiscountAuthorization(command.userId);
+          if (!isAuthorized) {
+            throw new HttpError(403, "Desconto acima de 10% precisa da senha do administrador.");
+          }
+        }
+      } else if (command.userRole !== "ADMIN") {
+        allowedManualDiscount = 0;
+      }
+
+      const discount = roundMoney(promoDiscount + allowedManualDiscount);
+      const expectedTotal = roundMoney(Math.max(0, subtotal - discount));
+      const { payments, change } = payLater
+        ? { payments: [], change: 0 }
+        : settlePayments(receivedPayments, expectedTotal);
+
+      let clientName: string | undefined;
+      if (payLater && command.clientId) {
+        const fetchedClientName = await this.repository.getClientNameById(command.clientId);
+        if (!fetchedClientName) {
+          throw new HttpError(404, "Cliente não encontrado");
+        }
+        clientName = fetchedClientName;
+      }
+
+      const cashRegisterId = await this.repository.getOpenCashRegisterId(command.userId);
+      if (!cashRegisterId) {
+        throw new HttpError(409, "Abra o caixa para finalizar a venda.");
+      }
+
       order = await this.repository.processCheckout({
-        items: command.items,
-        payments: normalizedPayments,
-        discount: allowedDiscount,
+        items,
+        payments,
+        change,
+        discount,
+        expectedTotal,
         clientId: payLater ? command.clientId : undefined,
         clientName,
         payLater,
+        cashRegisterId,
         createdById: command.userId,
         createdByName: command.userName,
         createdByRole: command.userRole,
@@ -117,35 +147,13 @@ export class CheckoutService {
       throw error;
     }
 
-    // The order is now created (stock decremented, payment recorded) — this is the
-    // point of no return. Mark idempotency completed immediately so a retry from here
-    // on returns this same order instead of re-running processCheckout and creating a
-    // second one. The remaining steps are secondary bookkeeping (client balance, cash
-    // register totals): failures there are logged, not surfaced as a request failure,
-    // since the sale itself already succeeded.
+    // Stock, register totals and the fiado balance were written in the same transaction as
+    // the order, so there is no follow-up bookkeeping left that could fail half-way.
     await this.repository.markIdempotencyCompleted({
       ownerId: command.userId,
       idempotencyKey: safeIdempotencyKey,
       response: order,
     });
-
-    try {
-      if (payLater && command.clientId) {
-        await this.repository.updateClientBalance(command.clientId, order.totalAmount);
-      }
-
-      if (!payLater && normalizedPayments.length > 0) {
-        const cashRegister = await this.repository.getOpenCashRegister(command.userId);
-        if (cashRegister) {
-          await this.repository.updateCashRegisterSales(cashRegister.id, normalizedPayments, order.totalAmount);
-        }
-      }
-    } catch (error) {
-      console.error(
-        `Checkout order ${order.id} completed but a post-sale update failed (client balance / cash register). Needs manual reconciliation.`,
-        error
-      );
-    }
 
     return { status: 201, body: order };
   }

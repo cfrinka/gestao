@@ -1,13 +1,9 @@
-import { Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { FinancialMovementPaymentMethod, Order, OrderItem, PaymentMethod, Product } from "@/lib/db-types";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
-
-interface CheckoutItem {
-  productId: string;
-  size: string;
-  quantity: number;
-}
+import { roundMoney } from "@/lib/money";
+import type { ProcessCheckoutInput } from "@/domains/checkout/repository";
 
 function toCompetencyMonth(date: Date): string {
   const year = date.getFullYear();
@@ -22,18 +18,14 @@ function mapOrderPaymentMethodToFinancial(method: PaymentMethod["method"]): Fina
   return "debit";
 }
 
-export async function processCheckout(
-  items: CheckoutItem[],
-  payments: PaymentMethod[] = [],
-  discount: number = 0,
-  clientId?: string,
-  clientName?: string,
-  isPaidLater: boolean = false,
-  createdById: string = "system",
-  createdByRole: string = "ADMIN",
-  createdByName: string = "system"
-): Promise<Order> {
-  if (createdByRole !== "ADMIN" && createdByRole !== "CASHIER") {
+function paymentAmount(payments: PaymentMethod[], method: PaymentMethod["method"]): number {
+  return payments.find((p) => p.method === method)?.amount || 0;
+}
+
+export async function processCheckout(input: ProcessCheckoutInput): Promise<Order> {
+  const { items, payments, change, discount, expectedTotal, clientId, clientName, payLater, cashRegisterId } = input;
+
+  if (input.createdByRole !== "ADMIN" && input.createdByRole !== "CASHIER") {
     throw new HttpError(403, "Seu perfil não pode registrar vendas");
   }
 
@@ -48,10 +40,13 @@ export async function processCheckout(
   const orderRef = adminDb.collection("orders").doc();
   const saleMovementRef = adminDb.collection("financialMovements").doc();
   const cogsMovementRef = adminDb.collection("financialMovements").doc();
+  const registerRef = adminDb.collection("cashRegisters").doc(cashRegisterId);
+  const clientRef = payLater && clientId ? adminDb.collection("clients").doc(clientId) : null;
 
   // Stock is validated and decremented inside this transaction (read-then-write, atomically)
   // so concurrent checkouts for the same product/size can't both pass the stock check and
-  // both decrement — Firestore retries the transaction on contention instead.
+  // both decrement — Firestore retries the transaction on contention instead. The register
+  // totals and the fiado balance are written here too, so a sale can never exist without them.
   const result = await adminDb.runTransaction(async (tx) => {
     const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(competencyMonth));
     if (closureSnap.exists) {
@@ -61,6 +56,17 @@ export async function processCheckout(
     const productIds = Array.from(new Set(items.map((item) => item.productId)));
     const productRefs = productIds.map((id) => adminDb.collection("products").doc(id));
     const productSnaps = await Promise.all(productRefs.map((ref) => tx.get(ref)));
+    const registerSnap = await tx.get(registerRef);
+    const clientSnap = clientRef ? await tx.get(clientRef) : null;
+
+    const register = registerSnap.data() as { status?: string; userId?: string } | undefined;
+    if (!registerSnap.exists || register?.status !== "OPEN" || register?.userId !== input.createdById) {
+      throw new HttpError(409, "O caixa não está mais aberto. Abra o caixa e refaça a venda.");
+    }
+
+    if (clientRef && !clientSnap?.exists) {
+      throw new HttpError(404, "Cliente não encontrado");
+    }
 
     const productsById = new Map<string, Product>();
     for (const snap of productSnaps) {
@@ -102,11 +108,11 @@ export async function processCheckout(
         product.stock -= quantity;
       }
 
-      const unitCost = product.costPrice;
-      const unitPrice = product.salePrice;
-      const totalCost = unitCost * quantity;
-      const totalRevenue = unitPrice * quantity;
-      const profit = totalRevenue - totalCost;
+      const unitCost = Number(product.costPrice || 0);
+      const unitPrice = Number(product.salePrice || 0);
+      const totalCost = roundMoney(unitCost * quantity);
+      const totalRevenue = roundMoney(unitPrice * quantity);
+      const profit = roundMoney(totalRevenue - totalCost);
 
       subtotal += totalRevenue;
       cogsTotal += totalCost;
@@ -127,7 +133,15 @@ export async function processCheckout(
       });
     }
 
-    const totalAmount = Math.max(0, subtotal - discount);
+    subtotal = roundMoney(subtotal);
+    cogsTotal = roundMoney(cogsTotal);
+    const totalAmount = roundMoney(Math.max(0, subtotal - discount));
+
+    // Payments were settled against the total the POS showed. If a price changed in between,
+    // the cashier must see the new total before charging it.
+    if (Math.abs(totalAmount - expectedTotal) > 0.01) {
+      throw new HttpError(409, "O preço de algum produto mudou. Atualize a tela e refaça a venda.");
+    }
 
     tx.set(orderRef, {
       subtotal,
@@ -135,12 +149,15 @@ export async function processCheckout(
       totalAmount,
       cogsTotal,
       payments,
-      createdById,
-      createdByName,
+      ...(change > 0 ? { change } : {}),
+      cashRegisterId,
+      isCancelled: false,
+      createdById: input.createdById,
+      createdByName: input.createdByName,
       ...(clientId && { clientId }),
       ...(clientName && { clientName }),
-      ...(isPaidLater && {
-        isPaidLater,
+      ...(payLater && {
+        isPaidLater: true,
         amountPaid: 0,
         remainingAmount: totalAmount,
         paymentHistory: [],
@@ -155,14 +172,14 @@ export async function processCheckout(
       relatedEntity: { kind: "order", id: orderRef.id },
       occurredAt: nowTs,
       competencyMonth,
-      createdBy: createdById,
+      createdBy: input.createdById,
       metadata: {
         subtotal,
         discount,
-        isPaidLater,
-        payments: (payments || []).map((payment) => ({
+        isPaidLater: payLater,
+        payments: payments.map((payment) => ({
           method: mapOrderPaymentMethodToFinancial(payment.method),
-          amount: Number(payment.amount || 0),
+          amount: payment.amount,
         })),
       },
     });
@@ -174,7 +191,7 @@ export async function processCheckout(
       relatedEntity: { kind: "order", id: orderRef.id },
       occurredAt: nowTs,
       competencyMonth,
-      createdBy: createdById,
+      createdBy: input.createdById,
     });
 
     for (const itemData of orderItems) {
@@ -199,6 +216,24 @@ export async function processCheckout(
       }
     }
 
+    if (payLater) {
+      if (clientRef) {
+        tx.update(clientRef, {
+          balance: FieldValue.increment(totalAmount),
+          updatedAt: nowTs,
+        });
+      }
+    } else {
+      tx.update(registerRef, {
+        totalSales: FieldValue.increment(totalAmount),
+        totalCash: FieldValue.increment(paymentAmount(payments, "DINHEIRO")),
+        totalDebit: FieldValue.increment(paymentAmount(payments, "DEBITO")),
+        totalCredit: FieldValue.increment(paymentAmount(payments, "CREDITO")),
+        totalPix: FieldValue.increment(paymentAmount(payments, "PIX")),
+        salesCount: FieldValue.increment(1),
+      });
+    }
+
     return { subtotal, cogsTotal, totalAmount, orderItems };
   });
 
@@ -209,6 +244,14 @@ export async function processCheckout(
     totalAmount: result.totalAmount,
     cogsTotal: result.cogsTotal,
     payments,
+    ...(change > 0 ? { change } : {}),
+    cashRegisterId,
+    isCancelled: false,
+    ...(clientId ? { clientId } : {}),
+    ...(clientName ? { clientName } : {}),
+    ...(payLater ? { isPaidLater: true, amountPaid: 0, remainingAmount: result.totalAmount } : {}),
+    createdById: input.createdById,
+    createdByName: input.createdByName,
     createdAt: now,
     items: result.orderItems.map((item, index) => ({ ...item, id: `item-${index}`, orderId: orderRef.id })),
   };

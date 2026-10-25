@@ -2,6 +2,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { FiadoPayment, Order, PaymentMethod } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { isZeroMoney, roundMoney } from "@/lib/money";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 
 function toCompetencyMonth(date: Date): string {
@@ -52,11 +53,12 @@ interface FiadoPaymentResult {
 
 export async function applyCascadingFiadoPayment(
   clientId: string,
-  paymentAmount: number,
+  rawPaymentAmount: number,
   method: PaymentMethod["method"],
   receivedByUserId?: string,
   receivedByUserName?: string
 ): Promise<FiadoPaymentResult> {
+  const paymentAmount = roundMoney(rawPaymentAmount);
   if (!paymentAmount || paymentAmount <= 0) {
     throw new HttpError(400, "O valor do pagamento deve ser maior que zero");
   }
@@ -124,17 +126,19 @@ export async function applyCascadingFiadoPayment(
     for (const { doc: orderDoc, data: order } of sortedOrderDocs) {
       if (remainingToApply <= 0) break;
 
-      const currentRemaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
+      const currentRemaining = roundMoney(
+        typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount
+      );
       if (currentRemaining <= 0) continue;
 
-      const appliedToOrder = Math.min(remainingToApply, currentRemaining);
-      const newRemaining = currentRemaining - appliedToOrder;
-      const isFullyPaid = newRemaining <= 0;
+      const appliedToOrder = roundMoney(Math.min(remainingToApply, currentRemaining));
+      const newRemaining = roundMoney(currentRemaining - appliedToOrder);
+      const isFullyPaid = isZeroMoney(newRemaining);
       const orderDate = order.createdAt instanceof Date ? order.createdAt : new Date();
       const orderDateStr = orderDate.toLocaleDateString("pt-BR");
 
       const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
-      const newPaid = currentPaid + appliedToOrder;
+      const newPaid = roundMoney(currentPaid + appliedToOrder);
 
       const payment: Omit<FiadoPayment, "createdAt"> & { createdAt: Timestamp } = {
         id: `pay_${Date.now()}_${orderDoc.id}`,
@@ -163,21 +167,21 @@ export async function applyCascadingFiadoPayment(
         isFullyPaid,
       });
 
-      totalClientBalanceReduction += appliedToOrder;
-      remainingToApply -= appliedToOrder;
-      result.totalApplied += appliedToOrder;
+      totalClientBalanceReduction = roundMoney(totalClientBalanceReduction + appliedToOrder);
+      remainingToApply = roundMoney(remainingToApply - appliedToOrder);
+      result.totalApplied = roundMoney(result.totalApplied + appliedToOrder);
     }
 
     // Any amount left over after paying off every pending order is an overpayment: the
     // cash was actually received, so it must land in the register, and the client should
     // be credited for it (a negative balance = store credit toward a future purchase)
     // instead of the excess silently vanishing from both the drawer and the client record.
-    const overpayment = Math.max(0, remainingToApply);
+    const overpayment = roundMoney(Math.max(0, remainingToApply));
     result.overpayment = overpayment;
 
     // ===== ALL WRITES AFTER ALL READS =====
     tx.update(clientRef, {
-      balance: FieldValue.increment(-(totalClientBalanceReduction + overpayment)),
+      balance: FieldValue.increment(-roundMoney(totalClientBalanceReduction + overpayment)),
       updatedAt: nowTs,
     });
 

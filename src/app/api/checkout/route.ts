@@ -7,6 +7,8 @@ import { HttpError, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-erro
 import { getProduct } from "@/domains/products/products-db";
 import { getStoreSettings } from "@/domains/settings/settings-db";
 import { calculateAutoDiscount } from "@/domains/checkout/discount-calculator";
+import { normalizeCartItems, normalizePayments } from "@/domains/checkout/cart-validation";
+import { roundMoney } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -95,34 +97,34 @@ export async function POST(request: NextRequest) {
 
       // Calculate subtotal (and per-item pricing for discount validation) from real product data.
       // Never trust client-supplied prices, subtotal, or promo discount values.
-      const items = Array.isArray(body.items) ? body.items : [];
+      const items = normalizeCartItems(body.items);
+      const payLater = Boolean(body.payLater);
+      const payments = payLater ? [] : normalizePayments(body.payments);
       const lineItems = await Promise.all(
         items.map(async (item) => {
           const product = await getProduct(item.productId).catch(() => null);
           const salePrice = Number(product?.salePrice || 0);
-          const quantity = Number(item.quantity || 0);
-          return { productId: item.productId, quantity, salePrice };
+          return { productId: item.productId, quantity: item.quantity, salePrice };
         })
       );
-      const subtotal = lineItems.reduce((sum, item) => sum + item.salePrice * item.quantity, 0);
+      const subtotal = roundMoney(lineItems.reduce((sum, item) => sum + roundMoney(item.salePrice * item.quantity), 0));
 
       const storeSettings = await getStoreSettings();
-      const normalizedPayments = Array.isArray(body.payments) ? body.payments : [];
-      const promoDiscount = calculateAutoDiscount(lineItems, subtotal, storeSettings.discounts, normalizedPayments);
+      const promoDiscount = calculateAutoDiscount(lineItems, subtotal, storeSettings.discounts, payments);
 
       const service = new CheckoutService(new FirestoreCheckoutRepository());
       const result = await service.execute({
         userId: user.uid,
         userRole: user.role,
         userName: user.name,
-        items: body.items,
-        payments: body.payments,
+        items,
+        payments,
         discount: body.discount,
         promoDiscount,
         clientId: body.clientId,
-        payLater: body.payLater,
-        idempotencyKey: body.idempotencyKey,
-        subtotal: subtotal,
+        payLater,
+        idempotencyKey: body.idempotencyKey || "",
+        subtotal,
       });
 
       return NextResponse.json(result.body, { status: result.status });

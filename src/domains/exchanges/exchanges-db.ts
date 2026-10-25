@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { roundMoney } from "@/lib/money";
 import type {
   ExchangeItem,
   ExchangeItemInput,
@@ -35,7 +36,7 @@ export async function createExchange(input: {
   const providedDocumentNumber = (input.documentNumber || "").trim();
   const autoDocumentNumber = `AJUSTE-${Date.now()}`;
   const documentNumber = providedDocumentNumber || autoDocumentNumber;
-  const requestedDiscountAmount = Number(input.discountAmount || 0);
+  const requestedDiscountAmount = roundMoney(Number(input.discountAmount || 0));
 
   if (!Number.isFinite(requestedDiscountAmount) || requestedDiscountAmount < 0) {
     throw new HttpError(400, "Desconto inválido na troca");
@@ -137,7 +138,7 @@ export async function createExchange(input: {
       product.stock = currentStock + (item.direction === "IN" ? quantity : -quantity);
 
       const unitPrice = Number(product.salePrice || 0);
-      const totalValue = unitPrice * quantity;
+      const totalValue = roundMoney(unitPrice * quantity);
 
       normalizedItems.push({
         productId: product.id,
@@ -170,10 +171,12 @@ export async function createExchange(input: {
       });
     }
 
-    const grossDifference = totalOutValue - totalInValue;
-    const discountAmount = Math.min(requestedDiscountAmount, Math.max(0, grossDifference));
-    const difference = grossDifference - discountAmount;
-    const cashInAmount = Math.max(0, difference);
+    totalInValue = roundMoney(totalInValue);
+    totalOutValue = roundMoney(totalOutValue);
+    const grossDifference = roundMoney(totalOutValue - totalInValue);
+    const discountAmount = roundMoney(Math.min(requestedDiscountAmount, Math.max(0, grossDifference)));
+    const difference = roundMoney(grossDifference - discountAmount);
+    const cashInAmount = roundMoney(Math.max(0, difference));
     const paymentMethod = cashInAmount > 0 ? input.paymentMethod : undefined;
 
     if (cashInAmount > 0 && !paymentMethod) {

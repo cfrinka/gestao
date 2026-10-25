@@ -128,6 +128,10 @@ export interface Order {
   cancellationReason?: string;
   createdById?: string;
   createdByName?: string;
+  /** Register that took this sale (set on sales made after the register link was introduced). */
+  cashRegisterId?: string;
+  /** Cash handed back to the customer; `payments` already holds only what the store kept. */
+  change?: number;
   createdAt: Date;
   items?: OrderItem[];
 }

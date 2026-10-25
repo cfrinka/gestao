@@ -53,7 +53,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
-      const { action, orderId, orderItemId, amount, method, adminPassword, reason } = body;
+      const { action, orderId, orderItemId, amount, method, adminPassword, reason, idempotencyKey } = body;
       const service = new ClientsService(new FirestoreClientsRepository());
 
       // Debt correction and order-item removal are administrative overrides, not payment
@@ -75,6 +75,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           method,
           receivedByUserId: user.uid,
           receivedByUserName: user.name,
+          idempotencyKey,
         });
         return NextResponse.json(result);
       }
@@ -87,6 +88,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           method,
           receivedByUserId: user.uid,
           receivedByUserName: user.name,
+          idempotencyKey,
         });
         return NextResponse.json(result);
       }

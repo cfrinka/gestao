@@ -13,6 +13,14 @@ import {
 import type { ClientsRepository } from "@/domains/clients/repository";
 import type { ClientPaymentMethod } from "@/domains/clients/types";
 import type { Client, Order } from "@/lib/db-types";
+import {
+  markIdempotencyCompleted,
+  markIdempotencyFailed,
+  reserveIdempotency,
+  type IdempotencyReservation,
+} from "@/domains/shared/idempotency";
+
+const FIADO_PAYMENT_SCOPE = "fiado-payment";
 
 export class FirestoreClientsRepository implements ClientsRepository {
   async listClients(): Promise<Client[]> {
@@ -69,5 +77,17 @@ export class FirestoreClientsRepository implements ClientsRepository {
 
   async removeFiadoOrderItem(clientId: string, orderId: string, orderItemId: string): Promise<void> {
     return removeFiadoOrderItem(clientId, orderId, orderItemId);
+  }
+
+  async reserveIdempotency(input: { ownerId: string; idempotencyKey: string; requestHash: string }): Promise<IdempotencyReservation> {
+    return reserveIdempotency(FIADO_PAYMENT_SCOPE, input.ownerId, input.idempotencyKey, input.requestHash);
+  }
+
+  async markIdempotencyCompleted(input: { ownerId: string; idempotencyKey: string; response: unknown }): Promise<void> {
+    await markIdempotencyCompleted(FIADO_PAYMENT_SCOPE, input.ownerId, input.idempotencyKey, input.response);
+  }
+
+  async markIdempotencyFailed(input: { ownerId: string; idempotencyKey: string; errorMessage: string }): Promise<void> {
+    await markIdempotencyFailed(FIADO_PAYMENT_SCOPE, input.ownerId, input.idempotencyKey, input.errorMessage);
   }
 }

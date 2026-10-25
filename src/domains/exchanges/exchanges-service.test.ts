@@ -123,11 +123,11 @@ describe("ExchangesService", () => {
     await expect(service.create(baseCommand({ userRole: "GUEST" }))).rejects.toThrow(HttpError);
   });
 
-  it("caps a cashier's discount to 10% of the estimated gross difference without authorization", async () => {
+  it("refuses a cashier's discount above 10% of the estimated difference without authorization", async () => {
     const repo = new FakeExchangesRepository();
     const service = new ExchangesService(repo);
-    await service.create(baseCommand({ discountAmount: 50 }));
-    expect(repo.createExchangeMock).toHaveBeenCalledWith(expect.objectContaining({ discountAmount: 9 }));
+    await expect(service.create(baseCommand({ discountAmount: 50 }))).rejects.toMatchObject({ statusCode: 403 });
+    expect(repo.createExchangeMock).not.toHaveBeenCalled();
   });
 
   it("honors the full discount for a cashier with a valid authorization grant", async () => {

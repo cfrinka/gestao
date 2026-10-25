@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { cn, formatCurrency } from "@/lib/utils";
+import { roundMoney } from "@/lib/money";
 import { Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, ArrowDownCircle, ArrowUpCircle, Check, ScanLine, BadgePercent, AlertTriangle, ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import jsPDF from "jspdf";
@@ -192,6 +193,17 @@ export default function POSPage() {
 
   // Cash register state
   const pendingCheckoutAction = useRef<"checkout" | "payLater" | null>(null);
+  // One idempotency key per attempted sale: if the connection drops after the server saved the
+  // sale, pressing Finalizar again with the same cart resends the same key and gets the saved
+  // sale back instead of creating a second one. Any change to the sale gets a fresh key.
+  const checkoutAttempt = useRef<{ key: string; signature: string } | null>(null);
+  const idempotencyKeyFor = (payload: unknown) => {
+    const signature = JSON.stringify(payload);
+    if (checkoutAttempt.current?.signature !== signature) {
+      checkoutAttempt.current = { key: crypto.randomUUID(), signature };
+    }
+    return checkoutAttempt.current.key;
+  };
   const [cashRegister, setCashRegister] = useState<CashRegister | null>(null);
   const [showOpenRegisterModal, setShowOpenRegisterModal] = useState(false);
   const [showCloseRegisterModal, setShowCloseRegisterModal] = useState(false);
@@ -628,10 +640,10 @@ export default function POSPage() {
     setCart([]);
   };
 
-  const subtotal = cart.reduce(
+  const subtotal = roundMoney(cart.reduce(
     (sum, item) => sum + item.product.salePrice * item.quantity,
     0
-  );
+  ));
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -684,7 +696,7 @@ export default function POSPage() {
       }
     }
 
-    return { autoDiscount, details };
+    return { autoDiscount: roundMoney(autoDiscount), details };
   };
 
   // PIX discount is calculated separately as it depends on payment method
@@ -692,16 +704,16 @@ export default function POSPage() {
     if (!storeSettings.discounts.pixDiscountEnabled) return 0;
     const pixPayment = payments.find(p => p.method === "PIX");
     if (pixPayment && pixPayment.amount > 0) {
-      return (pixPayment.amount * storeSettings.discounts.pixDiscountPercent) / 100;
+      return roundMoney((pixPayment.amount * storeSettings.discounts.pixDiscountPercent) / 100);
     }
     return 0;
   };
 
   const { autoDiscount, details: autoDiscountDetails } = calculateAutoDiscounts();
   const pixDiscount = calculatePixDiscount();
-  const totalAutoDiscount = autoDiscount + pixDiscount;
-  const totalDiscount = totalAutoDiscount + discount; // manual discount added on top
-  const total = Math.max(0, subtotal - totalDiscount);
+  const totalAutoDiscount = roundMoney(autoDiscount + pixDiscount);
+  const totalDiscount = roundMoney(totalAutoDiscount + discount); // manual discount added on top
+  const total = roundMoney(Math.max(0, subtotal - totalDiscount));
 
   const canApplyDiscount = userData?.role === "ADMIN" || userData?.role === "CASHIER";
   const canUsePayLater = userData?.role === "ADMIN" || userData?.role === "CASHIER";
@@ -721,7 +733,8 @@ export default function POSPage() {
     setShowPaymentModal(true);
   };
 
-  const handleDiscountChange = (value: number) => {
+  const handleDiscountChange = (rawValue: number) => {
+    const value = roundMoney(rawValue);
     const isCashier = userData?.role === "CASHIER";
 
     if (isCashier && value > maxCashierDiscount && !adminAuthorized) {
@@ -800,8 +813,8 @@ export default function POSPage() {
     ));
   };
 
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-  const remaining = total - totalPaid;
+  const totalPaid = roundMoney(payments.reduce((sum, p) => sum + p.amount, 0));
+  const remaining = roundMoney(total - totalPaid);
   const effectiveManualDiscount = canApplyDiscount ? discount : 0;
 
   const printReceipt = (
@@ -813,9 +826,10 @@ export default function POSPage() {
       subtotal: number;
       totalAmount: number;
       discount: number;
+      change?: number;
     }
   ) => {
-    const { isTest = false, items, payments, subtotal, totalAmount, discount } = options;
+    const { isTest = false, items, payments, subtotal, totalAmount, discount, change = 0 } = options;
     const receiptWindow = window.open('', '_blank', 'width=420,height=700');
     if (!receiptWindow) {
       toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
@@ -845,9 +859,10 @@ export default function POSPage() {
       })
       .join("");
 
-    const paymentsRows = payments
-      .map((payment) => `<tr><td>${paymentLabel[payment.method] || payment.method}</td><td class="right">${formatCurrency(payment.amount)}</td></tr>`)
-      .join("");
+    const paymentsRows =
+      payments
+        .map((payment) => `<tr><td>${paymentLabel[payment.method] || payment.method}</td><td class="right">${formatCurrency(payment.amount)}</td></tr>`)
+        .join("") + (change > 0 ? `<tr><td>Troco</td><td class="right">${formatCurrency(change)}</td></tr>` : "");
 
     const storeName = escapeHtml(storeSettings.storeName.toUpperCase());
     const storeAddress = escapeHtml(storeSettings.address);
@@ -1034,21 +1049,24 @@ export default function POSPage() {
     }
 
     setProcessing(true);
-    const idempotencyKey = crypto.randomUUID();
+    const payLaterPayload = {
+      items: cart.map((item) => ({
+        productId: item.product.id,
+        size: item.size,
+        quantity: item.quantity,
+      })),
+      discount: effectiveManualDiscount,
+      promoDiscount: totalAutoDiscount,
+      clientId: selectedClientId,
+      payLater: true,
+    };
 
     try {
       const order = await apiPost("/api/checkout", {
-        items: cart.map((item) => ({
-          productId: item.product.id,
-          size: item.size,
-          quantity: item.quantity,
-        })),
-        discount: effectiveManualDiscount,
-        promoDiscount: totalAutoDiscount,
-        clientId: selectedClientId,
-        payLater: true,
-        idempotencyKey,
+        ...payLaterPayload,
+        idempotencyKey: idempotencyKeyFor(payLaterPayload),
       });
+      checkoutAttempt.current = null;
 
       const selectedClient = clients.find(c => c.id === selectedClientId);
 
@@ -1102,27 +1120,33 @@ export default function POSPage() {
 
     setProcessing(true);
     const paymentsSnapshot = payments.filter(p => p.amount > 0);
-    const idempotencyKey = crypto.randomUUID();
+    const salePayload = {
+      items: cart.map((item) => ({
+        productId: item.product.id,
+        size: item.size,
+        quantity: item.quantity,
+      })),
+      payments: paymentsSnapshot,
+      discount: effectiveManualDiscount,
+      promoDiscount: totalAutoDiscount,
+    };
 
     try {
       const order = await apiPost("/api/checkout", {
-        items: cart.map((item) => ({
-          productId: item.product.id,
-          size: item.size,
-          quantity: item.quantity,
-        })),
-        payments: paymentsSnapshot,
-        discount: effectiveManualDiscount,
-        promoDiscount: totalAutoDiscount,
-        idempotencyKey,
+        ...salePayload,
+        idempotencyKey: idempotencyKeyFor(salePayload),
       });
+      checkoutAttempt.current = null;
 
+      // The receipt lists what the customer handed over; the server kept only the sale total
+      // in cash and returned the difference as change.
       printReceipt(order.id, {
         items: Array.isArray(order.items) ? order.items : [],
         payments: paymentsSnapshot,
         subtotal: order.subtotal,
         totalAmount: order.totalAmount,
         discount: order.discount,
+        change: Number(order.change || 0),
       });
 
       toast({
@@ -1746,7 +1770,7 @@ export default function POSPage() {
                       <option value="">Selecione o cliente…</option>
                       {clients.map((client) => (
                         <option key={client.id} value={client.id}>
-                          {client.name} {client.balance > 0 ? `(deve ${formatCurrency(client.balance)})` : ""}
+                          {client.name} {client.balance > 0.009 ? `(deve ${formatCurrency(client.balance)})` : ""}
                         </option>
                       ))}
                     </select>
@@ -1785,7 +1809,16 @@ export default function POSPage() {
       </Dialog>
 
       {/* Admin Password Verification Modal */}
-      <Dialog open={showAdminPasswordModal} onOpenChange={setShowAdminPasswordModal}>
+      <Dialog
+        open={showAdminPasswordModal}
+        onOpenChange={(open) => {
+          setShowAdminPasswordModal(open);
+          if (!open && !adminAuthorized) {
+            setAdminPassword("");
+            setDiscount(0);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Autorização do administrador</DialogTitle>
