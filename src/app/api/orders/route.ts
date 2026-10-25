@@ -2,37 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { OrdersService } from "@/domains/orders/orders-service";
 import { FirestoreOrdersRepository } from "@/domains/orders/firestore-orders-repository";
+import { parseDateParam } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
-
-function parseDateFilter(value: string | null, boundary: "start" | "end"): Date | undefined {
-  if (!value) return undefined;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const isoValue = boundary === "start" ? `${value}T00:00:00.000` : `${value}T23:59:59.999`;
-    const parsed = new Date(isoValue);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return undefined;
-
-  if (boundary === "start") {
-    parsed.setHours(0, 0, 0, 0);
-  } else {
-    parsed.setHours(23, 59, 59, 999);
-  }
-
-  return parsed;
-}
 
 export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest }) => {
       const { searchParams } = new URL(authorizedRequest.url);
-      const startDate = parseDateFilter(searchParams.get("startDate"), "start");
-      const endDate = parseDateFilter(searchParams.get("endDate"), "end");
+      const startDate = parseDateParam(searchParams.get("startDate"), "start");
+      const endDate = parseDateParam(searchParams.get("endDate"), "end");
 
       const service = new OrdersService(new FirestoreOrdersRepository());
       const orders = await service.list({ startDate, endDate });

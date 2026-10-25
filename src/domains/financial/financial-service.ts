@@ -2,15 +2,10 @@ import { HttpError } from "@/lib/api/http-errors";
 import { FinancialMonthAlreadyClosedError } from "@/domains/financial/financial-db";
 import type { FinancialRepository } from "@/domains/financial/repository";
 import type { FinancialClosureResult, HealthCheckResult } from "@/domains/financial/types";
+import { toCompetencyMonth } from "@/lib/dates";
 
 function isValidCompetencyMonth(value: string): boolean {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
-}
-
-function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
 }
 
 export class FinancialService {

@@ -3,6 +3,7 @@ import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { ExchangesService } from "@/domains/exchanges/exchanges-service";
 import { FirestoreExchangesRepository } from "@/domains/exchanges/firestore-exchanges-repository";
 import { addExchangeDifferenceToCashRegisterSales } from "@/domains/exchanges/exchanges-db";
+import { parseDateParam } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,8 @@ export async function GET(request: NextRequest) {
       const startDate = searchParams.get("startDate");
       const endDate = searchParams.get("endDate");
 
-      const parsedStartDate = startDate ? new Date(startDate) : undefined;
-      const parsedEndDate = endDate ? new Date(endDate) : undefined;
+      const parsedStartDate = parseDateParam(startDate, "start");
+      const parsedEndDate = parseDateParam(endDate, "end");
 
       const hasValidRange =
         parsedStartDate instanceof Date &&

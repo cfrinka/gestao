@@ -11,43 +11,23 @@ import type {
   RunHealthCheckCommand,
 } from "@/domains/financial/types";
 import { closedMonthError } from "@/lib/api/http-errors";
+import { addMonthsISO, currentMonthISO, storeMonthRange, toCompetencyMonth } from "@/lib/dates";
 
-export function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
+export { toCompetencyMonth };
 
 function getMonthDateRange(month: string): { start: Date; end: Date } {
-  const [yearRaw, monthRaw] = month.split("-");
-  const year = Number(yearRaw);
-  const monthIndex = Number(monthRaw) - 1;
-
-  const start = new Date(year, monthIndex, 1, 0, 0, 0, 0);
-  const end = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
-
-  return { start, end };
+  const range = storeMonthRange(month);
+  if (!range) throw new Error(`Invalid competency month ${month}`);
+  return range;
 }
 
 function previousMonth(month: string): string {
-  const [yearRaw, monthRaw] = month.split("-");
-  const dt = new Date(Number(yearRaw), Number(monthRaw) - 1, 1);
-  dt.setMonth(dt.getMonth() - 1);
-  return toCompetencyMonth(dt);
+  return addMonthsISO(month, -1);
 }
 
 function listRecentMonths(lastN: number): string[] {
-  const months: string[] = [];
-  const cursor = new Date();
-  cursor.setDate(1);
-
-  for (let i = 0; i < lastN; i += 1) {
-    const target = new Date(cursor);
-    target.setMonth(target.getMonth() - i);
-    months.push(toCompetencyMonth(target));
-  }
-
-  return months;
+  const current = currentMonthISO();
+  return Array.from({ length: lastN }, (_, i) => addMonthsISO(current, -i));
 }
 
 export class FinancialMonthAlreadyClosedError extends Error {

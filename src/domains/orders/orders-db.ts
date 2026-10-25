@@ -5,6 +5,7 @@ import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { roundMoney } from "@/lib/money";
 import { normalizePayments } from "@/domains/checkout/cart-validation";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
+import { toCompetencyMonth } from "@/lib/dates";
 
 function normalizePositivePayments(
   payments: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>
@@ -51,12 +52,6 @@ function mapOrderPaymentMethodToFinancial(method: "DINHEIRO" | "DEBITO" | "CREDI
   if (method === "PIX") return "pix";
   if (method === "CREDITO") return "credit";
   return "debit";
-}
-
-function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
 }
 
 export async function cancelOrder(input: {

@@ -23,6 +23,7 @@ import { PriceTag } from "@/components/etiqueta/price-tag";
 import { ProductPhoto } from "@/components/etiqueta/product-photo";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { todayISO } from "@/lib/dates";
 
 interface ProductSize {
   size: string;
@@ -159,7 +160,7 @@ export default function InventoryPage() {
       },
     });
 
-    doc.save(`inventario-${new Date().toISOString().split("T")[0]}.pdf`);
+    doc.save(`inventario-${todayISO()}.pdf`);
   };
 
   const normalizedSearch = search.trim().toLowerCase();

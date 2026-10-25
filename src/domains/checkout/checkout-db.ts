@@ -4,12 +4,7 @@ import type { FinancialMovementPaymentMethod, Order, OrderItem, PaymentMethod, P
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 import { roundMoney } from "@/lib/money";
 import type { ProcessCheckoutInput } from "@/domains/checkout/repository";
-
-function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
+import { toCompetencyMonth } from "@/lib/dates";
 
 function mapOrderPaymentMethodToFinancial(method: PaymentMethod["method"]): FinancialMovementPaymentMethod {
   if (method === "DINHEIRO") return "cash";

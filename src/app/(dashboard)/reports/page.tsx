@@ -21,6 +21,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
+import { toStoreISODate, todayISO } from "@/lib/dates";
 
 interface StoreReport {
   grossRevenue: number;
@@ -305,7 +306,7 @@ export default function ReportsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `relatorio-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `relatorio-${todayISO()}.csv`;
     a.click();
   };
 
@@ -381,12 +382,12 @@ export default function ReportsPage() {
       ],
     });
 
-    doc.save(`relatorio-${new Date().toISOString().split("T")[0]}.pdf`);
+    doc.save(`relatorio-${todayISO()}.pdf`);
   };
 
   const setPreset = (preset: "today" | "this_week" | "this_month" | "last_30" | "last_90" | "all") => {
     const today = new Date();
-    const iso = (d: Date) => d.toISOString().split("T")[0];
+    const iso = toStoreISODate;
     if (preset === "all") {
       setStartDate("");
       setEndDate("");
@@ -399,9 +400,9 @@ export default function ReportsPage() {
     } else if (preset === "this_month") {
       start.setTime(new Date(today.getFullYear(), today.getMonth(), 1).getTime());
     } else if (preset === "last_30") {
-      start.setDate(today.getDate() - 30);
+      start.setDate(today.getDate() - 29);
     } else if (preset === "last_90") {
-      start.setDate(today.getDate() - 90);
+      start.setDate(today.getDate() - 89);
     }
     setStartDate(iso(start));
     setEndDate(iso(today));

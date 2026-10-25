@@ -23,6 +23,7 @@ import { ProductPhoto } from "@/components/etiqueta/product-photo";
 import { PriceTag } from "@/components/etiqueta/price-tag";
 import { LOW_STOCK, SizeGrid } from "@/components/etiqueta/size-grid";
 import { TagHeader, TagRow } from "@/components/etiqueta/tag-row";
+import { todayISO } from "@/lib/dates";
 
 interface ProductSize {
   size: string;
@@ -322,7 +323,7 @@ export default function ProductsPage() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `products-${new Date().toISOString().split("T")[0]}.json`;
+        link.download = `products-${todayISO()}.json`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

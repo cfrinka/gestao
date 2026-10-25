@@ -1,5 +1,16 @@
 import { adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
+import {
+  addDaysISO,
+  endOfStoreDay,
+  monthsBetween,
+  parseDateParam,
+  startOfStoreDay,
+  storeMonthRange,
+  toCompetencyMonth,
+  toStoreISODate,
+  todayISO,
+} from "@/lib/dates";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -95,41 +106,20 @@ type MonthAggregate = {
   };
 };
 
-function toValidDate(value: string | null): Date | null {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
-}
-
+/**
+ * The selected period as store days: "2026-10-31" as an end date means through 23:59:59 of the
+ * 31st in Brasília. (It used to be parsed as midnight UTC — 21:00 on the 30th — so the last day
+ * fell out of every report and a one-day period was empty.) Default: the last 30 days, today included.
+ */
 function getDateRange(startDateRaw: string | null, endDateRaw: string | null) {
-  const now = new Date();
-  const defaultEnd = new Date(now);
-  const defaultStart = new Date(now);
-  defaultStart.setDate(defaultStart.getDate() - 29);
-
-  const start = toValidDate(startDateRaw) ?? defaultStart;
-  const end = toValidDate(endDateRaw) ?? defaultEnd;
+  const today = todayISO();
+  const start = parseDateParam(startDateRaw, "start") ?? startOfStoreDay(addDaysISO(today, -29))!;
+  const end = parseDateParam(endDateRaw, "end") ?? endOfStoreDay(today)!;
   return { start, end };
 }
 
-function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
-
 function listMonthsBetween(start: Date, end: Date): string[] {
-  const months: string[] = [];
-  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
-  const last = new Date(end.getFullYear(), end.getMonth(), 1);
-
-  while (cursor.getTime() <= last.getTime()) {
-    months.push(toCompetencyMonth(cursor));
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
-
-  return months;
+  return monthsBetween(start, end);
 }
 
 function sum(values: number[]): number {
@@ -137,15 +127,13 @@ function sum(values: number[]): number {
 }
 
 function buildReportCacheKey(role: string, start: Date, end: Date, debugMode: boolean): string {
-  const startKey = start.toISOString().slice(0, 10);
-  const endKey = end.toISOString().slice(0, 10);
-  return `${role}:${startKey}:${endKey}:${debugMode ? "debug" : "standard"}`;
+  // "v2": payloads cached before reports were computed per day must not be served again.
+  return `v2:${role}:${toStoreISODate(start)}:${toStoreISODate(end)}:${debugMode ? "debug" : "standard"}`;
 }
 
 function periodIncludesMonth(start: Date, end: Date, month: string): boolean {
-  const monthStart = new Date(`${month}-01T00:00:00.000Z`);
-  const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0, 23, 59, 59, 999);
-  return monthEnd.getTime() >= start.getTime() && monthStart.getTime() <= end.getTime();
+  const range = getMonthDateRange(month);
+  return range.end.getTime() >= start.getTime() && range.start.getTime() <= end.getTime();
 }
 
 function emptyMonthAggregate(month: string): MonthAggregate {
@@ -183,21 +171,21 @@ function mapLegacyOrderPaymentMethod(method?: string): "cash" | "debit" | "credi
 }
 
 function getMonthDateRange(month: string): { start: Date; end: Date } {
-  const [yearRaw, monthRaw] = month.split("-");
-  const year = Number(yearRaw);
-  const monthIndex = Number(monthRaw) - 1;
-  const start = new Date(year, monthIndex, 1, 0, 0, 0, 0);
-  const end = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
-  return { start, end };
+  const range = storeMonthRange(month);
+  if (!range) throw new Error(`Invalid competency month ${month}`);
+  return range;
 }
 
-async function buildAggregateFromLegacyCollections(month: string): Promise<{
+async function buildAggregateFromLegacyCollections(
+  month: string,
+  range?: { start: Date; end: Date }
+): Promise<{
   aggregate: MonthAggregate;
   diagnostics: LegacyDiagnostics;
 }> {
   const aggregate = emptyMonthAggregate(month);
 
-  const { start, end } = getMonthDateRange(month);
+  const { start, end } = range ?? getMonthDateRange(month);
   const startTs = Timestamp.fromDate(start);
   const endTs = Timestamp.fromDate(end);
 
@@ -425,6 +413,77 @@ async function buildMonthAggregateWithDebug(month: string): Promise<{ aggregate:
   };
 }
 
+function occurredWithin(movement: FinancialMovementDoc, start: Date, end: Date): boolean {
+  const occurredAt = movement.occurredAt?.toDate ? movement.occurredAt.toDate() : null;
+  if (!occurredAt) return false;
+  const time = occurredAt.getTime();
+  return time >= start.getTime() && time <= end.getTime();
+}
+
+/**
+ * One month's share of the selected period. A month the period covers entirely uses the month
+ * aggregate (closure snapshot, live movements or legacy collections, as before). A month the
+ * period only partly covers is summed from that month's movements inside the period, so "20 to
+ * 25/10" reports those six days instead of all of October.
+ */
+async function buildPeriodMonthAggregate(
+  month: string,
+  periodStart: Date,
+  periodEnd: Date
+): Promise<{ aggregate: MonthAggregate; debug: MonthDebugRow }> {
+  const monthRange = getMonthDateRange(month);
+  const coversWholeMonth =
+    periodStart.getTime() <= monthRange.start.getTime() && periodEnd.getTime() >= monthRange.end.getTime();
+  if (coversWholeMonth) {
+    return buildMonthAggregateWithDebug(month);
+  }
+
+  const from = new Date(Math.max(periodStart.getTime(), monthRange.start.getTime()));
+  const to = new Date(Math.min(periodEnd.getTime(), monthRange.end.getTime()));
+
+  const movementsSnapshot = await adminDb.collection("financialMovements").where("competencyMonth", "==", month).get();
+  const monthMovements = movementsSnapshot.docs.map((doc) => doc.data() as FinancialMovementDoc);
+
+  if (monthMovements.length === 0) {
+    const legacy = await buildAggregateFromLegacyCollections(month, { start: from, end: to });
+    return {
+      aggregate: legacy.aggregate,
+      debug: {
+        month,
+        source: "legacy_collections",
+        closureExists: false,
+        movementCount: 0,
+        legacyDiagnostics: legacy.diagnostics,
+        totals: {
+          revenue: legacy.aggregate.revenue,
+          cogs: legacy.aggregate.cogs,
+          expenses: legacy.aggregate.expenses,
+          netResult: legacy.aggregate.netResult,
+        },
+      },
+    };
+  }
+
+  const movements = monthMovements.filter((movement) => occurredWithin(movement, from, to));
+  const aggregate = buildAggregateFromMovements(month, movements);
+  return {
+    aggregate,
+    debug: {
+      month,
+      source: "live_movements",
+      closureExists: false,
+      movementCount: movements.length,
+      legacyDiagnostics: { ordersCount: 0, paidBillsCount: 0, stockPurchasesCount: 0, exchangesCount: 0 },
+      totals: {
+        revenue: aggregate.revenue,
+        cogs: aggregate.cogs,
+        expenses: aggregate.expenses,
+        netResult: aggregate.netResult,
+      },
+    },
+  };
+}
+
 async function buildFiadoAging(endDate: Date) {
   const sales = new Map<string, { occurredAt: Date; amount: number }>();
   const payments = new Map<string, number>();
@@ -568,7 +627,7 @@ export async function generateReports(input: {
   debugMode: boolean;
 }) {
   const { start, end } = getDateRange(input.startDateRaw, input.endDateRaw);
-  const periodDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / DAY_MS) + 1);
+  const periodDays = Math.max(1, Math.round((end.getTime() + 1 - start.getTime()) / DAY_MS));
   const openMonth = toCompetencyMonth(new Date());
   const includesOpenMonth = periodIncludesMonth(start, end, openMonth);
 
@@ -590,15 +649,16 @@ export async function generateReports(input: {
     }
   }
 
-  const prevEnd = new Date(start.getTime() - DAY_MS);
-  const prevStart = new Date(prevEnd.getTime() - (periodDays - 1) * DAY_MS);
+  // The comparison period is the same number of store days right before this one.
+  const prevEnd = new Date(start.getTime() - 1);
+  const prevStart = startOfStoreDay(addDaysISO(toStoreISODate(start), -periodDays))!;
 
   const months = listMonthsBetween(start, end);
   const previousMonths = listMonthsBetween(prevStart, prevEnd);
 
   const [monthResults, previousMonthResults, productData, fiadoAging] = await Promise.all([
-    Promise.all(months.map((month) => buildMonthAggregateWithDebug(month))),
-    Promise.all(previousMonths.map((month) => buildMonthAggregateWithDebug(month))),
+    Promise.all(months.map((month) => buildPeriodMonthAggregate(month, start, end))),
+    Promise.all(previousMonths.map((month) => buildPeriodMonthAggregate(month, prevStart, prevEnd))),
     buildProductMarginRanking(start, end),
     buildFiadoAging(end),
   ]);

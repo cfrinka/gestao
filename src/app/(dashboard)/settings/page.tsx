@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { discountSettingsSchema } from "@/domains/settings/discount-settings-schema";
 import { PageHeader } from "@/components/layout/page-header";
+import { currentMonthISO, todayISO } from "@/lib/dates";
 
 interface Product {
   id: string;
@@ -217,10 +218,10 @@ export default function SettingsPage() {
   const [billKind, setBillKind] = useState<"ONE_TIME" | "FIXED" | "INSTALLMENTS">("ONE_TIME");
   const [billName, setBillName] = useState("");
   const [billAmount, setBillAmount] = useState<string>("");
-  const [billDueDate, setBillDueDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [billDueDate, setBillDueDate] = useState<string>(() => todayISO());
   const [billDayOfMonth, setBillDayOfMonth] = useState<string>("5");
   const [billMonthsAhead, setBillMonthsAhead] = useState<string>("12");
-  const [billFirstDueDate, setBillFirstDueDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [billFirstDueDate, setBillFirstDueDate] = useState<string>(() => todayISO());
   const [billInstallmentsCount, setBillInstallmentsCount] = useState<string>("3");
   const [adminPassword, setAdminPassword] = useState<string>("");
   const [adminPasswordSaving, setAdminPasswordSaving] = useState(false);
@@ -293,7 +294,7 @@ export default function SettingsPage() {
           amount: parsed,
           dayOfMonth: parseInt(billDayOfMonth, 10),
           monthsAhead: parseInt(billMonthsAhead, 10),
-          startMonth: new Date().toISOString().slice(0, 7),
+          startMonth: currentMonthISO(),
         });
       }
 

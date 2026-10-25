@@ -6,6 +6,7 @@ import { isZeroMoney, roundMoney } from "@/lib/money";
 import { verifyAdminPassword } from "@/lib/admin-password";
 import { assertFinancialMonthOpenTx, toCompetencyMonth } from "@/domains/financial/financial-db";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
+import { formatStoreDate } from "@/lib/dates";
 
 function mapOrderPaymentMethodToFinancial(method: PaymentMethod["method"]): "cash" | "pix" | "credit" | "debit" {
   if (method === "DINHEIRO") return "cash";
@@ -302,7 +303,7 @@ export async function applyClientDebtCorrection(
       reason: reason.trim(),
       adminPassword: "***",
       createdAt: nowTs,
-      competencyMonth: now.toISOString().slice(0, 7),
+      competencyMonth: toCompetencyMonth(now),
     });
 
     for (const order of ordersToUpdate) {
@@ -435,7 +436,7 @@ export async function applyFiadoPayment(
 
     const movementRef = adminDb.collection("financialMovements").doc();
     const orderDate = order.createdAt instanceof Date ? order.createdAt : new Date();
-    const orderDateStr = orderDate.toLocaleDateString("pt-BR");
+    const orderDateStr = formatStoreDate(orderDate);
     const description = `Pagamento compra ${orderDateStr} de ${clientName}`;
     tx.set(movementRef, {
       type: "FIADO_PAYMENT",

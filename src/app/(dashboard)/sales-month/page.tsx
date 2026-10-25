@@ -21,6 +21,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
+import { todayISO } from "@/lib/dates";
 
 interface SalesMonthData {
   period: {
@@ -47,12 +48,8 @@ export default function SalesMonthPage() {
   const { toast } = useToast();
   const [data, setData] = useState<SalesMonthData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [startDate, setStartDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
-  const [endDate, setEndDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  const [startDate, setStartDate] = useState(() => todayISO());
+  const [endDate, setEndDate] = useState(() => todayISO());
 
   const fetchData = useCallback(async () => {
     try {

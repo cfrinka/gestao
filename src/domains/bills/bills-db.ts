@@ -3,6 +3,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import { assertFinancialMonthOpenTx, toCompetencyMonth } from "@/domains/financial/financial-db";
 import type { BillPaymentMethod, BillRecord } from "@/domains/bills/types";
 import { HttpError } from "@/lib/api/http-errors";
+import { addMonthsISO, currentMonthISO, storeMonthRange, storeTimeToDate } from "@/lib/dates";
 
 type BillStatus = "PENDING" | "PAID";
 
@@ -21,27 +22,35 @@ interface BillDoc {
   updatedAt: Timestamp;
 }
 
-function parseMonth(month: string | null): { start?: Date; end?: Date } {
-  if (!month) return {};
-  const m = month.trim();
-  if (!/^\d{4}-\d{2}$/.test(m)) return {};
-  const [y, mo] = m.split("-").map((v) => parseInt(v, 10));
-  const start = new Date(y, mo - 1, 1);
-  const end = new Date(y, mo, 1);
-  return { start, end };
+/** A due date is a store calendar day, stored as 00:00 of that day in Brasília. */
+function dueDateOn(month: string, day: number): Date {
+  const [year, monthNumber] = month.split("-").map((v) => parseInt(v, 10));
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return storeTimeToDate(year, monthNumber, Math.min(Math.max(1, day), lastDay));
 }
 
-function addMonths(date: Date, months: number): Date {
-  const d = new Date(date);
-  d.setMonth(d.getMonth() + months);
-  return d;
+function parseDueDate(value: string): { month: string; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (!match) return null;
+  return { month: `${match[1]}-${match[2]}`, day: Number(match[3]) };
 }
 
-function clampDay(year: number, monthIndex: number, day: number): Date {
-  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
-  const d = Math.min(Math.max(1, day), lastDay);
-  return new Date(year, monthIndex, d);
+/**
+ * Bills created before due dates were stored in store time hold midnight UTC of the intended
+ * day (`new Date("2026-11-10")`), which reads as the 9th at 21:00 in Brasília. Those are exactly
+ * midnight UTC, which a store-time date never is, so they are read back as the day they meant.
+ */
+function normalizeLegacyDueDate(dueDate: Date): Date {
+  const isUtcMidnight =
+    dueDate.getUTCHours() === 0 &&
+    dueDate.getUTCMinutes() === 0 &&
+    dueDate.getUTCSeconds() === 0 &&
+    dueDate.getUTCMilliseconds() === 0;
+  if (!isUtcMidnight) return dueDate;
+  return storeTimeToDate(dueDate.getUTCFullYear(), dueDate.getUTCMonth() + 1, dueDate.getUTCDate());
 }
+
+const LEGACY_DUE_DATE_SLACK_MS = 3 * 60 * 60 * 1000;
 
 function mapBillMethodToFinancial(method: BillPaymentMethod) {
   if (method === "DINHEIRO") return "cash";
@@ -60,8 +69,7 @@ export async function createFixedBills(params: {
   const { name, amount, dayOfMonth, startMonth, monthsAhead } = params;
 
   const now = new Date();
-  const monthInfo = parseMonth(startMonth || null);
-  const start = monthInfo.start || new Date(now.getFullYear(), now.getMonth(), 1);
+  const firstMonth = startMonth && /^\d{4}-\d{2}$/.test(startMonth.trim()) ? startMonth.trim() : currentMonthISO();
 
   const groupId = adminDb.collection("bills").doc().id;
 
@@ -69,8 +77,7 @@ export async function createFixedBills(params: {
   const createdIds: string[] = [];
 
   for (let i = 0; i < monthsAhead; i += 1) {
-    const m = addMonths(start, i);
-    const due = clampDay(m.getFullYear(), m.getMonth(), dayOfMonth);
+    const due = dueDateOn(addMonthsISO(firstMonth, i), dayOfMonth);
 
     const ref = adminDb.collection("bills").doc();
     createdIds.push(ref.id);
@@ -99,10 +106,11 @@ export async function createOneTimeBill(params: {
   dueDate: string;
 }): Promise<{ id: string }> {
   const { name, amount, dueDate } = params;
-  const due = new Date(dueDate);
-  if (Number.isNaN(due.getTime())) {
+  const parsed = parseDueDate(String(dueDate || ""));
+  if (!parsed) {
     throw new HttpError(400, "Data de vencimento inválida");
   }
+  const due = dueDateOn(parsed.month, parsed.day);
 
   const now = new Date();
   const ref = adminDb.collection("bills").doc();
@@ -129,8 +137,8 @@ export async function createInstallments(params: {
   intervalMonths: number;
 }): Promise<{ groupId: string; createdIds: string[] }> {
   const { name, amount, firstDueDate, installmentsCount, intervalMonths } = params;
-  const first = new Date(firstDueDate);
-  if (Number.isNaN(first.getTime())) {
+  const first = parseDueDate(String(firstDueDate || ""));
+  if (!first) {
     throw new HttpError(400, "Data do primeiro vencimento inválida");
   }
   if (!Number.isFinite(installmentsCount) || installmentsCount <= 0) {
@@ -144,7 +152,7 @@ export async function createInstallments(params: {
   const createdIds: string[] = [];
 
   for (let i = 0; i < installmentsCount; i += 1) {
-    const due = addMonths(first, i * intervalMonths);
+    const due = dueDateOn(addMonthsISO(first.month, i * intervalMonths), first.day);
     const ref = adminDb.collection("bills").doc();
     createdIds.push(ref.id);
 
@@ -169,16 +177,28 @@ export async function createInstallments(params: {
 }
 
 export async function listBills(filters: { month: string | null; status: string }): Promise<BillRecord[]> {
-  const { start, end } = parseMonth(filters.month);
+  const range = filters.month ? storeMonthRange(filters.month.trim()) : null;
 
   let q: FirebaseFirestore.Query = adminDb.collection("bills");
-  if (start && end) {
-    q = q.where("dueDate", ">=", Timestamp.fromDate(start)).where("dueDate", "<", Timestamp.fromDate(end));
+  if (range) {
+    // Widened by three hours so a legacy midnight-UTC bill due on the 1st is found, then every
+    // due date is normalized and filtered against the real month.
+    q = q
+      .where("dueDate", ">=", Timestamp.fromDate(new Date(range.start.getTime() - LEGACY_DUE_DATE_SLACK_MS)))
+      .where("dueDate", "<=", Timestamp.fromDate(range.end));
   }
   q = q.orderBy("dueDate", "asc");
 
   const snapshot = await q.get();
-  const billsRaw = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as unknown as BillRecord[];
+  const billsRaw = snapshot.docs
+    .map((d) => {
+      const data = d.data();
+      const rawDue = data.dueDate as Timestamp | undefined;
+      const dueDate = rawDue?.toDate ? normalizeLegacyDueDate(rawDue.toDate()) : null;
+      return { id: d.id, ...data, ...(dueDate ? { dueDate: Timestamp.fromDate(dueDate) } : {}), _due: dueDate };
+    })
+    .filter((b) => !range || (b._due && b._due >= range.start && b._due <= range.end))
+    .map(({ _due, ...bill }) => bill) as unknown as BillRecord[];
 
   const status = filters.status.toLowerCase();
   return billsRaw.filter((b) => {

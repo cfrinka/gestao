@@ -20,6 +20,7 @@ import { formatCurrency } from "@/lib/utils";
 import { Check, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
+import { currentMonthISO, todayISO } from "@/lib/dates";
 
 type BillStatus = "PENDING" | "PAID";
 
@@ -58,7 +59,7 @@ export default function BillsPage() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [bills, setBills] = useState<Bill[]>([]);
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(() => currentMonthISO());
   const [status, setStatus] = useState<"all" | "pending" | "paid">("pending");
 
   const [report, setReport] = useState<StoreReport | null>(null);
@@ -68,10 +69,10 @@ export default function BillsPage() {
   const [kind, setKind] = useState<"FIXED" | "ONE_TIME" | "INSTALLMENTS">("ONE_TIME");
   const [name, setName] = useState("");
   const [amount, setAmount] = useState<string>("");
-  const [dueDate, setDueDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [dueDate, setDueDate] = useState<string>(() => todayISO());
   const [dayOfMonth, setDayOfMonth] = useState<string>("5");
   const [monthsAhead, setMonthsAhead] = useState<string>("12");
-  const [firstDueDate, setFirstDueDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [firstDueDate, setFirstDueDate] = useState<string>(() => todayISO());
   const [installmentsCount, setInstallmentsCount] = useState<string>("3");
 
   const fetchBills = useCallback(async () => {

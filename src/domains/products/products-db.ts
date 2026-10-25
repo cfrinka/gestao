@@ -4,12 +4,7 @@ import type { Product, StockPurchaseEntry } from "@/lib/db-types";
 import type { ProductCreateInput, ProductUpdateInput } from "@/domains/products/types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
-
-function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
+import { toCompetencyMonth } from "@/lib/dates";
 
 async function assertFinancialMonthOpen(date: Date): Promise<void> {
   const month = toCompetencyMonth(date);

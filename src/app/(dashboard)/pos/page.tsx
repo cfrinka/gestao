@@ -26,6 +26,7 @@ import { PageHeader, StateTag } from "@/components/layout/page-header";
 import { SizeGrid } from "@/components/etiqueta/size-grid";
 import { PriceTag } from "@/components/etiqueta/price-tag";
 import { ProductPhoto } from "@/components/etiqueta/product-photo";
+import { todayISO } from "@/lib/dates";
 
 interface ProductSize {
   size: string;
@@ -557,7 +558,7 @@ export default function POSPage() {
       });
     }
 
-    doc.save(`fechamento-caixa-${new Date().toISOString().split("T")[0]}.pdf`);
+    doc.save(`fechamento-caixa-${todayISO()}.pdf`);
   };
 
   const filteredProducts = products.filter((p) => {

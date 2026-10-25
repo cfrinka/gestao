@@ -5,6 +5,7 @@ import { HttpError } from "@/lib/api/http-errors";
 import { roundMoney } from "@/lib/money";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { createFinancialAuditLog } from "@/domains/financial/financial-db";
+import { toCompetencyMonth } from "@/lib/dates";
 
 type CashAdjustmentType = "SUPPLY" | "WITHDRAWAL";
 
@@ -22,12 +23,6 @@ function mapFinancialToOrderPaymentMethod(method?: FinancialMovementPaymentMetho
   if (method === "pix") return "PIX";
   if (method === "credit") return "CREDITO";
   return "DEBITO";
-}
-
-function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
 }
 
 export async function getOpenCashRegister(userId: string): Promise<CashRegister | null> {

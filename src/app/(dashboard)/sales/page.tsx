@@ -29,6 +29,7 @@ import { Eye, Download, Banknote, CreditCard, Smartphone, Printer } from "lucide
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 import { PriceTag } from "@/components/etiqueta/price-tag";
+import { toStoreISODate, todayISO } from "@/lib/dates";
 
 interface OrderItem {
   id: string;
@@ -414,7 +415,7 @@ export default function SalesPage() {
 
   const applyPreset = (preset: "today" | "yesterday" | "this_week" | "this_month" | "last_30" | "last_90" | "all") => {
     const today = new Date();
-    const toISO = (d: Date) => d.toISOString().split("T")[0];
+    const toISO = toStoreISODate;
 
     if (preset === "all") {
       setStartDate("");
@@ -466,7 +467,7 @@ export default function SalesPage() {
     if (preset === "last_30" || preset === "last_90") {
       const days = preset === "last_30" ? 30 : 90;
       const start = new Date(today);
-      start.setDate(today.getDate() - days);
+      start.setDate(today.getDate() - (days - 1));
       const startIso = toISO(start);
       const endIso = toISO(today);
       setStartDate(startIso);
@@ -489,7 +490,7 @@ export default function SalesPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `vendas-${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `vendas-${todayISO()}.csv`;
     a.click();
   };
 

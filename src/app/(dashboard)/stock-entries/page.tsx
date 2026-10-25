@@ -20,6 +20,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
+import { currentMonthISO, todayISO } from "@/lib/dates";
 
 interface StockEntry {
   id: string;
@@ -55,10 +56,8 @@ export default function StockEntriesPage() {
   const { toast } = useToast();
   const [data, setData] = useState<StockEntriesData | null>(null);
   const [loading, setLoading] = useState(true);
-  const today = new Date();
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const [startDate, setStartDate] = useState(firstOfMonth.toISOString().split("T")[0]);
-  const [endDate, setEndDate] = useState(today.toISOString().split("T")[0]);
+  const [startDate, setStartDate] = useState(() => `${currentMonthISO()}-01`);
+  const [endDate, setEndDate] = useState(() => todayISO());
 
   const fetchData = useCallback(async () => {
     try {

@@ -1,14 +1,9 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { SyncResult, UserCommission } from "@/domains/comission/types";
+import { toCompetencyMonth } from "@/lib/dates";
 
 const COMMISSION_RATE = 0.03;
-
-function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
 
 function mapOrderPaymentMethod(method: string): "cash" | "pix" | "credit" | "debit" {
   if (method === "DINHEIRO") return "cash";
@@ -209,7 +204,7 @@ export async function getCommissionReport(targetUserId: string | null): Promise<
     const amount = Number(data?.amount || 0);
     const month = String(data?.competencyMonth || "");
     const createdAt = data?.occurredAt;
-    const effectiveMonth = month || (createdAt ? new Date(createdAt.toDate()).toISOString().slice(0, 7) : "");
+    const effectiveMonth = month || (createdAt ? toCompetencyMonth(createdAt.toDate()) : "");
 
     if (!userId || !effectiveMonth) continue;
 

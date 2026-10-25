@@ -4,12 +4,7 @@ import type { FiadoPayment, Order, PaymentMethod } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { isZeroMoney, roundMoney } from "@/lib/money";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
-
-function toCompetencyMonth(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}`;
-}
+import { formatStoreDate, toCompetencyMonth } from "@/lib/dates";
 
 async function assertFinancialMonthOpen(date: Date): Promise<void> {
   const month = toCompetencyMonth(date);
@@ -135,7 +130,7 @@ export async function applyCascadingFiadoPayment(
       const newRemaining = roundMoney(currentRemaining - appliedToOrder);
       const isFullyPaid = isZeroMoney(newRemaining);
       const orderDate = order.createdAt instanceof Date ? order.createdAt : new Date();
-      const orderDateStr = orderDate.toLocaleDateString("pt-BR");
+      const orderDateStr = formatStoreDate(orderDate);
 
       const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : 0;
       const newPaid = roundMoney(currentPaid + appliedToOrder);
@@ -208,7 +203,7 @@ export async function applyCascadingFiadoPayment(
         paymentMethod: mapOrderPaymentMethodToFinancial(method),
         relatedEntity: { kind: "order", id: allocation.orderId },
         occurredAt: nowTs,
-        competencyMonth: nowTs.toDate().toISOString().slice(0, 7),
+        competencyMonth: toCompetencyMonth(now),
         createdBy: clientId,
         metadata: {
           clientId,

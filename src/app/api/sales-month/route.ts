@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
+import { currentMonthISO, formatStoreDate, formatStoreTime, parseDateParam, storeMonthRange } from "@/lib/dates";
 
 export const dynamic = "force-dynamic";
 
@@ -15,73 +16,38 @@ interface OrderInfo {
   isFiadoPayment?: boolean;
 }
 
-function parseDateFilter(value: string | null, boundary: "start" | "end"): Date | undefined {
-  if (!value) return undefined;
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const isoValue = boundary === "start" ? `${value}T00:00:00.000` : `${value}T23:59:59.999`;
-    const parsed = new Date(isoValue);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return undefined;
-
-  if (boundary === "start") {
-    parsed.setHours(0, 0, 0, 0);
-  } else {
-    parsed.setHours(23, 59, 59, 999);
-  }
-
-  return parsed;
-}
-
 export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest }) => {
       const { searchParams } = new URL(authorizedRequest.url);
-      const startDate = parseDateFilter(searchParams.get("startDate"), "start");
-      const endDate = parseDateFilter(searchParams.get("endDate"), "end");
+      const startDate = parseDateParam(searchParams.get("startDate"), "start");
+      const endDate = parseDateParam(searchParams.get("endDate"), "end");
 
       // Default to current month if no dates provided
-      const now = new Date();
-      const defaultStart = startDate || new Date(now.getFullYear(), now.getMonth(), 1);
-      const defaultEnd = endDate || new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      const currentMonth = storeMonthRange(currentMonthISO())!;
+      const defaultStart = startDate || currentMonth.start;
+      const defaultEnd = endDate || currentMonth.end;
 
       // Get all orders in the period (isCancelled filtered in memory to avoid composite index)
-      let ordersDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
-      try {
-        const ordersSnapshot = await adminDb
-          .collection("orders")
-          .where("createdAt", ">=", Timestamp.fromDate(defaultStart))
-          .where("createdAt", "<=", Timestamp.fromDate(defaultEnd))
-          .orderBy("createdAt", "asc")
-          .get();
-        ordersDocs = ordersSnapshot.docs;
-      } catch (err) {
-        console.error("[sales-month] orders query failed:", {
-          message: (err as Error)?.message,
-          code: (err as { code?: unknown })?.code,
-          stack: (err as Error)?.stack,
-        });
-        ordersDocs = [];
-      }
+      // A failed query used to fall back to an empty list, which the screen showed as a month
+      // with R$ 0 in sales. Let it fail so the screen says so instead.
+      const ordersSnapshot = await adminDb
+        .collection("orders")
+        .where("createdAt", ">=", Timestamp.fromDate(defaultStart))
+        .where("createdAt", "<=", Timestamp.fromDate(defaultEnd))
+        .orderBy("createdAt", "asc")
+        .get();
+      const ordersDocs = ordersSnapshot.docs;
 
       // Get FIADO payments in the period. Avoid composite index by filtering type in memory.
-      let fiadoDocs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
-      try {
-        const fiadoPaymentsSnapshot = await adminDb
-          .collection("financialMovements")
-          .where("occurredAt", ">=", Timestamp.fromDate(defaultStart))
-          .where("occurredAt", "<=", Timestamp.fromDate(defaultEnd))
-          .orderBy("occurredAt", "asc")
-          .get();
-        fiadoDocs = fiadoPaymentsSnapshot.docs.filter((d) => d.data()?.type === "FIADO_PAYMENT");
-      } catch (err) {
-        console.error("[sales-month] fiado query failed:", err);
-        fiadoDocs = [];
-      }
+      const fiadoPaymentsSnapshot = await adminDb
+        .collection("financialMovements")
+        .where("occurredAt", ">=", Timestamp.fromDate(defaultStart))
+        .where("occurredAt", "<=", Timestamp.fromDate(defaultEnd))
+        .orderBy("occurredAt", "asc")
+        .get();
+      const fiadoDocs = fiadoPaymentsSnapshot.docs.filter((d) => d.data()?.type === "FIADO_PAYMENT");
 
       // Process orders
       const ordersByDay = new Map<string, OrderInfo[]>();
@@ -98,7 +64,7 @@ export async function GET(request: NextRequest) {
         // Skip cancelled orders
         if (orderData.isCancelled) return;
 
-        const date = order.createdAt.toLocaleDateString("pt-BR");
+        const date = formatStoreDate(order.createdAt);
         const total = Number(orderData.totalAmount || 0);
         
         if (!ordersByDay.has(date)) {
@@ -108,8 +74,8 @@ export async function GET(request: NextRequest) {
         ordersByDay.get(date)!.push({
           id: order.id,
           total,
-          date: order.createdAt.toLocaleDateString("pt-BR"),
-          time: order.createdAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+          date: formatStoreDate(order.createdAt),
+          time: formatStoreTime(order.createdAt),
           clientName: orderData.clientName || "Cliente",
           paymentMethod: orderData.payments?.[0]?.method || "N/A",
         });
@@ -126,7 +92,7 @@ export async function GET(request: NextRequest) {
           occurredAt: movementData.occurredAt?.toDate?.() || new Date(),
         };
 
-        const date = movement.occurredAt.toLocaleDateString("pt-BR");
+        const date = formatStoreDate(movement.occurredAt);
         const amount = Number(movementData.amount || 0);
         const metadata = movementData.metadata as Record<string, unknown> || {};
         
@@ -137,8 +103,8 @@ export async function GET(request: NextRequest) {
         ordersByDay.get(date)!.push({
           id: `fiado-${movement.id}`,
           total: amount,
-          date: movement.occurredAt.toLocaleDateString("pt-BR"),
-          time: movement.occurredAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+          date: formatStoreDate(movement.occurredAt),
+          time: formatStoreTime(movement.occurredAt),
           clientName: (metadata.description as string) || `Pagamento ${(metadata.clientName as string) || "Cliente"}`,
           paymentMethod: movementData.paymentMethod || "cash",
           isFiadoPayment: true,
@@ -162,8 +128,8 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         period: {
-          start: defaultStart.toLocaleDateString("pt-BR"),
-          end: defaultEnd.toLocaleDateString("pt-BR"),
+          start: formatStoreDate(defaultStart),
+          end: formatStoreDate(defaultEnd),
         },
         monthTotal,
         days: sortedDays,
