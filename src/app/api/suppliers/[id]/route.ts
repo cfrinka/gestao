@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     async () => {
       const supplier = await getSupplier(params.id);
       if (!supplier) {
-        return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
+        return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
       }
 
       return NextResponse.json(supplier);
@@ -36,7 +36,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     async ({ request: authorizedRequest }) => {
       const existing = await getSupplier(params.id);
       if (!existing) {
-        return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
+        return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
       }
 
       const body = (await authorizedRequest.json().catch(() => ({}))) as Record<string, unknown>;
@@ -49,7 +49,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       const acceptedPaymentMethods = normalizeMethods(body.acceptedPaymentMethods);
 
       if (name !== undefined && !name) {
-        return NextResponse.json({ error: "Name is required" }, { status: 400 });
+        return NextResponse.json({ error: "Informe o nome do fornecedor" }, { status: 400 });
       }
 
       await updateSupplier(params.id, {
@@ -74,7 +74,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     async () => {
       const existing = await getSupplier(params.id);
       if (!existing) {
-        return NextResponse.json({ error: "Supplier not found" }, { status: 404 });
+        return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
       }
 
       await deleteSupplier(params.id);

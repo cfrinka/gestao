@@ -3,7 +3,7 @@ import type { PaymentMethod } from "@/lib/db-types";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { CheckoutService } from "@/domains/checkout/checkout-service";
 import { FirestoreCheckoutRepository } from "@/domains/checkout/firestore-checkout-repository";
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import { getProduct } from "@/domains/products/products-db";
 import { getStoreSettings } from "@/domains/settings/settings-db";
 import { calculateAutoDiscount } from "@/domains/checkout/discount-calculator";
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
       const body = (await authorizedRequest.json()) as CheckoutBody;
 
       if (!body.idempotencyKey) {
-        throw new HttpError(400, "idempotencyKey is required");
+        throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
       }
 
       // Demo users: return a fully-shaped synthetic order so the POS can print the receipt,

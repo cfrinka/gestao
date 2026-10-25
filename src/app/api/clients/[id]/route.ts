@@ -60,7 +60,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       // receiving — cashiers can receive fiado payments but not adjust what's owed.
       const adminOnlyActions = ["correct_debt", "remove_order_item"];
       if (adminOnlyActions.includes(action) && user.role !== "ADMIN") {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return NextResponse.json({ error: "Só administradores podem fazer esta alteração" }, { status: 403 });
       }
 
       if (action === "correct_debt" && amount !== undefined && adminPassword && reason) {
@@ -96,7 +96,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         return NextResponse.json(result);
       }
 
-      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+      return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
     },
     { roles: ["ADMIN", "CASHIER"], operationName: "Client PATCH" }
   );

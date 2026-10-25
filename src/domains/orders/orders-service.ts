@@ -49,18 +49,12 @@ export class OrdersService {
       throw new HttpError(401, "Confirmação de senha expirada. Informe a senha novamente para cancelar a venda.");
     }
 
-    try {
-      return await this.repository.cancelOrder({
-        orderId,
-        reason: (command.reason || "").trim(),
-        actorId: command.actorId,
-        actorRole: command.actorRole,
-      });
-    } catch (error) {
-      console.error("cancelOrder failed:", error);
-      const message = error instanceof Error ? error.message : "Erro ao cancelar venda";
-      throw new HttpError(400, message);
-    }
+    return this.repository.cancelOrder({
+      orderId,
+      reason: (command.reason || "").trim(),
+      actorId: command.actorId,
+      actorRole: command.actorRole,
+    });
   }
 
   async update(command: UpdateOrderCommand): Promise<Order> {

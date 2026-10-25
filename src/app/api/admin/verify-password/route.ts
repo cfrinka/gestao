@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       const { adminPassword } = await authorizedRequest.json();
 
       if (!adminPassword) {
-        return NextResponse.json({ error: "Admin password is required" }, { status: 400 });
+        return NextResponse.json({ error: "Informe a senha de administrador" }, { status: 400 });
       }
 
       if (await isAdminPasswordRateLimited(user.uid)) {
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
       await recordAdminPasswordAttempt(user.uid, isValid);
 
       if (!isValid) {
-        return NextResponse.json({ error: "Invalid admin password" }, { status: 403 });
+        return NextResponse.json({ error: "Senha de administrador inválida" }, { status: 403 });
       }
 
       // Issue a short-lived, single-use grant so checkout can verify this authorization

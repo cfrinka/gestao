@@ -1,4 +1,4 @@
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import type { BillsRepository } from "@/domains/bills/repository";
 import type {
   BillExecutionResult,
@@ -28,15 +28,15 @@ export class BillsService {
   async create(command: CreateBillCommand): Promise<BillExecutionResult> {
     const safeIdempotencyKey = String(command.idempotencyKey || "").trim();
     if (!safeIdempotencyKey) {
-      throw new HttpError(400, "idempotencyKey is required");
+      throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
     }
 
     const kind = typeof command.kind === "string" ? command.kind.toUpperCase() : "";
     const name = typeof command.name === "string" ? command.name.trim() : "";
     const amount = typeof command.amount === "number" ? command.amount : parseFloat(String(command.amount || 0));
 
-    if (!name) throw new HttpError(400, "Name is required");
-    if (!Number.isFinite(amount) || amount <= 0) throw new HttpError(400, "Amount is invalid");
+    if (!name) throw new HttpError(400, "Informe o nome da conta");
+    if (!Number.isFinite(amount) || amount <= 0) throw new HttpError(400, "Valor inválido");
 
     let requestPayload: Record<string, unknown>;
     let runCreate: () => Promise<unknown>;
@@ -49,7 +49,7 @@ export class BillsService {
       const startMonth = typeof command.startMonth === "string" ? command.startMonth : undefined;
 
       if (!Number.isFinite(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31) {
-        throw new HttpError(400, "dayOfMonth is invalid");
+        throw new HttpError(400, "Dia de vencimento inválido");
       }
       const monthsAhead = Number.isFinite(monthsAheadRaw) && monthsAheadRaw > 0 ? Math.min(36, monthsAheadRaw) : 12;
 
@@ -60,7 +60,7 @@ export class BillsService {
       });
     } else if (kind === "ONE_TIME") {
       const dueDate = typeof command.dueDate === "string" ? command.dueDate : "";
-      if (!dueDate) throw new HttpError(400, "dueDate is required");
+      if (!dueDate) throw new HttpError(400, "Informe a data de vencimento");
 
       requestPayload = { kind, name, amount, dueDate };
       runCreate = async () => ({
@@ -78,9 +78,9 @@ export class BillsService {
           ? command.intervalMonths
           : parseInt(String(command.intervalMonths || ""), 10);
 
-      if (!firstDueDate) throw new HttpError(400, "firstDueDate is required");
+      if (!firstDueDate) throw new HttpError(400, "Informe o primeiro vencimento");
       if (!Number.isFinite(installmentsCountRaw) || installmentsCountRaw <= 0) {
-        throw new HttpError(400, "installmentsCount is invalid");
+        throw new HttpError(400, "Número de parcelas inválido");
       }
       const intervalMonths = Number.isFinite(intervalMonthsRaw) && intervalMonthsRaw > 0 ? Math.min(12, intervalMonthsRaw) : 1;
       const installmentsCount = Math.min(60, installmentsCountRaw);
@@ -91,7 +91,7 @@ export class BillsService {
         ...(await this.repository.createInstallments({ name, amount, firstDueDate, installmentsCount, intervalMonths })),
       });
     } else {
-      throw new HttpError(400, "Invalid kind");
+      throw new HttpError(400, "Tipo de conta inválido");
     }
 
     const requestHash = JSON.stringify({ ...requestPayload, userId: command.userId });
@@ -103,13 +103,13 @@ export class BillsService {
     });
 
     if (reservation.type === "conflict") {
-      throw new HttpError(409, "Idempotency key reuse with different payload");
+      throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
     }
     if (reservation.type === "completed") {
       return { status: 200, body: reservation.response };
     }
     if (reservation.type === "in_progress") {
-      return { status: 409, body: { error: "Request already being processed" } };
+      return { status: 409, body: { error: IDEMPOTENCY_IN_PROGRESS_MESSAGE } };
     }
 
     try {
@@ -132,12 +132,12 @@ export class BillsService {
 
   async markPaid(command: MarkBillPaidCommand): Promise<BillRecord> {
     if (command.actorRole !== "ADMIN") {
-      throw new HttpError(403, "Only admins can mark a bill as paid");
+      throw new HttpError(403, "Só administradores podem alterar contas");
     }
 
     const { exists } = await this.repository.getBill(command.billId);
     if (!exists) {
-      throw new HttpError(404, "Bill not found");
+      throw new HttpError(404, "Conta não encontrada");
     }
 
     const methodRaw = typeof command.method === "string" ? command.method : "DINHEIRO";
@@ -148,12 +148,12 @@ export class BillsService {
 
   async markUnpaid(command: MarkBillUnpaidCommand): Promise<BillRecord> {
     if (command.actorRole !== "ADMIN") {
-      throw new HttpError(403, "Only admins can mark a bill as unpaid");
+      throw new HttpError(403, "Só administradores podem alterar contas");
     }
 
     const { exists } = await this.repository.getBill(command.billId);
     if (!exists) {
-      throw new HttpError(404, "Bill not found");
+      throw new HttpError(404, "Conta não encontrada");
     }
 
     return this.repository.markBillUnpaid({ billId: command.billId, actorId: command.actorId });
@@ -161,12 +161,12 @@ export class BillsService {
 
   async remove(command: DeleteBillCommand): Promise<void> {
     if (command.actorRole !== "ADMIN") {
-      throw new HttpError(403, "Only admins can delete a bill");
+      throw new HttpError(403, "Só administradores podem excluir contas");
     }
 
     const { exists } = await this.repository.getBill(command.billId);
     if (!exists) {
-      throw new HttpError(404, "Bill not found");
+      throw new HttpError(404, "Conta não encontrada");
     }
 
     return this.repository.deleteBill({ billId: command.billId, actorId: command.actorId });

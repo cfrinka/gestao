@@ -2,6 +2,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { FiadoPayment, Order, PaymentMethod } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 
 function toCompetencyMonth(date: Date): string {
   const year = date.getFullYear();
@@ -13,7 +14,7 @@ async function assertFinancialMonthOpen(date: Date): Promise<void> {
   const month = toCompetencyMonth(date);
   const closure = await adminDb.collection("financialClosures").doc(month).get();
   if (closure.exists) {
-    throw new Error(`Financial month ${month} is already closed`);
+    throw closedMonthError(month);
   }
 }
 
@@ -57,7 +58,7 @@ export async function applyCascadingFiadoPayment(
   receivedByUserName?: string
 ): Promise<FiadoPaymentResult> {
   if (!paymentAmount || paymentAmount <= 0) {
-    throw new Error("Payment amount must be greater than zero");
+    throw new HttpError(400, "O valor do pagamento deve ser maior que zero");
   }
 
   const clientRef = adminDb.collection("clients").doc(clientId);
@@ -80,7 +81,7 @@ export async function applyCascadingFiadoPayment(
     // ===== ALL READS FIRST =====
     const clientSnap = await tx.get(clientRef);
     if (!clientSnap.exists) {
-      throw new Error("Client not found");
+      throw new HttpError(404, "Cliente não encontrado");
     }
     const clientName = String(clientSnap.data()?.name || "Cliente").trim();
 
@@ -91,7 +92,7 @@ export async function applyCascadingFiadoPayment(
     const ordersSnap = await tx.get(ordersQuery);
 
     if (ordersSnap.empty) {
-      throw new Error("No pending fiado orders found");
+      throw new HttpError(400, "Este cliente não tem compras fiado em aberto");
     }
 
     // Read cash register upfront if needed

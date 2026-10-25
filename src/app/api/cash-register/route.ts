@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(result.body, { status: result.status });
       }
 
-      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+      return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
     },
     { operationName: "CashRegister POST" }
   );

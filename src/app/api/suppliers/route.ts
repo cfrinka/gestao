@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       const acceptedPaymentMethods = normalizeMethods(body.acceptedPaymentMethods);
 
       if (!name) {
-        return NextResponse.json({ error: "Name is required" }, { status: 400 });
+        return NextResponse.json({ error: "Informe o nome do fornecedor" }, { status: 400 });
       }
 
       const supplier = await createSupplier({

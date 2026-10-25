@@ -1,4 +1,4 @@
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import type { UsersRepository } from "@/domains/users/repository";
 import type { CreateUserCommand, DeactivateUserCommand, UpdateUserRoleCommand } from "@/domains/users/types";
 import type { UserRecord } from "@/lib/db-types";
@@ -33,15 +33,15 @@ export class UsersService {
     const role = String(command.role || "");
 
     if (!email || !password || !name || !role) {
-      throw new HttpError(400, "Missing required fields");
+      throw new HttpError(400, "Preencha todos os campos");
     }
     if (!isValidRole(role)) {
-      throw new HttpError(400, "Invalid role");
+      throw new HttpError(400, "Perfil inválido");
     }
 
     const safeIdempotencyKey = String(command.idempotencyKey || "").trim();
     if (!safeIdempotencyKey) {
-      throw new HttpError(400, "idempotencyKey is required");
+      throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
     }
 
     const requestHash = JSON.stringify({ email, name, role });
@@ -52,13 +52,13 @@ export class UsersService {
     });
 
     if (reservation.type === "conflict") {
-      throw new HttpError(409, "Idempotency key reuse with different payload");
+      throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
     }
     if (reservation.type === "completed") {
       return reservation.response as UserRecord;
     }
     if (reservation.type === "in_progress") {
-      throw new HttpError(409, "Request already being processed");
+      throw new HttpError(409, IDEMPOTENCY_IN_PROGRESS_MESSAGE);
     }
 
     let createdAuthUid: string | null = null;
@@ -105,15 +105,15 @@ export class UsersService {
     const role = String(command.role || "");
 
     if (!id || !role) {
-      throw new HttpError(400, "Missing required fields");
+      throw new HttpError(400, "Preencha todos os campos");
     }
     if (!isValidRole(role)) {
-      throw new HttpError(400, "Invalid role");
+      throw new HttpError(400, "Perfil inválido");
     }
 
     const existing = await this.repository.getById(id);
     if (!existing) {
-      throw new HttpError(404, "User not found");
+      throw new HttpError(404, "Usuário não encontrado");
     }
 
     return this.repository.updateUserRole(id, role);
@@ -126,15 +126,15 @@ export class UsersService {
   async deactivate(command: DeactivateUserCommand): Promise<void> {
     const id = String(command.id || "").trim();
     if (!id) {
-      throw new HttpError(400, "Missing user id");
+      throw new HttpError(400, "Usuário não informado");
     }
     if (id === command.actorId) {
-      throw new HttpError(400, "You cannot deactivate your own user");
+      throw new HttpError(400, "Você não pode desativar o seu próprio usuário");
     }
 
     const existing = await this.repository.getById(id);
     if (!existing) {
-      throw new HttpError(404, "User not found");
+      throw new HttpError(404, "Usuário não encontrado");
     }
 
     await this.repository.deactivateUserRecord(id, command.actorId);

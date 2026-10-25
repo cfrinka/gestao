@@ -1,4 +1,4 @@
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import type { ProductsRepository } from "@/domains/products/repository";
 import type { CreateProductCommand, UpdateProductCommand } from "@/domains/products/types";
 import type { Product, ProductImageSource, ProductSizeType } from "@/lib/db-types";
@@ -29,12 +29,12 @@ export class ProductsService {
     const sku = String(command.sku || "").trim();
 
     if (!name || !sku || command.costPrice === undefined || command.salePrice === undefined) {
-      throw new HttpError(400, "Missing required fields");
+      throw new HttpError(400, "Preencha nome, código, custo e preço de venda");
     }
 
     const existingProduct = await this.repository.getBySku(sku);
     if (existingProduct) {
-      throw new HttpError(400, "SKU already exists");
+      throw new HttpError(400, "Já existe um produto com este código (SKU)");
     }
 
     const costPrice = parseFloat(String(command.costPrice));
@@ -45,7 +45,7 @@ export class ProductsService {
     // request fail on a missing idempotency key, leaving an orphaned stock purchase gap.
     const safeIdempotencyKey = String(command.idempotencyKey || "").trim();
     if (stock > 0 && !safeIdempotencyKey) {
-      throw new HttpError(400, "idempotencyKey is required");
+      throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
     }
 
     const product = await this.repository.createProduct({
@@ -83,14 +83,14 @@ export class ProductsService {
   async update(id: string, command: UpdateProductCommand): Promise<Product> {
     const existing = await this.repository.getById(id);
     if (!existing) {
-      throw new HttpError(404, "Product not found");
+      throw new HttpError(404, "Produto não encontrado");
     }
 
     const nextSku = command.sku ? String(command.sku).trim() : existing.sku;
     if (nextSku !== existing.sku) {
       const skuOwner = await this.repository.getBySku(nextSku);
       if (skuOwner) {
-        throw new HttpError(400, "SKU already exists");
+        throw new HttpError(400, "Já existe um produto com este código (SKU)");
       }
     }
 
@@ -105,7 +105,7 @@ export class ProductsService {
     // leaving stock changed with no matching purchase entry.
     const safeIdempotencyKey = String(command.idempotencyKey || "").trim();
     if (stockIncrease > 0 && !safeIdempotencyKey) {
-      throw new HttpError(400, "idempotencyKey is required");
+      throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
     }
 
     const updated = await this.repository.updateProduct(id, {
@@ -146,7 +146,7 @@ export class ProductsService {
   async remove(id: string): Promise<void> {
     const existing = await this.repository.getById(id);
     if (!existing) {
-      throw new HttpError(404, "Product not found");
+      throw new HttpError(404, "Produto não encontrado");
     }
     await this.repository.deleteProduct(id);
   }
@@ -177,13 +177,13 @@ export class ProductsService {
     });
 
     if (reservation.type === "conflict") {
-      throw new HttpError(409, "Idempotency key reuse with different payload");
+      throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
     }
     if (reservation.type === "completed") {
       return;
     }
     if (reservation.type === "in_progress") {
-      throw new HttpError(409, "Request already being processed");
+      throw new HttpError(409, IDEMPOTENCY_IN_PROGRESS_MESSAGE);
     }
 
     try {

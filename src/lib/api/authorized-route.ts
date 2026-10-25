@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unauthorizedResponse, verifyAuth } from "@/lib/auth-api";
-import { toHttpError } from "@/lib/api/http-errors";
+import { INTERNAL_ERROR_MESSAGE, toHttpError } from "@/lib/api/http-errors";
 
 type Role = "ADMIN" | "CASHIER" | "SYSTEM";
 
@@ -35,7 +35,7 @@ export async function withAuthorizedRoute(
     if (!user) return unauthorizedResponse();
 
     if (options?.roles && !options.roles.includes(user.role as Role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "Seu perfil não tem permissão para esta ação." }, { status: 403 });
     }
 
     // Block all write operations for demo users (silent no-op that returns a simulated success)
@@ -58,7 +58,7 @@ export async function withAuthorizedRoute(
     }
 
     return NextResponse.json(
-      { error: httpError.exposeMessage ? httpError.message : "Internal server error" },
+      { error: httpError.exposeMessage ? httpError.message : INTERNAL_ERROR_MESSAGE },
       { status: httpError.statusCode }
     );
   }

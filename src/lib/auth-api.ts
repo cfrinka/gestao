@@ -18,20 +18,27 @@ async function verifyAuthUncached(token: string): Promise<AuthUser | null> {
     const userDoc = await adminDb.collection("users").doc(decodedToken.uid).get();
     const userData = userDoc.data();
 
-    if (userData?.isActive === false) {
+    // A valid Firebase token alone is not access: every account the store uses is created
+    // from the Usuários screen, which writes this doc. Anything else (a self-registered
+    // account, a leftover test login) gets nothing.
+    if (!userDoc.exists || !userData) {
       return null;
     }
 
-    const rawRole = userData?.role || "CASHIER";
+    if (userData.isActive === false) {
+      return null;
+    }
+
+    const rawRole = userData.role || "CASHIER";
     const normalizedRole = rawRole === "OWNER" ? "ADMIN" : rawRole;
 
     return {
       uid: decodedToken.uid,
       email: decodedToken.email || "",
-      name: String(userData?.name || decodedToken.email || decodedToken.uid),
+      name: String(userData.name || decodedToken.email || decodedToken.uid),
       role: normalizedRole,
       authTime: typeof decodedToken.auth_time === "number" ? decodedToken.auth_time : undefined,
-      isDemo: userData?.isDemo === true,
+      isDemo: userData.isDemo === true,
     };
   } catch (error) {
     console.error("Auth verification failed:", error);
@@ -76,7 +83,7 @@ export async function verifyAuth(request: NextRequest): Promise<AuthUser | null>
 }
 
 export function unauthorizedResponse() {
-  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+  return new Response(JSON.stringify({ error: "Sessão expirada ou acesso não autorizado. Entre novamente." }), {
     status: 401,
     headers: { "Content-Type": "application/json" },
   });

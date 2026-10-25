@@ -13,7 +13,7 @@ export async function PATCH(request: NextRequest) {
       const { updates } = body;
 
       if (!Array.isArray(updates) || updates.length === 0) {
-        return NextResponse.json({ error: "No updates provided" }, { status: 400 });
+        return NextResponse.json({ error: "Nenhuma alteração enviada" }, { status: 400 });
       }
 
       const batch = adminDb.batch();

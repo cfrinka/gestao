@@ -1,6 +1,7 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { FinancialMovementPaymentMethod, Order, OrderItem, PaymentMethod, Product } from "@/lib/db-types";
+import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 
 interface CheckoutItem {
   productId: string;
@@ -33,11 +34,11 @@ export async function processCheckout(
   createdByName: string = "system"
 ): Promise<Order> {
   if (createdByRole !== "ADMIN" && createdByRole !== "CASHIER") {
-    throw new Error("Role not allowed to process checkout");
+    throw new HttpError(403, "Seu perfil não pode registrar vendas");
   }
 
   if (!Array.isArray(items) || items.length === 0) {
-    throw new Error("No items in cart");
+    throw new HttpError(400, "Adicione ao menos um produto à venda");
   }
 
   const now = new Date();
@@ -54,7 +55,7 @@ export async function processCheckout(
   const result = await adminDb.runTransaction(async (tx) => {
     const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(competencyMonth));
     if (closureSnap.exists) {
-      throw new Error(`Financial month ${competencyMonth} is closed`);
+      throw closedMonthError(competencyMonth);
     }
 
     const productIds = Array.from(new Set(items.map((item) => item.productId)));
@@ -64,7 +65,7 @@ export async function processCheckout(
     const productsById = new Map<string, Product>();
     for (const snap of productSnaps) {
       if (!snap.exists) {
-        throw new Error(`Product ${snap.id} not found`);
+        throw new HttpError(404, "Um dos produtos da venda não existe mais. Atualize a tela.");
       }
       const data = snap.data() as Product;
       productsById.set(snap.id, {
@@ -81,21 +82,22 @@ export async function processCheckout(
     for (const item of items) {
       const product = productsById.get(item.productId);
       if (!product) {
-        throw new Error(`Product ${item.productId} not found`);
+        throw new HttpError(404, "Um dos produtos da venda não existe mais. Atualize a tela.");
       }
       const quantity = Number(item.quantity);
 
       if (product.sizes.length > 0) {
         const sizeEntry = product.sizes.find((s) => s.size === item.size);
         if (!sizeEntry || sizeEntry.stock < quantity) {
-          throw new Error(
-            `Insufficient stock for ${product.name} size ${item.size}. Available: ${sizeEntry?.stock || 0}`
+          throw new HttpError(
+            409,
+            `Estoque insuficiente de ${product.name} no tamanho ${item.size}. Disponível: ${sizeEntry?.stock || 0}`
           );
         }
         sizeEntry.stock -= quantity;
       } else {
         if (product.stock < quantity) {
-          throw new Error(`Insufficient stock for ${product.name}. Available: ${product.stock}`);
+          throw new HttpError(409, `Estoque insuficiente de ${product.name}. Disponível: ${product.stock}`);
         }
         product.stock -= quantity;
       }

@@ -2,6 +2,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import { assertFinancialMonthOpenTx, toCompetencyMonth } from "@/domains/financial/financial-db";
 import type { BillPaymentMethod, BillRecord } from "@/domains/bills/types";
+import { HttpError } from "@/lib/api/http-errors";
 
 type BillStatus = "PENDING" | "PAID";
 
@@ -100,7 +101,7 @@ export async function createOneTimeBill(params: {
   const { name, amount, dueDate } = params;
   const due = new Date(dueDate);
   if (Number.isNaN(due.getTime())) {
-    throw new Error("Invalid dueDate");
+    throw new HttpError(400, "Data de vencimento inválida");
   }
 
   const now = new Date();
@@ -130,10 +131,10 @@ export async function createInstallments(params: {
   const { name, amount, firstDueDate, installmentsCount, intervalMonths } = params;
   const first = new Date(firstDueDate);
   if (Number.isNaN(first.getTime())) {
-    throw new Error("Invalid firstDueDate");
+    throw new HttpError(400, "Data do primeiro vencimento inválida");
   }
   if (!Number.isFinite(installmentsCount) || installmentsCount <= 0) {
-    throw new Error("Invalid installmentsCount");
+    throw new HttpError(400, "Número de parcelas inválido");
   }
 
   const now = new Date();
@@ -246,7 +247,7 @@ export async function markBillPaid(input: {
 
     const billSnap = await tx.get(ref);
     if (!billSnap.exists) {
-      throw new Error("Bill not found");
+      throw new HttpError(404, "Conta não encontrada");
     }
 
     const current = billSnap.data() as { status?: string; amount?: number; name?: string };
@@ -295,7 +296,7 @@ export async function markBillUnpaid(input: { billId: string; actorId: string })
   await adminDb.runTransaction(async (tx) => {
     const billSnap = await tx.get(ref);
     if (!billSnap.exists) {
-      throw new Error("Bill not found");
+      throw new HttpError(404, "Conta não encontrada");
     }
     const current = billSnap.data() as { status?: string; paidAt?: unknown };
     const movementDoc = await readBillExpenseMovementForReversal(tx, input.billId, current);
@@ -324,7 +325,7 @@ export async function deleteBill(input: { billId: string; actorId: string }): Pr
   await adminDb.runTransaction(async (tx) => {
     const billSnap = await tx.get(ref);
     if (!billSnap.exists) {
-      throw new Error("Bill not found");
+      throw new HttpError(404, "Conta não encontrada");
     }
     const current = billSnap.data() as { status?: string; paidAt?: unknown };
     const movementDoc = await readBillExpenseMovementForReversal(tx, input.billId, current);

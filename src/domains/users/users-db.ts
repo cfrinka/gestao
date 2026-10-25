@@ -72,7 +72,7 @@ export async function updateUserRole(id: string, role: "ADMIN" | "CASHIER"): Pro
   await userRef.update({ role, updatedAt: Timestamp.fromDate(now) });
   const doc = await userRef.get();
   if (!doc.exists) {
-    throw new HttpError(404, "User not found");
+    throw new HttpError(404, "Usuário não encontrado");
   }
   return toUserRecord(doc.id, doc.data()!);
 }

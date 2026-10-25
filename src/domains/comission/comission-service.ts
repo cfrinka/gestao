@@ -7,14 +7,14 @@ export class CommissionService {
 
   async sync(actorRole: string): Promise<SyncResult> {
     if (actorRole !== "ADMIN") {
-      throw new HttpError(403, "Only admins can sync commission data");
+      throw new HttpError(403, "Só administradores podem sincronizar a comissão");
     }
     return this.repository.syncMovements();
   }
 
   async getReport(actorId: string, actorRole: string): Promise<CommissionReport> {
     if (actorRole !== "ADMIN" && actorRole !== "CASHIER") {
-      throw new HttpError(403, "Forbidden");
+      throw new HttpError(403, "Sem permissão");
     }
 
     const isAdmin = actorRole === "ADMIN";

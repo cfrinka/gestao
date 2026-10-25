@@ -33,13 +33,13 @@ export class ClientsService {
 
   async get(clientId: string): Promise<Client & { pendingOrders: Order[] }> {
     const result = await this.withPendingOrders(clientId);
-    if (!result) throw new HttpError(404, "Client not found");
+    if (!result) throw new HttpError(404, "Cliente não encontrado");
     return result;
   }
 
   async create(command: CreateClientCommand): Promise<Client> {
     const name = typeof command.name === "string" ? command.name.trim() : "";
-    if (!name) throw new HttpError(400, "Name is required");
+    if (!name) throw new HttpError(400, "Informe o nome do cliente");
 
     return this.repository.createClient({
       name,
@@ -51,7 +51,7 @@ export class ClientsService {
 
   async update(command: UpdateClientCommand): Promise<Client> {
     const existing = await this.repository.getClient(command.clientId);
-    if (!existing) throw new HttpError(404, "Client not found");
+    if (!existing) throw new HttpError(404, "Cliente não encontrado");
 
     await this.repository.updateClient(command.clientId, {
       name: typeof command.name === "string" ? command.name : undefined,
@@ -61,45 +61,40 @@ export class ClientsService {
     });
 
     const updated = await this.repository.getClient(command.clientId);
-    if (!updated) throw new HttpError(404, "Client not found");
+    if (!updated) throw new HttpError(404, "Cliente não encontrado");
     return updated;
   }
 
   async remove(clientId: string): Promise<void> {
     const client = await this.repository.getClient(clientId);
-    if (!client) throw new HttpError(404, "Client not found");
+    if (!client) throw new HttpError(404, "Cliente não encontrado");
     if (client.balance !== 0) {
-      throw new HttpError(400, "Cannot delete client with pending balance");
+      throw new HttpError(400, "Não é possível excluir um cliente com saldo em aberto");
     }
     await this.repository.deleteClient(clientId);
   }
 
   async correctDebt(command: CorrectDebtCommand): Promise<Client & { pendingOrders: Order[] }> {
     const client = await this.repository.getClient(command.clientId);
-    if (!client) throw new HttpError(404, "Client not found");
+    if (!client) throw new HttpError(404, "Cliente não encontrado");
 
     const adminPassword = typeof command.adminPassword === "string" ? command.adminPassword : "";
     const reason = typeof command.reason === "string" ? command.reason : "";
     if (!adminPassword || !reason) {
-      throw new HttpError(400, "Invalid correction amount");
+      throw new HttpError(400, "Valor de correção inválido");
     }
 
     const correctionAmount = typeof command.amount === "number" ? command.amount : parseFloat(String(command.amount));
     if (!Number.isFinite(correctionAmount) || correctionAmount === 0) {
-      throw new HttpError(400, "Invalid correction amount");
+      throw new HttpError(400, "Valor de correção inválido");
     }
 
-    try {
-      await this.repository.correctClientDebt(command.clientId, correctionAmount, adminPassword, reason);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("Invalid admin password")) {
-        throw new HttpError(403, "Senha de administrador inválida");
-      }
-      throw new HttpError(400, error instanceof Error ? error.message : "Erro ao corrigir débito");
-    }
+    // Expected failures (wrong password, closed month, …) arrive as HttpError with their own
+    // status; anything else propagates and is reported as a generic server error.
+    await this.repository.correctClientDebt(command.clientId, correctionAmount, adminPassword, reason);
 
     const result = await this.withPendingOrders(command.clientId);
-    if (!result) throw new HttpError(404, "Client not found");
+    if (!result) throw new HttpError(404, "Cliente não encontrado");
     return result;
   }
 
@@ -107,40 +102,35 @@ export class ClientsService {
     command: PayCascadingCommand
   ): Promise<Client & { pendingOrders: Order[]; paymentResult: unknown }> {
     const client = await this.repository.getClient(command.clientId);
-    if (!client) throw new HttpError(404, "Client not found");
+    if (!client) throw new HttpError(404, "Cliente não encontrado");
 
     const paymentAmount = typeof command.amount === "number" ? command.amount : parseFloat(String(command.amount));
     const finalAmount = Number.isFinite(paymentAmount) && paymentAmount > 0 ? paymentAmount : 0;
     if (finalAmount <= 0) {
-      throw new HttpError(400, "Invalid payment amount");
+      throw new HttpError(400, "Valor de pagamento inválido");
     }
 
-    let paymentResult: unknown;
-    try {
-      paymentResult = await this.repository.applyCascadingFiadoPayment(
-        command.clientId,
-        finalAmount,
-        toPaymentMethod(command.method),
-        command.receivedByUserId,
-        command.receivedByUserName
-      );
-    } catch (error) {
-      throw new HttpError(400, error instanceof Error ? error.message : "Erro ao registrar pagamento");
-    }
+    const paymentResult = await this.repository.applyCascadingFiadoPayment(
+      command.clientId,
+      finalAmount,
+      toPaymentMethod(command.method),
+      command.receivedByUserId,
+      command.receivedByUserName
+    );
 
     const result = await this.withPendingOrders(command.clientId);
-    if (!result) throw new HttpError(404, "Client not found");
+    if (!result) throw new HttpError(404, "Cliente não encontrado");
     return { ...result, paymentResult };
   }
 
   async payOrder(command: PayOrderCommand): Promise<Client & { pendingOrders: Order[] }> {
     const client = await this.repository.getClient(command.clientId);
-    if (!client) throw new HttpError(404, "Client not found");
+    if (!client) throw new HttpError(404, "Cliente não encontrado");
 
     const pendingOrders = await this.repository.getClientPendingOrders(command.clientId);
     const order = pendingOrders.find((o) => o.id === command.orderId);
     if (!order) {
-      throw new HttpError(404, "Order not found or already paid");
+      throw new HttpError(404, "Venda não encontrada ou já quitada");
     }
 
     const remaining = typeof order.remainingAmount === "number" ? order.remainingAmount : order.totalAmount;
@@ -152,28 +142,24 @@ export class ClientsService {
     // papered over by force-marking the order paid and blindly debiting the client's full
     // original total, which would double-count an already-applied payment or bypass the
     // closed-month guard entirely.
-    try {
-      await this.repository.applyFiadoPayment(
-        command.clientId,
-        command.orderId,
-        finalAmount,
-        toPaymentMethod(command.method),
-        command.receivedByUserId,
-        command.receivedByUserName
-      );
-    } catch (error) {
-      throw new HttpError(400, error instanceof Error ? error.message : "Erro ao registrar pagamento");
-    }
+    await this.repository.applyFiadoPayment(
+      command.clientId,
+      command.orderId,
+      finalAmount,
+      toPaymentMethod(command.method),
+      command.receivedByUserId,
+      command.receivedByUserName
+    );
 
     const result = await this.withPendingOrders(command.clientId);
-    if (!result) throw new HttpError(404, "Client not found");
+    if (!result) throw new HttpError(404, "Cliente não encontrado");
     return result;
   }
 
   async removeOrderItem(command: RemoveOrderItemCommand): Promise<Client & { pendingOrders: Order[] }> {
     await this.repository.removeFiadoOrderItem(command.clientId, command.orderId, command.orderItemId);
     const result = await this.withPendingOrders(command.clientId);
-    if (!result) throw new HttpError(404, "Client not found");
+    if (!result) throw new HttpError(404, "Cliente não encontrado");
     return result;
   }
 }

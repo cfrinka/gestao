@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ClientsService } from "./clients-service";
 import type { ClientsRepository } from "./repository";
 import type { Client, Order } from "@/lib/db-types";
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 
 function makeClient(overrides: Partial<Client> = {}): Client {
   return {
@@ -184,9 +184,9 @@ describe("ClientsService.correctDebt", () => {
     ).rejects.toThrow(HttpError);
   });
 
-  it("translates 'Invalid admin password' into a 403", async () => {
+  it("passes the repository's 403 for a wrong admin password through unchanged", async () => {
     const repo = new FakeClientsRepository();
-    repo.correctClientDebtMock.mockRejectedValueOnce(new Error("Invalid admin password"));
+    repo.correctClientDebtMock.mockRejectedValueOnce(new HttpError(403, "Senha de administrador inválida"));
     const service = new ClientsService(repo);
 
     await expect(
@@ -201,22 +201,23 @@ describe("ClientsService.correctDebt", () => {
     ).rejects.toThrow(HttpError);
   });
 
-  it("translates a generic repository error into a 400 with its own message", async () => {
+  it("passes an expected repository error (closed month) through with its status", async () => {
     const repo = new FakeClientsRepository();
-    repo.correctClientDebtMock.mockRejectedValueOnce(new Error("Financial month 2026-06 is closed"));
+    repo.correctClientDebtMock.mockRejectedValueOnce(closedMonthError("2026-06"));
     const service = new ClientsService(repo);
     await expect(
       service.correctDebt({ clientId: "client-1", amount: -50, adminPassword: "pw", reason: "test" })
-    ).rejects.toMatchObject({ statusCode: 400, message: "Financial month 2026-06 is closed" });
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  it("falls back to a generic message when the repository throws a non-Error value", async () => {
+  it("does not turn an unexpected repository error into a client-facing message", async () => {
     const repo = new FakeClientsRepository();
-    repo.correctClientDebtMock.mockRejectedValueOnce("not an Error instance");
+    repo.correctClientDebtMock.mockRejectedValueOnce(new Error("firestore internals"));
     const service = new ClientsService(repo);
-    await expect(
-      service.correctDebt({ clientId: "client-1", amount: -50, adminPassword: "pw", reason: "test" })
-    ).rejects.toMatchObject({ statusCode: 400, message: "Erro ao corrigir débito" });
+    const error = await service
+      .correctDebt({ clientId: "client-1", amount: -50, adminPassword: "pw", reason: "test" })
+      .catch((e: unknown) => e);
+    expect(error).not.toBeInstanceOf(HttpError);
   });
 
   it("applies a valid correction", async () => {
@@ -253,14 +254,14 @@ describe("ClientsService.payOrder — no dangerous fallback", () => {
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it("surfaces applyFiadoPayment's error as a 400 instead of force-marking the order paid", async () => {
+  it("surfaces applyFiadoPayment's error instead of force-marking the order paid", async () => {
     const repo = new FakeClientsRepository();
-    repo.applyFiadoPaymentMock.mockRejectedValueOnce(new Error("Financial month 2026-06 is closed"));
+    repo.applyFiadoPaymentMock.mockRejectedValueOnce(closedMonthError("2026-06"));
     const service = new ClientsService(repo);
 
     await expect(
       service.payOrder({ clientId: "client-1", orderId: "order-1", amount: 50, method: "DINHEIRO", receivedByUserId: "u1" })
-    ).rejects.toMatchObject({ statusCode: 400, message: "Financial month 2026-06 is closed" });
+    ).rejects.toMatchObject({ statusCode: 409 });
 
     // Critically: no compensating write was attempted. The old buggy fallback would have
     // called markOrderAsPaid + updateClientBalance(-order.totalAmount) here regardless of
@@ -308,13 +309,13 @@ describe("ClientsService.payCascading", () => {
     ).rejects.toThrow(HttpError);
   });
 
-  it("translates a repository failure into a 400", async () => {
+  it("passes an expected repository failure through with its status", async () => {
     const repo = new FakeClientsRepository();
-    repo.applyCascadingFiadoPaymentMock.mockRejectedValueOnce(new Error("Financial month 2026-06 is closed"));
+    repo.applyCascadingFiadoPaymentMock.mockRejectedValueOnce(closedMonthError("2026-06"));
     const service = new ClientsService(repo);
     await expect(
       service.payCascading({ clientId: "client-1", amount: 100, method: "DINHEIRO", receivedByUserId: "u1" })
-    ).rejects.toMatchObject({ statusCode: 400, message: "Financial month 2026-06 is closed" });
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 
   it("applies a valid cascading payment and returns the paymentResult", async () => {

@@ -1,4 +1,4 @@
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import { getUser } from "@/domains/users/users-db";
 import type { CashRegisterRepository } from "@/domains/cash-register/repository";
 import type { AdjustmentCommand, AdjustmentExecutionResult } from "@/domains/cash-register/types";
@@ -47,7 +47,7 @@ export class CashRegisterService {
 
     const safeIdempotencyKey = String(command.idempotencyKey || "").trim();
     if (!safeIdempotencyKey) {
-      throw new HttpError(400, "idempotencyKey is required");
+      throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
     }
 
     const amount = Number(command.amount || 0);
@@ -68,13 +68,13 @@ export class CashRegisterService {
     });
 
     if (reservation.type === "conflict") {
-      throw new HttpError(409, "Idempotency key reuse with different payload");
+      throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
     }
     if (reservation.type === "completed") {
       return { status: 200, body: reservation.response };
     }
     if (reservation.type === "in_progress") {
-      return { status: 409, body: { error: "Request already being processed" } };
+      return { status: 409, body: { error: IDEMPOTENCY_IN_PROGRESS_MESSAGE } };
     }
 
     try {

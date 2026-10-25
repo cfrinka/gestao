@@ -63,15 +63,8 @@ export async function PATCH(request: NextRequest) {
       const { action, exchangeId } = body;
 
       if (action === "add_to_register" && exchangeId) {
-        try {
-          const updated = await addExchangeDifferenceToCashRegisterSales(exchangeId, user.uid);
-          return NextResponse.json(updated);
-        } catch (error) {
-          return NextResponse.json(
-            { error: error instanceof Error ? error.message : "Erro ao incluir no caixa" },
-            { status: 400 }
-          );
-        }
+        const updated = await addExchangeDifferenceToCashRegisterSales(exchangeId, user.uid);
+        return NextResponse.json(updated);
       }
 
       return NextResponse.json({ error: "Ação inválida" }, { status: 400 });

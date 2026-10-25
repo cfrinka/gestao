@@ -1,6 +1,7 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { AdjustmentResult, StockAdjustmentRecord } from "@/domains/stock-adjustments/types";
+import { HttpError } from "@/lib/api/http-errors";
 
 export async function createAdjustment(input: {
   productId: string;
@@ -16,7 +17,7 @@ export async function createAdjustment(input: {
   const result = await adminDb.runTransaction(async (tx) => {
     const snap = await tx.get(productRef);
     if (!snap.exists) {
-      throw new Error("Product not found");
+      throw new HttpError(404, "Produto não encontrado");
     }
     const product = snap.data() as {
       name?: string;

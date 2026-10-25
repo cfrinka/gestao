@@ -2,6 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { Order, OrderItem } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 
 function normalizePositivePayments(
   payments: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>
@@ -51,7 +52,7 @@ export async function cancelOrder(input: {
   reason?: string;
 }): Promise<Order> {
   if (input.actorRole !== "ADMIN") {
-    throw new Error("Only admins can cancel sales");
+    throw new HttpError(403, "Só administradores podem cancelar vendas");
   }
 
   const safeReason = String(input.reason || "").trim();
@@ -61,15 +62,15 @@ export async function cancelOrder(input: {
     // ── ALL READS FIRST ──
     const orderSnap = await tx.get(orderRef);
     if (!orderSnap.exists) {
-      throw new Error("Order not found");
+      throw new HttpError(404, "Venda não encontrada");
     }
 
     const order = convertTimestamp<Order>(orderSnap.data()!);
     if (order.isCancelled) {
-      throw new Error("Order is already cancelled");
+      throw new HttpError(409, "Esta venda já foi cancelada");
     }
     if (order.isPaidLater) {
-      throw new Error("Fiado sales cannot be cancelled in this screen");
+      throw new HttpError(400, "Vendas fiado não podem ser canceladas por aqui");
     }
 
     // Get order items to restore stock
@@ -118,7 +119,7 @@ export async function cancelOrder(input: {
     const orderMonth = toCompetencyMonth(orderCreatedAt);
     const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(orderMonth));
     if (closureSnap.exists) {
-      throw new Error(`Financial month ${orderMonth} is closed`);
+      throw closedMonthError(orderMonth);
     }
 
     // ── ALL WRITES AFTER ──
@@ -265,12 +266,12 @@ export async function updateOrder(input: {
   actorRole: string;
 }): Promise<Order> {
   if (input.actorRole !== "ADMIN") {
-    throw new Error("Only admins can edit sales");
+    throw new HttpError(403, "Só administradores podem editar vendas");
   }
 
   const safeDiscount = Number(input.discount || 0);
   if (!Number.isFinite(safeDiscount) || safeDiscount < 0) {
-    throw new Error("Discount must be a valid non-negative number");
+    throw new HttpError(400, "Desconto inválido");
   }
 
   const normalizedPayments = normalizePositivePayments(input.payments);
@@ -281,15 +282,15 @@ export async function updateOrder(input: {
     // ── ALL READS FIRST ──
     const orderSnap = await tx.get(orderRef);
     if (!orderSnap.exists) {
-      throw new Error("Order not found");
+      throw new HttpError(404, "Venda não encontrada");
     }
 
     const order = convertTimestamp<Order>(orderSnap.data()!);
     if (order.isCancelled) {
-      throw new Error("Cancelled sales cannot be edited");
+      throw new HttpError(409, "Vendas canceladas não podem ser editadas");
     }
     if (order.isPaidLater) {
-      throw new Error("Fiado sales cannot be edited in this screen");
+      throw new HttpError(400, "Vendas fiado não podem ser editadas por aqui");
     }
 
     const itemsQuery = adminDb.collection("orderItems").where("orderId", "==", input.orderId);
@@ -314,19 +315,19 @@ export async function updateOrder(input: {
     const orderMonth = toCompetencyMonth(orderCreatedAt);
     const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(orderMonth));
     if (closureSnap.exists) {
-      throw new Error(`Financial month ${orderMonth} is closed`);
+      throw closedMonthError(orderMonth);
     }
 
     // ── VALIDATION ──
     const subtotal = items.reduce((sum, item) => sum + Number(item.totalRevenue || 0), 0);
     if (safeDiscount > subtotal) {
-      throw new Error("Discount cannot be greater than subtotal");
+      throw new HttpError(400, "O desconto não pode ser maior que o subtotal");
     }
 
     const nextTotalAmount = Math.max(0, subtotal - safeDiscount);
     const totalPaid = normalizedPayments.reduce((sum, payment) => sum + payment.amount, 0);
     if (Math.abs(totalPaid - nextTotalAmount) > 0.01) {
-      throw new Error("Payment total must match order total");
+      throw new HttpError(400, "A soma dos pagamentos precisa ser igual ao total da venda");
     }
 
     // ── ALL WRITES AFTER ──

@@ -32,7 +32,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         return NextResponse.json(updated);
       }
 
-      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+      return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
     },
     { roles: ["ADMIN"], operationName: "Bills PATCH" }
   );

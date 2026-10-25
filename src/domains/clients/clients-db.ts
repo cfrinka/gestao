@@ -4,6 +4,7 @@ import type { Client, FiadoPayment, Order, OrderItem, PaymentMethod } from "@/li
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { verifyAdminPassword } from "@/lib/admin-password";
 import { assertFinancialMonthOpenTx, toCompetencyMonth } from "@/domains/financial/financial-db";
+import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 
 function mapOrderPaymentMethodToFinancial(method: PaymentMethod["method"]): "cash" | "pix" | "credit" | "debit" {
   if (method === "DINHEIRO") return "cash";
@@ -160,7 +161,7 @@ export async function correctClientDebt(
   reason: string
 ): Promise<void> {
   if (!(await verifyAdminPassword(adminPassword))) {
-    throw new Error("Invalid admin password");
+    throw new HttpError(403, "Senha de administrador inválida");
   }
 
   return applyClientDebtCorrection(clientId, correctionAmount, reason);
@@ -177,11 +178,11 @@ export async function applyClientDebtCorrection(
   reason: string
 ): Promise<void> {
   if (!correctionAmount || correctionAmount === 0) {
-    throw new Error("Correction amount must be different from zero");
+    throw new HttpError(400, "O valor da correção deve ser diferente de zero");
   }
 
   if (!reason || reason.trim().length === 0) {
-    throw new Error("Reason for correction is required");
+    throw new HttpError(400, "Informe o motivo da correção");
   }
 
   const clientRef = adminDb.collection("clients").doc(clientId);
@@ -199,7 +200,7 @@ export async function applyClientDebtCorrection(
     // ALL READS FIRST
     const clientSnap = await tx.get(clientRef);
     if (!clientSnap.exists) {
-      throw new Error("Client not found");
+      throw new HttpError(404, "Cliente não encontrado");
     }
 
     const clientData = clientSnap.data();
@@ -208,7 +209,7 @@ export async function applyClientDebtCorrection(
 
     // Don't allow correction that would leave negative balance (unless it's actually reducing debt)
     if (correctionAmount > 0 && newBalance < 0) {
-      throw new Error("Correction would result in invalid negative balance");
+      throw new HttpError(400, "A correção deixaria o saldo do cliente negativo");
     }
 
     const ordersToUpdate: Array<{
@@ -248,7 +249,7 @@ export async function applyClientDebtCorrection(
         const orderMonth = toCompetencyMonth(orderCreatedAt);
         const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(orderMonth));
         if (closureSnap.exists) {
-          throw new Error(`Financial month ${orderMonth} is closed for order ${orderDoc.id}`);
+          throw closedMonthError(orderMonth);
         }
 
         const correctionToOrder = Math.min(remainingToCorrect, currentRemaining);
@@ -339,7 +340,7 @@ export async function applyFiadoPayment(
   receivedByUserName?: string
 ): Promise<void> {
   if (!amount || amount <= 0) {
-    throw new Error("Payment amount must be greater than zero");
+    throw new HttpError(400, "O valor do pagamento deve ser maior que zero");
   }
 
   const orderRef = adminDb.collection("orders").doc(orderId);
@@ -348,20 +349,20 @@ export async function applyFiadoPayment(
   await adminDb.runTransaction(async (tx) => {
     const orderSnap = await tx.get(orderRef);
     if (!orderSnap.exists) {
-      throw new Error("Order not found");
+      throw new HttpError(404, "Venda não encontrada");
     }
 
     const order = convertTimestamp<Order>(orderSnap.data()!);
     if (!order.isPaidLater) {
-      throw new Error("Order is not a FIADO order");
+      throw new HttpError(400, "Esta venda não é fiado");
     }
     if (order.clientId !== clientId) {
-      throw new Error("Order does not belong to this client");
+      throw new HttpError(400, "Esta venda não pertence a este cliente");
     }
 
     const clientSnap = await tx.get(clientRef);
     if (!clientSnap.exists) {
-      throw new Error("Client not found");
+      throw new HttpError(404, "Cliente não encontrado");
     }
     const clientName = String(clientSnap.data()?.name || order.clientName || "Cliente").trim();
 
@@ -370,7 +371,7 @@ export async function applyFiadoPayment(
       typeof order.remainingAmount === "number" ? order.remainingAmount : order.paidAt ? 0 : order.totalAmount;
 
     if (currentRemaining <= 0) {
-      throw new Error("Order is already fully paid");
+      throw new HttpError(409, "Esta venda já está quitada");
     }
 
     const appliedAmount = Math.min(amount, currentRemaining);
@@ -473,26 +474,26 @@ export async function removeFiadoOrderItem(
     ]);
 
     if (!orderSnap.exists) {
-      throw new Error("Order not found");
+      throw new HttpError(404, "Venda não encontrada");
     }
     if (!clientSnap.exists) {
-      throw new Error("Client not found");
+      throw new HttpError(404, "Cliente não encontrado");
     }
     if (!orderItemSnap.exists) {
-      throw new Error("Order item not found");
+      throw new HttpError(404, "Item da venda não encontrado");
     }
 
     const order = convertTimestamp<Order>(orderSnap.data()!);
     if (!order.isPaidLater) {
-      throw new Error("Order is not a FIADO order");
+      throw new HttpError(400, "Esta venda não é fiado");
     }
     if (order.clientId !== clientId) {
-      throw new Error("Order does not belong to this client");
+      throw new HttpError(400, "Esta venda não pertence a este cliente");
     }
 
     const orderItem = convertTimestamp<OrderItem>(orderItemSnap.data()!);
     if (orderItem.orderId !== orderId) {
-      throw new Error("Order item does not belong to this order");
+      throw new HttpError(400, "Este item não pertence a esta venda");
     }
 
     const productRef = adminDb.collection("products").doc(orderItem.productId);

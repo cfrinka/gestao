@@ -1,4 +1,4 @@
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import type { StockAdjustmentsRepository } from "@/domains/stock-adjustments/repository";
 import type {
   CreateAdjustmentCommand,
@@ -22,7 +22,7 @@ export class StockAdjustmentsService {
   async create(command: CreateAdjustmentCommand): Promise<StockAdjustmentExecutionResult> {
     const safeIdempotencyKey = String(command.idempotencyKey || "").trim();
     if (!safeIdempotencyKey) {
-      throw new HttpError(400, "idempotencyKey is required");
+      throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
     }
 
     const productId = String(command.productId || "").trim();
@@ -47,13 +47,13 @@ export class StockAdjustmentsService {
     });
 
     if (reservation.type === "conflict") {
-      throw new HttpError(409, "Idempotency key reuse with different payload");
+      throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
     }
     if (reservation.type === "completed") {
       return { status: 200, body: reservation.response };
     }
     if (reservation.type === "in_progress") {
-      return { status: 409, body: { error: "Request already being processed" } };
+      return { status: 409, body: { error: IDEMPOTENCY_IN_PROGRESS_MESSAGE } };
     }
 
     try {

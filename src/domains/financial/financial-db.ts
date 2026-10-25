@@ -10,6 +10,7 @@ import type {
   MovementDoc,
   RunHealthCheckCommand,
 } from "@/domains/financial/types";
+import { closedMonthError } from "@/lib/api/http-errors";
 
 export function toCompetencyMonth(date: Date): string {
   const year = date.getFullYear();
@@ -65,7 +66,7 @@ export async function assertFinancialMonthOpen(date: Date): Promise<void> {
   const month = toCompetencyMonth(date);
   const closed = await isFinancialMonthClosed(month);
   if (closed) {
-    throw new Error(`Financial month ${month} is closed`);
+    throw closedMonthError(month);
   }
 }
 
@@ -74,7 +75,7 @@ export async function assertFinancialMonthOpenTx(tx: FirebaseFirestore.Transacti
   const month = toCompetencyMonth(date);
   const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(month));
   if (closureSnap.exists) {
-    throw new Error(`Financial month ${month} is closed`);
+    throw closedMonthError(month);
   }
 }
 

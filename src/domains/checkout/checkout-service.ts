@@ -1,4 +1,4 @@
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import type { CheckoutRepository } from "@/domains/checkout/repository";
 import type { CheckoutCommand, CheckoutExecutionResult } from "@/domains/checkout/types";
 
@@ -14,11 +14,11 @@ export class CheckoutService {
   async execute(command: CheckoutCommand): Promise<CheckoutExecutionResult> {
     const safeIdempotencyKey = (command.idempotencyKey || "").trim();
     if (!safeIdempotencyKey) {
-      throw new HttpError(400, "idempotencyKey is required");
+      throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
     }
 
     if (!Array.isArray(command.items) || command.items.length === 0) {
-      throw new HttpError(400, "No items in cart");
+      throw new HttpError(400, "Adicione ao menos um produto à venda");
     }
 
     const canUseAdvancedFeatures = command.userRole === "ADMIN";
@@ -26,11 +26,11 @@ export class CheckoutService {
     const payLater = Boolean(command.payLater);
 
     if (payLater && !canUsePayLater) {
-      throw new HttpError(403, "You don't have permission to use pay later");
+      throw new HttpError(403, "Seu perfil não pode vender fiado");
     }
 
     if (payLater && !command.clientId) {
-      throw new HttpError(400, "clientId is required for pay later");
+      throw new HttpError(400, "Selecione o cliente da venda fiado");
     }
 
     const subtotal = Number(command.subtotal || 0);
@@ -62,7 +62,7 @@ export class CheckoutService {
     if (payLater && command.clientId) {
       const fetchedClientName = await this.repository.getClientNameById(command.clientId);
       if (!fetchedClientName) {
-        throw new HttpError(404, "Client not found");
+        throw new HttpError(404, "Cliente não encontrado");
       }
       clientName = fetchedClientName;
     }
@@ -83,7 +83,7 @@ export class CheckoutService {
     });
 
     if (reservation.type === "conflict") {
-      throw new HttpError(409, "Idempotency key reuse with different payload");
+      throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
     }
 
     if (reservation.type === "completed") {
@@ -91,7 +91,7 @@ export class CheckoutService {
     }
 
     if (reservation.type === "in_progress") {
-      return { status: 409, body: { error: "Request already being processed" } };
+      return { status: 409, body: { error: IDEMPOTENCY_IN_PROGRESS_MESSAGE } };
     }
 
     let order;

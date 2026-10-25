@@ -3,7 +3,7 @@ import { adminDb } from "@/lib/firebase-admin";
 import type { Product, StockPurchaseEntry } from "@/lib/db-types";
 import type { ProductCreateInput, ProductUpdateInput } from "@/domains/products/types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 
 function toCompetencyMonth(date: Date): string {
   const year = date.getFullYear();
@@ -15,7 +15,7 @@ async function assertFinancialMonthOpen(date: Date): Promise<void> {
   const month = toCompetencyMonth(date);
   const closure = await adminDb.collection("financialClosures").doc(month).get();
   if (closure.exists) {
-    throw new Error(`Financial month ${month} is closed`);
+    throw closedMonthError(month);
   }
 }
 
@@ -71,7 +71,7 @@ export async function createProduct(data: ProductCreateInput): Promise<Product> 
   await adminDb.runTransaction(async (tx) => {
     const skuSnap = await tx.get(skuRef);
     if (skuSnap.exists) {
-      throw new HttpError(400, "SKU already exists");
+      throw new HttpError(400, "Já existe um produto com este código (SKU)");
     }
 
     tx.create(skuRef, { productId: productRef.id, sku: data.sku });
@@ -97,7 +97,7 @@ export async function updateProduct(id: string, data: ProductUpdateInput): Promi
   await adminDb.runTransaction(async (tx) => {
     const snap = await tx.get(productRef);
     if (!snap.exists) {
-      throw new HttpError(404, "Product not found");
+      throw new HttpError(404, "Produto não encontrado");
     }
 
     const existingSku = snap.data()?.sku as string | undefined;
@@ -107,7 +107,7 @@ export async function updateProduct(id: string, data: ProductUpdateInput): Promi
     if (nextSkuRef) {
       const nextSkuSnap = await tx.get(nextSkuRef);
       if (nextSkuSnap.exists) {
-        throw new HttpError(400, "SKU already exists");
+        throw new HttpError(400, "Já existe um produto com este código (SKU)");
       }
     }
 

@@ -18,17 +18,17 @@ export class FinancialService {
 
   async closeMonth(command: { month: string; actorId: string; actorRole: string }): Promise<FinancialClosureResult> {
     if (command.actorRole !== "ADMIN") {
-      throw new HttpError(403, "Only admins can close a financial month");
+      throw new HttpError(403, "Só administradores podem fechar o mês");
     }
 
     const month = (command.month || "").trim();
     if (!isValidCompetencyMonth(month)) {
-      throw new HttpError(400, "Invalid month. Expected YYYY-MM");
+      throw new HttpError(400, "Mês inválido");
     }
 
     const currentMonth = toCompetencyMonth(new Date());
     if (month === currentMonth) {
-      throw new HttpError(400, "Current month cannot be closed");
+      throw new HttpError(400, "O mês atual ainda não pode ser fechado");
     }
 
     try {
@@ -43,7 +43,7 @@ export class FinancialService {
 
   async runHealthCheck(command: { actorId: string; actorRole: string }): Promise<HealthCheckResult> {
     if (command.actorRole !== "ADMIN" && command.actorRole !== "SYSTEM") {
-      throw new HttpError(403, "Forbidden");
+      throw new HttpError(403, "Sem permissão");
     }
 
     return this.repository.runHealthCheck(command);

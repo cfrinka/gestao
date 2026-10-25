@@ -44,7 +44,7 @@ Sistema de gestão para loja de roupas (PDV, estoque, financeiro e clientes), co
 ### Usuários e Acesso — `/users`
 - Dois papéis: **Admin** (acesso total) e **Caixa** (PDV, vendas, trocas, comissão e dashboard)
 - Criação/desativação de usuário mexe em dois sistemas (Firebase Auth + Firestore) sem transação conjunta entre eles — desativação reverte o lado já aplicado se o outro falhar, e uma falha na própria reversão é registrada em `syncErrors` para conciliação manual em vez de ser silenciosamente ignorada
-- Conta de demonstração provisionável por um Admin (`/api/users/demo`), com todas as escritas bloqueadas
+- Só entra quem tem cadastro em `users` (criado pela tela Usuários) e está ativo; uma conta do Firebase sem esse cadastro não tem acesso a nada
 
 ## Arquitetura
 

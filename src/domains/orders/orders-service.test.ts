@@ -93,24 +93,25 @@ describe("OrdersService.cancel", () => {
     expect(result.isCancelled).toBe(true);
   });
 
-  it("converts a repository error into a 400 HttpError with the original message", async () => {
+  it("passes the repository's own HttpError through with its status and message", async () => {
     const repo = new FakeOrdersRepository();
-    repo.cancelOrderMock.mockRejectedValueOnce(new Error("Order is already cancelled"));
+    repo.cancelOrderMock.mockRejectedValueOnce(new HttpError(409, "Esta venda já foi cancelada"));
     const service = new OrdersService(repo);
 
     await expect(
       service.cancel({ orderId: "order-1", actorId: "admin-1", actorRole: "ADMIN", authTime: recentAuthTime })
-    ).rejects.toMatchObject({ statusCode: 400, message: "Order is already cancelled" });
+    ).rejects.toMatchObject({ statusCode: 409, message: "Esta venda já foi cancelada" });
   });
 
-  it("falls back to a generic message when the repository throws a non-Error value", async () => {
+  it("does not turn an unexpected repository error into a client-facing message", async () => {
     const repo = new FakeOrdersRepository();
-    repo.cancelOrderMock.mockRejectedValueOnce("not an Error instance");
+    repo.cancelOrderMock.mockRejectedValueOnce(new Error("firestore internals"));
     const service = new OrdersService(repo);
 
-    await expect(
-      service.cancel({ orderId: "order-1", actorId: "admin-1", actorRole: "ADMIN", authTime: recentAuthTime })
-    ).rejects.toMatchObject({ statusCode: 400, message: "Erro ao cancelar venda" });
+    const error = await service
+      .cancel({ orderId: "order-1", actorId: "admin-1", actorRole: "ADMIN", authTime: recentAuthTime })
+      .catch((e: unknown) => e);
+    expect(error).not.toBeInstanceOf(HttpError);
   });
 });
 

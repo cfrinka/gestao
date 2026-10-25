@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Eye, EyeOff, Plus, UserCog } from "lucide-react";
+import { Eye, EyeOff, Plus } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 
 interface User {
@@ -59,28 +59,6 @@ export default function UsersPage() {
     role: "CASHIER",
   });
   const [roleEdits, setRoleEdits] = useState<Record<string, string>>({});
-  const [provisioningDemo, setProvisioningDemo] = useState(false);
-
-  const handleProvisionDemo = async () => {
-    try {
-      setProvisioningDemo(true);
-      const result = await apiPost("/api/users/demo", {});
-      toast({
-        title: "Usuário demonstrativo pronto",
-        description: result?.message || "teste@teste.com / Teste@123",
-      });
-      fetchUsers();
-    } catch (error) {
-      toast({
-        title: "Erro ao provisionar usuário demonstrativo",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
-    } finally {
-      setProvisioningDemo(false);
-    }
-  };
-
   const fetchUsers = useCallback(async () => {
     try {
       const data = await apiGet("/api/users");
@@ -198,16 +176,6 @@ export default function UsersPage() {
         meta={!loading ? <span><b className="font-semibold text-ink">{users.length}</b> com acesso ao sistema</span> : null}
         actions={
         <>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleProvisionDemo}
-          disabled={provisioningDemo}
-          title="Cria ou redefine a conta teste@teste.com (Teste@123) como usuário demonstrativo"
-        >
-          <UserCog className="h-4 w-4" aria-hidden="true" />
-          {provisioningDemo ? "Preparando…" : "Preparar conta demo"}
-        </Button>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button size="sm">

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { cn, formatCurrency, generateSku } from "@/lib/utils";
-import { Plus, Pencil, Trash2, RefreshCw, Upload, Loader2, Download, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Upload, Loader2, Download, Search } from "lucide-react";
 import type { ProductSizeType } from "@/lib/db-types";
 import { useProductCategories, withCurrentCategory } from "@/lib/use-product-categories";
 import { PageHeader } from "@/components/layout/page-header";
@@ -249,18 +249,6 @@ export default function ProductsPage() {
     resetForm();
     setFormData(prev => ({ ...prev, sku: generateSku() }));
     setDialogOpen(true);
-  };
-
-  const fetchRandomImage = async () => {
-    try {
-      const query = formData.name || "fashion clothing";
-      const response = await apiGet(`/api/images/random?query=${encodeURIComponent(query)}`);
-      if (response?.url) {
-        setFormData(prev => ({ ...prev, image: response.url, imageSource: "random" }));
-      }
-    } catch {
-      toast({ title: "Erro ao buscar imagem", variant: "destructive" });
-    }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -583,16 +571,6 @@ export default function ProductsPage() {
                     aria-label="Enviar foto"
                   >
                     {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={fetchRandomImage}
-                    title="Gerar imagem aleatória"
-                    aria-label="Gerar imagem aleatória"
-                  >
-                    <RefreshCw className="h-4 w-4" />
                   </Button>
                 </div>
                 {formData.image && (

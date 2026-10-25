@@ -1,4 +1,4 @@
-import { HttpError } from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import type { ExchangesRepository } from "@/domains/exchanges/repository";
 import type { CreateExchangeCommand, ExchangeExecutionResult } from "@/domains/exchanges/types";
 
@@ -18,11 +18,11 @@ export class ExchangesService {
   async create(command: CreateExchangeCommand): Promise<ExchangeExecutionResult> {
     const safeIdempotencyKey = (command.idempotencyKey || "").trim();
     if (!safeIdempotencyKey) {
-      throw new HttpError(400, "idempotencyKey is required");
+      throw new HttpError(400, IDEMPOTENCY_KEY_REQUIRED_MESSAGE);
     }
 
     if (command.userRole !== "ADMIN" && command.userRole !== "CASHIER") {
-      throw new HttpError(403, "Forbidden");
+      throw new HttpError(403, "Sem permissão");
     }
 
     if (!Array.isArray(command.items) || command.items.length === 0) {
@@ -71,7 +71,7 @@ export class ExchangesService {
     });
 
     if (reservation.type === "conflict") {
-      throw new HttpError(409, "Idempotency key reuse with different payload");
+      throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
     }
 
     if (reservation.type === "completed") {
@@ -79,7 +79,7 @@ export class ExchangesService {
     }
 
     if (reservation.type === "in_progress") {
-      return { status: 409, body: { error: "Request already being processed" } };
+      return { status: 409, body: { error: IDEMPOTENCY_IN_PROGRESS_MESSAGE } };
     }
 
     try {

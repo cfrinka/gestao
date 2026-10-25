@@ -8,6 +8,7 @@ import type {
   FinancialMovementPaymentMethod,
   Product,
 } from "@/lib/db-types";
+import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 
 function toCompetencyMonth(date: Date): string {
   const year = date.getFullYear();
@@ -28,7 +29,7 @@ export async function createExchange(input: {
   createdByName: string;
 }): Promise<ExchangeRecord> {
   if (input.createdByRole !== "ADMIN" && input.createdByRole !== "CASHIER") {
-    throw new Error("Role not allowed to create exchange");
+    throw new HttpError(403, "Seu perfil não pode registrar trocas");
   }
 
   const providedDocumentNumber = (input.documentNumber || "").trim();
@@ -37,11 +38,11 @@ export async function createExchange(input: {
   const requestedDiscountAmount = Number(input.discountAmount || 0);
 
   if (!Number.isFinite(requestedDiscountAmount) || requestedDiscountAmount < 0) {
-    throw new Error("Desconto inválido na troca");
+    throw new HttpError(400, "Desconto inválido na troca");
   }
 
   if (!Array.isArray(input.items) || input.items.length === 0) {
-    throw new Error("Adicione ao menos um item na troca");
+    throw new HttpError(400, "Adicione ao menos um item na troca");
   }
 
   const now = new Date();
@@ -53,7 +54,7 @@ export async function createExchange(input: {
   const result = await adminDb.runTransaction(async (tx) => {
     const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(competencyMonth));
     if (closureSnap.exists) {
-      throw new Error(`Financial month ${competencyMonth} is closed`);
+      throw closedMonthError(competencyMonth);
     }
 
     const normalizedItems: ExchangeItem[] = [];
@@ -66,18 +67,18 @@ export async function createExchange(input: {
 
     const registerSnap = registerRef ? await tx.get(registerRef) : null;
     if (registerRef && (!registerSnap || !registerSnap.exists)) {
-      throw new Error("Caixa informado não foi encontrado");
+      throw new HttpError(404, "Caixa informado não foi encontrado");
     }
 
     const registerStatus = registerSnap?.data()?.status;
     if (registerRef && registerStatus !== "OPEN") {
-      throw new Error("O caixa precisa estar aberto para registrar diferença de troca");
+      throw new HttpError(400, "O caixa precisa estar aberto para registrar diferença de troca");
     }
 
     const productsById = new Map<string, Product>();
     for (const productSnap of productSnapshots) {
       if (!productSnap.exists) {
-        throw new Error("Produto não encontrado na troca");
+        throw new HttpError(404, "Produto não encontrado na troca");
       }
       const product = { id: productSnap.id, ...convertTimestamp<Omit<Product, "id">>(productSnap.data()!) };
       productsById.set(product.id, product);
@@ -94,33 +95,33 @@ export async function createExchange(input: {
     for (const item of input.items) {
       const quantity = Math.floor(Number(item.quantity));
       if (!Number.isFinite(quantity) || quantity <= 0) {
-        throw new Error("Quantidade inválida na troca");
+        throw new HttpError(400, "Quantidade inválida na troca");
       }
 
       if (item.direction !== "IN" && item.direction !== "OUT") {
-        throw new Error("Direção da troca inválida");
+        throw new HttpError(400, "Direção da troca inválida");
       }
 
       const product = mutableProducts.get(item.productId);
       if (!product) {
-        throw new Error("Produto não encontrado na troca");
+        throw new HttpError(404, "Produto não encontrado na troca");
       }
       const hasSizes = Array.isArray(product.sizes) && product.sizes.length > 0;
       const size = (item.size || "").trim();
 
       if (hasSizes && !size) {
-        throw new Error(`Selecione o tamanho para ${product.name}`);
+        throw new HttpError(400, `Selecione o tamanho para ${product.name}`);
       }
 
       if (hasSizes) {
         const sizeIndex = product.sizes.findIndex((s) => s.size === size);
         if (sizeIndex < 0) {
-          throw new Error(`Tamanho ${size} não encontrado para ${product.name}`);
+          throw new HttpError(400, `Tamanho ${size} não encontrado para ${product.name}`);
         }
 
         const currentSizeStock = Number(product.sizes[sizeIndex]?.stock || 0);
         if (item.direction === "OUT" && currentSizeStock < quantity) {
-          throw new Error(`Estoque insuficiente de ${product.name} (${size}). Disponível: ${currentSizeStock}`);
+          throw new HttpError(400, `Estoque insuficiente de ${product.name} (${size}). Disponível: ${currentSizeStock}`);
         }
 
         product.sizes = product.sizes.map((s, idx) =>
@@ -130,7 +131,7 @@ export async function createExchange(input: {
 
       const currentStock = Number(product.stock || 0);
       if (item.direction === "OUT" && currentStock < quantity) {
-        throw new Error(`Estoque insuficiente de ${product.name}. Disponível: ${currentStock}`);
+        throw new HttpError(400, `Estoque insuficiente de ${product.name}. Disponível: ${currentStock}`);
       }
 
       product.stock = currentStock + (item.direction === "IN" ? quantity : -quantity);
@@ -176,7 +177,7 @@ export async function createExchange(input: {
     const paymentMethod = cashInAmount > 0 ? input.paymentMethod : undefined;
 
     if (cashInAmount > 0 && !paymentMethod) {
-      throw new Error("Selecione a forma de pagamento da diferença da troca");
+      throw new HttpError(400, "Selecione a forma de pagamento da diferença da troca");
     }
 
     tx.set(exchangeRef, {
@@ -253,7 +254,7 @@ export async function addExchangeDifferenceToCashRegisterSales(
   const result = await adminDb.runTransaction(async (tx) => {
     const exchangeSnap = await tx.get(exchangeRef);
     if (!exchangeSnap.exists) {
-      throw new Error("Troca não encontrada");
+      throw new HttpError(404, "Troca não encontrada");
     }
 
     const exchangeData = exchangeSnap.data()!;
@@ -261,11 +262,11 @@ export async function addExchangeDifferenceToCashRegisterSales(
     const paymentMethod = exchangeData.paymentMethod as FinancialMovementPaymentMethod | undefined;
 
     if (difference <= 0) {
-      throw new Error("Esta troca não possui diferença positiva para incluir no caixa");
+      throw new HttpError(400, "Esta troca não possui diferença positiva para incluir no caixa");
     }
 
     if (exchangeData.addedToCashRegisterSales === true) {
-      throw new Error("Esta troca já foi incluída nas vendas do caixa");
+      throw new HttpError(409, "Esta troca já foi incluída nas vendas do caixa");
     }
 
     // Find open cash register for user
@@ -277,7 +278,7 @@ export async function addExchangeDifferenceToCashRegisterSales(
     const openRegisterSnap = await tx.get(openRegisterQuery);
 
     if (openRegisterSnap.empty) {
-      throw new Error("Nenhum caixa aberto encontrado. Abra um caixa primeiro.");
+      throw new HttpError(400, "Nenhum caixa aberto encontrado. Abra um caixa primeiro.");
     }
 
     const registerDoc = openRegisterSnap.docs[0];
