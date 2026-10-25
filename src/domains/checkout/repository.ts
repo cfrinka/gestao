@@ -1,5 +1,12 @@
 import type { Order, PaymentMethod } from "@/lib/db-types";
-import type { CheckoutCartItem, IdempotencyReservation } from "@/domains/checkout/types";
+import type { CheckoutCartItem } from "@/domains/checkout/types";
+
+/** One attempted sale: the same key and payload always resolve to the same order. */
+export interface CheckoutIdempotency {
+  ownerId: string;
+  key: string;
+  requestHash: string;
+}
 
 export interface ProcessCheckoutInput {
   items: CheckoutCartItem[];
@@ -10,37 +17,37 @@ export interface ProcessCheckoutInput {
   /** Total the payments were settled against; the transaction refuses the sale if prices moved. */
   expectedTotal: number;
   clientId?: string;
-  clientName?: string;
   payLater: boolean;
-  cashRegisterId: string;
   createdById: string;
   createdByName: string;
   createdByRole: string;
+  idempotency: CheckoutIdempotency;
+}
+
+/**
+ * The saved order, plus what the POS needs to refresh itself without another request: the new
+ * stock of the products sold and the register's new totals.
+ */
+export type CheckoutOrder = Order & {
+  updatedStock?: Array<{ productId: string; stock: number; sizes: Array<{ size: string; stock: number }> }>;
+  register?: Record<string, unknown> | null;
+};
+
+export interface CheckoutResult {
+  /** True when this key had already completed: the stored order is returned and nothing is written. */
+  replayed: boolean;
+  order: CheckoutOrder;
 }
 
 export interface CheckoutRepository {
-  getClientNameById(clientId: string): Promise<string | null>;
-  reserveIdempotency(input: {
-    ownerId: string;
-    idempotencyKey: string;
-    requestHash: string;
-  }): Promise<IdempotencyReservation>;
-  markIdempotencyCompleted(input: {
-    ownerId: string;
-    idempotencyKey: string;
-    response: unknown;
-  }): Promise<void>;
-  markIdempotencyFailed(input: {
-    ownerId: string;
-    idempotencyKey: string;
-    errorMessage: string;
-  }): Promise<void>;
   /**
-   * Creates the order and, in the same transaction, decrements stock, adds the sale to the
-   * cash register (or the fiado amount to the client's balance). Either all of it happens or none.
+   * In one transaction: checks the idempotency key, the cashier's open register, the client and
+   * the stock; creates the order, decrements stock, adds the sale to the register (or the fiado
+   * amount to the client) and records the key as completed. Either all of it happens or none.
    */
-  processCheckout(input: ProcessCheckoutInput): Promise<Order>;
-  getOpenCashRegisterId(userId: string): Promise<string | null>;
+  processCheckout(input: ProcessCheckoutInput): Promise<CheckoutResult>;
+  /** The stored order for a key that already completed with this same payload, if any. */
+  findCompletedCheckout(idempotency: CheckoutIdempotency): Promise<CheckoutOrder | null>;
   /** Consumes a server-issued discount-override grant for this user, if one is live. Single-use. */
   consumeDiscountAuthorization(userId: string): Promise<boolean>;
 }

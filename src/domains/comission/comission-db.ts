@@ -1,6 +1,6 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
-import { getStoreSettings } from "@/domains/settings/settings-db";
+import { getStoreSettingsCached } from "@/domains/settings/settings-db";
 import type { SyncResult, UserCommission } from "@/domains/comission/types";
 import { toCompetencyMonth } from "@/lib/dates";
 
@@ -180,7 +180,7 @@ export async function syncCommissionMovements(): Promise<SyncResult> {
 
 export async function getCommissionReport(targetUserId: string | null): Promise<UserCommission[]> {
   // The rate is set in Configurações (3% unless changed) and applies to every month shown.
-  const settings = await getStoreSettings();
+  const settings = await getStoreSettingsCached();
   const percent = Number.isFinite(Number(settings.commissionPercent))
     ? Number(settings.commissionPercent)
     : DEFAULT_COMMISSION_PERCENT;

@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       const bills = await service.list({ month, status });
       return NextResponse.json(bills);
     },
-    { roles: ["ADMIN"], operationName: "Bills GET" }
+    { roles: ["ADMIN"], operationName: "Bills GET", cache: { scope: "shared" } }
   );
 }
 

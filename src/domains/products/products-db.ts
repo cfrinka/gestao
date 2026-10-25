@@ -5,6 +5,7 @@ import type { ProductCreateInput, ProductStockEditOptions, ProductUpdateInput } 
 import { applyStockEdit } from "@/domains/products/stock-edit";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
+import { cached } from "@/lib/server-cache";
 import { toCompetencyMonth } from "@/lib/dates";
 
 async function assertFinancialMonthOpen(date: Date): Promise<void> {
@@ -37,6 +38,15 @@ function toProduct(id: string, data: FirebaseFirestore.DocumentData): Product {
 export async function getProducts(): Promise<Product[]> {
   const snapshot = await adminDb.collection("products").orderBy("name").get();
   return snapshot.docs.map((doc) => toProduct(doc.id, doc.data()));
+}
+
+/**
+ * All products from the server cache (see lib/server-cache.ts): any write drops it, so it is
+ * never older than the last change made through the app. Used where only prices and names
+ * matter — anything that moves stock re-reads the products inside its own transaction.
+ */
+export function getProductsCached(): Promise<Product[]> {
+  return cached("products:all", getProducts);
 }
 
 export async function getProduct(id: string): Promise<Product | null> {

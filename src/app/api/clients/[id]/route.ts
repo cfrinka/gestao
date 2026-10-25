@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       const client = await service.get(params.id);
       return NextResponse.json(client);
     },
-    { roles: ["ADMIN", "CASHIER"], operationName: "Client GET" }
+    { roles: ["ADMIN", "CASHIER"], operationName: "Client GET", cache: { scope: "shared" } }
   );
 }
 

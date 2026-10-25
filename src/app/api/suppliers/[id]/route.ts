@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
       return NextResponse.json(supplier);
     },
-    { roles: ["ADMIN"], operationName: "Supplier GET" }
+    { roles: ["ADMIN"], operationName: "Supplier GET", cache: { scope: "shared" } }
   );
 }
 

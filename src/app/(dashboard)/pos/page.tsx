@@ -257,6 +257,30 @@ export default function POSPage() {
     }
   }, [toast]);
 
+  // The sale's response carries the new stock of what was sold and the register's new totals,
+  // so the screen updates at once instead of reloading the whole catalogue after every sale.
+  const applySaleResult = (order: {
+    updatedStock?: Array<{ productId: string; stock: number; sizes: Array<{ size: string; stock: number }> }>;
+    register?: unknown;
+  }) => {
+    if (Array.isArray(order.updatedStock)) {
+      const stockById = new Map(order.updatedStock.map((entry) => [entry.productId, entry]));
+      setProducts((current) =>
+        current.map((product) => {
+          const entry = stockById.get(product.id);
+          return entry ? { ...product, stock: entry.stock, sizes: entry.sizes.length > 0 ? entry.sizes : product.sizes } : product;
+        })
+      );
+    } else {
+      fetchProducts();
+    }
+    if (order.register && typeof order.register === "object") {
+      setCashRegister(order.register as CashRegister);
+    } else {
+      fetchCashRegister();
+    }
+  };
+
   useEffect(() => {
     fetchProducts();
     fetchCashRegister();
@@ -1085,7 +1109,7 @@ export default function POSPage() {
       setShowPaymentModal(false);
       setSelectedClientId("");
       setShowPayLater(false);
-      fetchProducts();
+      applySaleResult(order);
       fetchClients();
     } catch (error) {
       toast({
@@ -1163,8 +1187,7 @@ export default function POSPage() {
       clearCart();
       setShowPaymentModal(false);
       setPayments([]);
-      fetchProducts();
-      fetchCashRegister(); // Refresh cash register totals
+      applySaleResult(order);
     } catch (error) {
       toast({
         title: "Erro ao processar venda",

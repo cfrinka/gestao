@@ -1,21 +1,10 @@
-import {
-  HttpError,
-  IDEMPOTENCY_CONFLICT_MESSAGE,
-  IDEMPOTENCY_IN_PROGRESS_MESSAGE,
-  IDEMPOTENCY_KEY_REQUIRED_MESSAGE,
-} from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import { roundMoney } from "@/lib/money";
 import type { CheckoutRepository } from "@/domains/checkout/repository";
 import type { CheckoutCommand, CheckoutExecutionResult } from "@/domains/checkout/types";
 import { normalizeCartItems, normalizePayments, settlePayments } from "@/domains/checkout/cart-validation";
 
 export const CASHIER_DISCOUNT_CAP = 0.1;
-
-function toPublicErrorMessage(error: unknown): string {
-  if (error instanceof HttpError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "Internal server error";
-}
 
 export class CheckoutService {
   constructor(private readonly repository: CheckoutRepository) {}
@@ -52,109 +41,66 @@ export class CheckoutService {
     // The hash covers what the cashier asked for, not what the server derives from it (a
     // consumed discount grant, the change): a retry of the same sale must hash the same, or a
     // sale whose response was lost on a bad connection could never be recovered.
-    const requestHash = JSON.stringify({
+    const idempotency = {
+      ownerId: command.userId,
+      key: safeIdempotencyKey,
+      requestHash: JSON.stringify({
+        items,
+        payments: receivedPayments,
+        discount: roundMoney(requestedDiscount),
+        clientId: payLater ? command.clientId : undefined,
+        payLater,
+        userId: command.userId,
+      }),
+    };
+
+    const subtotal = roundMoney(Number(command.subtotal || 0));
+    // Store promotions (progressive discount, PIX discount, product discounts, etc.)
+    // are not subject to the cashier's manual discount limit below.
+    const promoDiscount = roundMoney(Number(command.promoDiscount || 0));
+    let allowedManualDiscount = roundMoney(requestedDiscount);
+
+    if (command.userRole === "CASHIER") {
+      // Cashiers can apply up to 10% discount, unless a server-verified admin
+      // authorization grant is on file for this user (see /api/admin/verify-password).
+      // Above the cap without a grant the sale is refused rather than quietly charged a
+      // different total than the one the cashier quoted.
+      const maxDiscount = roundMoney(subtotal * CASHIER_DISCOUNT_CAP);
+      if (allowedManualDiscount > maxDiscount) {
+        const isAuthorized = await this.repository.consumeDiscountAuthorization(command.userId);
+        if (!isAuthorized) {
+          // The grant may have been used by this very sale on an attempt whose response was lost.
+          const replay = await this.repository.findCompletedCheckout(idempotency);
+          if (replay) return { status: 200, body: replay };
+          throw new HttpError(403, "Desconto acima de 10% precisa da senha do administrador.");
+        }
+      }
+    } else if (command.userRole !== "ADMIN") {
+      allowedManualDiscount = 0;
+    }
+
+    const discount = roundMoney(promoDiscount + allowedManualDiscount);
+    const expectedTotal = roundMoney(Math.max(0, subtotal - discount));
+    const { payments, change } = payLater
+      ? { payments: [], change: 0 }
+      : settlePayments(receivedPayments, expectedTotal);
+
+    // A single transaction checks the key, register, client and stock and writes everything,
+    // including the completed key — nothing is left half-done to reconcile afterwards.
+    const result = await this.repository.processCheckout({
       items,
-      payments: receivedPayments,
-      discount: roundMoney(requestedDiscount),
+      payments,
+      change,
+      discount,
+      expectedTotal,
       clientId: payLater ? command.clientId : undefined,
       payLater,
-      userId: command.userId,
+      createdById: command.userId,
+      createdByName: command.userName,
+      createdByRole: command.userRole,
+      idempotency,
     });
 
-    const reservation = await this.repository.reserveIdempotency({
-      ownerId: command.userId,
-      idempotencyKey: safeIdempotencyKey,
-      requestHash,
-    });
-
-    if (reservation.type === "conflict") {
-      throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
-    }
-
-    if (reservation.type === "completed") {
-      return { status: 200, body: reservation.response };
-    }
-
-    if (reservation.type === "in_progress") {
-      return { status: 409, body: { error: IDEMPOTENCY_IN_PROGRESS_MESSAGE } };
-    }
-
-    let order;
-    try {
-      const subtotal = roundMoney(Number(command.subtotal || 0));
-      // Store promotions (progressive discount, PIX discount, product discounts, etc.)
-      // are not subject to the cashier's manual discount limit below.
-      const promoDiscount = roundMoney(Number(command.promoDiscount || 0));
-      let allowedManualDiscount = roundMoney(requestedDiscount);
-
-      if (command.userRole === "CASHIER") {
-        // Cashiers can apply up to 10% discount, unless a server-verified admin
-        // authorization grant is on file for this user (see /api/admin/verify-password).
-        // Above the cap without a grant the sale is refused rather than quietly charged a
-        // different total than the one the cashier quoted.
-        const maxDiscount = roundMoney(subtotal * CASHIER_DISCOUNT_CAP);
-        if (allowedManualDiscount > maxDiscount) {
-          const isAuthorized = await this.repository.consumeDiscountAuthorization(command.userId);
-          if (!isAuthorized) {
-            throw new HttpError(403, "Desconto acima de 10% precisa da senha do administrador.");
-          }
-        }
-      } else if (command.userRole !== "ADMIN") {
-        allowedManualDiscount = 0;
-      }
-
-      const discount = roundMoney(promoDiscount + allowedManualDiscount);
-      const expectedTotal = roundMoney(Math.max(0, subtotal - discount));
-      const { payments, change } = payLater
-        ? { payments: [], change: 0 }
-        : settlePayments(receivedPayments, expectedTotal);
-
-      let clientName: string | undefined;
-      if (payLater && command.clientId) {
-        const fetchedClientName = await this.repository.getClientNameById(command.clientId);
-        if (!fetchedClientName) {
-          throw new HttpError(404, "Cliente não encontrado");
-        }
-        clientName = fetchedClientName;
-      }
-
-      const cashRegisterId = await this.repository.getOpenCashRegisterId(command.userId);
-      if (!cashRegisterId) {
-        throw new HttpError(409, "Abra o caixa para finalizar a venda.");
-      }
-
-      order = await this.repository.processCheckout({
-        items,
-        payments,
-        change,
-        discount,
-        expectedTotal,
-        clientId: payLater ? command.clientId : undefined,
-        clientName,
-        payLater,
-        cashRegisterId,
-        createdById: command.userId,
-        createdByName: command.userName,
-        createdByRole: command.userRole,
-      });
-    } catch (error) {
-      // Nothing was created — safe to let a retry with the same idempotency key try again.
-      await this.repository.markIdempotencyFailed({
-        ownerId: command.userId,
-        idempotencyKey: safeIdempotencyKey,
-        errorMessage: toPublicErrorMessage(error),
-      });
-      throw error;
-    }
-
-    // Stock, register totals and the fiado balance were written in the same transaction as
-    // the order, so there is no follow-up bookkeeping left that could fail half-way.
-    await this.repository.markIdempotencyCompleted({
-      ownerId: command.userId,
-      idempotencyKey: safeIdempotencyKey,
-      response: order,
-    });
-
-    return { status: 201, body: order };
+    return { status: result.replayed ? 200 : 201, body: result.order };
   }
 }

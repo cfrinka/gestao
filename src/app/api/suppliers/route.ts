@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       const suppliers = await getSuppliers();
       return NextResponse.json(suppliers);
     },
-    { roles: ["ADMIN"], operationName: "Suppliers GET" }
+    { roles: ["ADMIN"], operationName: "Suppliers GET", cache: { scope: "shared" } }
   );
 }
 

@@ -2,6 +2,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { DiscountSettings, StoreSettings } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { cached } from "@/lib/server-cache";
 
 const DEFAULT_DISCOUNT_SETTINGS: DiscountSettings = {
   pixDiscountEnabled: false,
@@ -44,6 +45,11 @@ export async function getStoreSettings(): Promise<StoreSettings> {
     ...DEFAULT_SETTINGS,
     ...convertTimestamp<Omit<StoreSettings, "id">>(doc.data()!),
   };
+}
+
+/** Store settings from the server cache; dropped by any write, settings saves included. */
+export function getStoreSettingsCached(): Promise<StoreSettings> {
+  return cached("settings:store", getStoreSettings);
 }
 
 export async function updateStoreSettings(

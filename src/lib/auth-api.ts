@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { adminAuth, adminDb } from "./firebase-admin";
+import { cached } from "./server-cache";
 
 interface AuthUser {
   uid: string;
@@ -10,18 +11,45 @@ interface AuthUser {
   isDemo?: boolean;
 }
 
-async function verifyAuthUncached(token: string): Promise<AuthUser | null> {
-  try {
-    const decodedToken = await adminAuth.verifyIdToken(token);
+interface UserAccess {
+  name?: string;
+  role?: string;
+  isActive?: boolean;
+  isDemo?: boolean;
+}
 
-    // Fetch user data from Firestore to get role and ownerId
-    const userDoc = await adminDb.collection("users").doc(decodedToken.uid).get();
-    const userData = userDoc.data();
+/**
+ * The user's access record. Kept in the server cache, so a page that fires several requests
+ * (the POS asks for products, register, settings and clients at once) reads it once — and any
+ * write, including a role change or a deactivation, drops it so the next request rereads it.
+ */
+function getUserAccess(uid: string): Promise<UserAccess | null> {
+  return cached(
+    `auth-user:${uid}`,
+    async () => {
+      const userDoc = await adminDb.collection("users").doc(uid).get();
+      return userDoc.exists ? ((userDoc.data() || {}) as UserAccess) : null;
+    },
+    5 * 60 * 1000
+  );
+}
+
+export async function verifyAuth(request: NextRequest): Promise<AuthUser | null> {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+  const token = authHeader.split("Bearer ")[1];
+
+  try {
+    // Signature and expiry are checked locally against Google's cached public keys.
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    const userData = await getUserAccess(decodedToken.uid);
 
     // A valid Firebase token alone is not access: every account the store uses is created
     // from the Usuários screen, which writes this doc. Anything else (a self-registered
     // account, a leftover test login) gets nothing.
-    if (!userDoc.exists || !userData) {
+    if (!userData) {
       return null;
     }
 
@@ -44,42 +72,6 @@ async function verifyAuthUncached(token: string): Promise<AuthUser | null> {
     console.error("Auth verification failed:", error);
     return null;
   }
-}
-
-// A single page load fires several API calls at once (e.g. the POS screen requests
-// products, cash register, store settings and clients in parallel), and each call
-// would otherwise independently re-verify the same ID token and re-read the same
-// Firestore user doc. Coalesce same-token verifications within a short window so that
-// burst pays for one verification instead of N. The window is short enough that an
-// admin flipping isActive/role takes effect almost immediately on subsequent requests.
-const AUTH_CACHE_TTL_MS = 5000;
-const authCache = new Map<string, { promise: Promise<AuthUser | null>; expiresAt: number }>();
-
-function pruneExpiredAuthCacheEntries(now: number) {
-  authCache.forEach((value, key) => {
-    if (value.expiresAt <= now) {
-      authCache.delete(key);
-    }
-  });
-}
-
-export async function verifyAuth(request: NextRequest): Promise<AuthUser | null> {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return null;
-  }
-  const token = authHeader.split("Bearer ")[1];
-
-  const now = Date.now();
-  const cached = authCache.get(token);
-  if (cached && cached.expiresAt > now) {
-    return cached.promise;
-  }
-
-  pruneExpiredAuthCacheEntries(now);
-  const promise = verifyAuthUncached(token);
-  authCache.set(token, { promise, expiresAt: now + AUTH_CACHE_TTL_MS });
-  return promise;
 }
 
 export function unauthorizedResponse() {

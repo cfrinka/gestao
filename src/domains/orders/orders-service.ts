@@ -15,10 +15,15 @@ export class OrdersService {
 
     return Promise.all(
       orders.map(async (order) => {
-        const itemsWithDetails = (order.items || []).map((item) => ({
-          ...item,
-          product: productsById.get(item.productId) ?? null,
-        }));
+        // Only what the Vendas screen shows: the full product (sizes, signed photo URL…) made
+        // the 30-day list several times heavier than the sales themselves.
+        const itemsWithDetails = (order.items || []).map((item) => {
+          const product = productsById.get(item.productId);
+          return {
+            ...item,
+            product: product ? { id: product.id, name: product.name, sku: product.sku } : null,
+          };
+        });
 
         const paymentHistory = Array.isArray((order as unknown as { paymentHistory?: unknown }).paymentHistory)
           ? (order as unknown as { paymentHistory: Array<{ createdAt?: unknown }> }).paymentHistory.map((p) => ({

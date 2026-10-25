@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       const users = await service.list();
       return NextResponse.json(users);
     },
-    { roles: ["ADMIN"], operationName: "Users GET" }
+    { roles: ["ADMIN"], operationName: "Users GET", cache: { scope: "shared" } }
   );
 }
 

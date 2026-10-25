@@ -11,6 +11,6 @@ export async function GET(request: NextRequest) {
       const categories = await getProductCategories();
       return NextResponse.json({ categories });
     },
-    { operationName: "Categories GET" }
+    { operationName: "Categories GET", cache: { scope: "shared" } }
   );
 }

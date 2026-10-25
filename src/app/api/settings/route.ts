@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       const settings = await getStoreSettings();
       return NextResponse.json(settings);
     },
-    { operationName: "Settings GET" }
+    { operationName: "Settings GET", cache: { scope: "shared" } }
   );
 }
 

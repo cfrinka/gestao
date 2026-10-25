@@ -1,10 +1,28 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { FinancialMovementPaymentMethod, Order, OrderItem, PaymentMethod, Product } from "@/lib/db-types";
-import { HttpError, closedMonthError } from "@/lib/api/http-errors";
+import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, closedMonthError } from "@/lib/api/http-errors";
 import { roundMoney } from "@/lib/money";
-import type { ProcessCheckoutInput } from "@/domains/checkout/repository";
+import type {
+  CheckoutIdempotency,
+  CheckoutOrder,
+  CheckoutResult,
+  ProcessCheckoutInput,
+} from "@/domains/checkout/repository";
 import { toCompetencyMonth } from "@/lib/dates";
+import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+
+function idempotencyRef(idempotency: CheckoutIdempotency) {
+  // Same document layout as domains/shared/idempotency.ts uses for the other flows.
+  return adminDb.collection("idempotencyKeys").doc(`checkout:${idempotency.ownerId}:${idempotency.key}`);
+}
+
+export async function findCompletedCheckout(idempotency: CheckoutIdempotency): Promise<CheckoutOrder | null> {
+  const snap = await idempotencyRef(idempotency).get();
+  const data = snap.data() as { requestHash?: string; status?: string; response?: CheckoutOrder } | undefined;
+  if (!data || data.status !== "COMPLETED" || data.requestHash !== idempotency.requestHash) return null;
+  return data.response ?? null;
+}
 
 function mapOrderPaymentMethodToFinancial(method: PaymentMethod["method"]): FinancialMovementPaymentMethod {
   if (method === "DINHEIRO") return "cash";
@@ -17,8 +35,8 @@ function paymentAmount(payments: PaymentMethod[], method: PaymentMethod["method"
   return payments.find((p) => p.method === method)?.amount || 0;
 }
 
-export async function processCheckout(input: ProcessCheckoutInput): Promise<Order> {
-  const { items, payments, change, discount, expectedTotal, clientId, clientName, payLater, cashRegisterId } = input;
+export async function processCheckout(input: ProcessCheckoutInput): Promise<CheckoutResult> {
+  const { items, payments, change, discount, expectedTotal, clientId, payLater, idempotency } = input;
 
   if (input.createdByRole !== "ADMIN" && input.createdByRole !== "CASHIER") {
     throw new HttpError(403, "Seu perfil não pode registrar vendas");
@@ -35,33 +53,56 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Orde
   const orderRef = adminDb.collection("orders").doc();
   const saleMovementRef = adminDb.collection("financialMovements").doc();
   const cogsMovementRef = adminDb.collection("financialMovements").doc();
-  const registerRef = adminDb.collection("cashRegisters").doc(cashRegisterId);
+  const idemRef = idempotencyRef(idempotency);
+  const openRegisterQuery = adminDb
+    .collection("cashRegisters")
+    .where("userId", "==", input.createdById)
+    .where("status", "==", "OPEN")
+    .limit(1);
   const clientRef = payLater && clientId ? adminDb.collection("clients").doc(clientId) : null;
 
   // Stock is validated and decremented inside this transaction (read-then-write, atomically)
   // so concurrent checkouts for the same product/size can't both pass the stock check and
   // both decrement — Firestore retries the transaction on contention instead. The register
   // totals and the fiado balance are written here too, so a sale can never exist without them.
+  const productIds = Array.from(new Set(items.map((item) => item.productId)));
+  const productRefs = productIds.map((id) => adminDb.collection("products").doc(id));
+
   const result = await adminDb.runTransaction(async (tx) => {
-    const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(competencyMonth));
+    // Every read is issued at once: the sale costs one round of reads plus the commit.
+    const [idemSnap, closureSnap, registerQuerySnap, clientSnap, productSnaps] = await Promise.all([
+      tx.get(idemRef),
+      tx.get(adminDb.collection("financialClosures").doc(competencyMonth)),
+      tx.get(openRegisterQuery),
+      clientRef ? tx.get(clientRef) : Promise.resolve(null),
+      Promise.all(productRefs.map((ref) => tx.get(ref))),
+    ]);
+
+    const previous = idemSnap.data() as { requestHash?: string; status?: string; response?: CheckoutOrder } | undefined;
+    if (previous) {
+      if (previous.requestHash !== idempotency.requestHash) {
+        throw new HttpError(409, IDEMPOTENCY_CONFLICT_MESSAGE);
+      }
+      if (previous.status === "COMPLETED" && previous.response) {
+        return { replayed: true as const, order: previous.response };
+      }
+    }
+
     if (closureSnap.exists) {
       throw closedMonthError(competencyMonth);
     }
 
-    const productIds = Array.from(new Set(items.map((item) => item.productId)));
-    const productRefs = productIds.map((id) => adminDb.collection("products").doc(id));
-    const productSnaps = await Promise.all(productRefs.map((ref) => tx.get(ref)));
-    const registerSnap = await tx.get(registerRef);
-    const clientSnap = clientRef ? await tx.get(clientRef) : null;
-
-    const register = registerSnap.data() as { status?: string; userId?: string } | undefined;
-    if (!registerSnap.exists || register?.status !== "OPEN" || register?.userId !== input.createdById) {
-      throw new HttpError(409, "O caixa não está mais aberto. Abra o caixa e refaça a venda.");
+    const registerDoc = registerQuerySnap.docs[0];
+    if (!registerDoc) {
+      throw new HttpError(409, "Abra o caixa para finalizar a venda.");
     }
+    const registerRef = registerDoc.ref;
+    const cashRegisterId = registerDoc.id;
 
     if (clientRef && !clientSnap?.exists) {
       throw new HttpError(404, "Cliente não encontrado");
     }
+    const clientName = clientSnap?.exists ? String(clientSnap.data()?.name || "").trim() || undefined : undefined;
 
     const productsById = new Map<string, Product>();
     for (const snap of productSnaps) {
@@ -149,8 +190,8 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Orde
       isCancelled: false,
       createdById: input.createdById,
       createdByName: input.createdByName,
-      ...(clientId && { clientId }),
-      ...(clientName && { clientName }),
+      ...(clientId ? { clientId } : {}),
+      ...(clientName ? { clientName } : {}),
       ...(payLater && {
         isPaidLater: true,
         amountPaid: 0,
@@ -211,6 +252,9 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Orde
       }
     }
 
+    const registerData = registerDoc.data() as Record<string, unknown>;
+    const registerAfter: Record<string, unknown> = { id: cashRegisterId, ...convertTimestamp<Record<string, unknown>>(registerData) };
+
     if (payLater) {
       if (clientRef) {
         tx.update(clientRef, {
@@ -219,35 +263,64 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Orde
         });
       }
     } else {
-      tx.update(registerRef, {
-        totalSales: FieldValue.increment(totalAmount),
-        totalCash: FieldValue.increment(paymentAmount(payments, "DINHEIRO")),
-        totalDebit: FieldValue.increment(paymentAmount(payments, "DEBITO")),
-        totalCredit: FieldValue.increment(paymentAmount(payments, "CREDITO")),
-        totalPix: FieldValue.increment(paymentAmount(payments, "PIX")),
-        salesCount: FieldValue.increment(1),
-      });
+      const increments = {
+        totalSales: totalAmount,
+        totalCash: paymentAmount(payments, "DINHEIRO"),
+        totalDebit: paymentAmount(payments, "DEBITO"),
+        totalCredit: paymentAmount(payments, "CREDITO"),
+        totalPix: paymentAmount(payments, "PIX"),
+        salesCount: 1,
+      };
+      tx.update(
+        registerRef,
+        Object.fromEntries(Object.entries(increments).map(([field, value]) => [field, FieldValue.increment(value)]))
+      );
+      for (const [field, value] of Object.entries(increments)) {
+        registerAfter[field] = roundMoney(Number(registerAfter[field] || 0) + value);
+      }
     }
 
-    return { subtotal, cogsTotal, totalAmount, orderItems };
+    const order: CheckoutOrder = {
+      id: orderRef.id,
+      subtotal,
+      discount,
+      totalAmount,
+      cogsTotal,
+      payments,
+      ...(change > 0 ? { change } : {}),
+      cashRegisterId,
+      isCancelled: false,
+      ...(clientId ? { clientId } : {}),
+      ...(clientName ? { clientName } : {}),
+      ...(payLater ? { isPaidLater: true, amountPaid: 0, remainingAmount: totalAmount } : {}),
+      createdById: input.createdById,
+      createdByName: input.createdByName,
+      createdAt: now,
+      items: orderItems.map((item, index) => ({ ...item, id: `item-${index}`, orderId: orderRef.id })),
+      updatedStock: Array.from(productsById.values()).map((product) => ({
+        productId: product.id,
+        stock: product.sizes.length > 0 ? product.sizes.reduce((sum, s) => sum + Number(s.stock || 0), 0) : product.stock,
+        sizes: product.sizes,
+      })),
+      register: registerAfter,
+    };
+
+    // The key is completed in the same commit as the sale: a retry finds the order, never a
+    // half-finished attempt.
+    tx.set(idemRef, {
+      scope: "checkout",
+      ownerId: idempotency.ownerId,
+      key: idempotency.key,
+      requestHash: idempotency.requestHash,
+      status: "COMPLETED",
+      response: JSON.parse(JSON.stringify(order)),
+      createdAt: now,
+      completedAt: now,
+      updatedAt: now,
+    });
+
+    return { replayed: false as const, order };
   });
 
-  return {
-    id: orderRef.id,
-    subtotal: result.subtotal,
-    discount,
-    totalAmount: result.totalAmount,
-    cogsTotal: result.cogsTotal,
-    payments,
-    ...(change > 0 ? { change } : {}),
-    cashRegisterId,
-    isCancelled: false,
-    ...(clientId ? { clientId } : {}),
-    ...(clientName ? { clientName } : {}),
-    ...(payLater ? { isPaidLater: true, amountPaid: 0, remainingAmount: result.totalAmount } : {}),
-    createdById: input.createdById,
-    createdByName: input.createdByName,
-    createdAt: now,
-    items: result.orderItems.map((item, index) => ({ ...item, id: `item-${index}`, orderId: orderRef.id })),
-  };
+  return result;
 }

@@ -4,8 +4,8 @@ import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { CheckoutService } from "@/domains/checkout/checkout-service";
 import { FirestoreCheckoutRepository } from "@/domains/checkout/firestore-checkout-repository";
 import { HttpError, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
-import { getProduct } from "@/domains/products/products-db";
-import { getStoreSettings } from "@/domains/settings/settings-db";
+import { getProduct, getProductsCached } from "@/domains/products/products-db";
+import { getStoreSettingsCached } from "@/domains/settings/settings-db";
 import { calculateAutoDiscount } from "@/domains/checkout/discount-calculator";
 import { normalizeCartItems, normalizePayments } from "@/domains/checkout/cart-validation";
 import { roundMoney } from "@/lib/money";
@@ -52,7 +52,7 @@ async function buildDemoOrder(body: CheckoutBody, userId: string) {
 
   const subtotal = products.reduce((sum, p) => sum + p.lineTotal, 0);
   const payments = Array.isArray(body.payments) ? body.payments : [];
-  const storeSettings = await getStoreSettings();
+  const storeSettings = await getStoreSettingsCached();
   const promoDiscount = calculateAutoDiscount(products, subtotal, storeSettings.discounts, payments);
   const discount = Number(body.discount || 0) + promoDiscount;
   const totalAmount = Math.max(0, subtotal - discount);
@@ -100,16 +100,17 @@ export async function POST(request: NextRequest) {
       const items = normalizeCartItems(body.items);
       const payLater = Boolean(body.payLater);
       const payments = payLater ? [] : normalizePayments(body.payments);
-      const lineItems = await Promise.all(
-        items.map(async (item) => {
-          const product = await getProduct(item.productId).catch(() => null);
-          const salePrice = Number(product?.salePrice || 0);
-          return { productId: item.productId, quantity: item.quantity, salePrice };
-        })
-      );
+      // Prices for the discount math come from the cached catalogue and settings (read at once);
+      // the checkout transaction re-reads every product and refuses the sale if a price moved.
+      const [catalogue, storeSettings] = await Promise.all([getProductsCached(), getStoreSettingsCached()]);
+      const priceById = new Map(catalogue.map((product) => [product.id, Number(product.salePrice || 0)]));
+      const lineItems = items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        salePrice: priceById.get(item.productId) ?? 0,
+      }));
       const subtotal = roundMoney(lineItems.reduce((sum, item) => sum + roundMoney(item.salePrice * item.quantity), 0));
 
-      const storeSettings = await getStoreSettings();
       const promoDiscount = calculateAutoDiscount(lineItems, subtotal, storeSettings.discounts, payments);
 
       const service = new CheckoutService(new FirestoreCheckoutRepository());

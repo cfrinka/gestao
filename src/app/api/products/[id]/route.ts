@@ -21,7 +21,7 @@ export async function GET(
 
       return NextResponse.json(product);
     },
-    { operationName: "Product GET" }
+    { operationName: "Product GET", cache: { scope: "shared" } }
   );
 }
 

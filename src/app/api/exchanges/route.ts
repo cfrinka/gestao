@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json(exchanges);
     },
-    { operationName: "Exchanges GET" }
+    { operationName: "Exchanges GET", cache: { scope: "shared" } }
   );
 }
 

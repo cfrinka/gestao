@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       const orders = await service.list({ startDate, endDate });
       return NextResponse.json(orders);
     },
-    { operationName: "Orders GET" }
+    { operationName: "Orders GET", cache: { scope: "shared" } }
   );
 }
 

@@ -33,6 +33,6 @@ export async function GET(
 
       return NextResponse.json(corrections);
     },
-    { roles: ["ADMIN"], operationName: "Debt Corrections GET" }
+    { roles: ["ADMIN"], operationName: "Debt Corrections GET", cache: { scope: "shared" } }
   );
 }

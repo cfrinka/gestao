@@ -44,6 +44,6 @@ export async function GET(request: NextRequest) {
       const items = await service.list(100);
       return NextResponse.json(items);
     },
-    { roles: ["ADMIN"], operationName: "Stock Adjustment GET" }
+    { roles: ["ADMIN"], operationName: "Stock Adjustment GET", cache: { scope: "shared" } }
   );
 }

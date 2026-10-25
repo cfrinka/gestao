@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       const register = await service.getOpen(user.uid);
       return NextResponse.json({ register });
     },
-    { operationName: "CashRegister GET" }
+    { operationName: "CashRegister GET", cache: { scope: "user" } }
   );
 }
 

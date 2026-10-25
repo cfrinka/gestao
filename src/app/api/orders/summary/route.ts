@@ -8,6 +8,6 @@ export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async () => NextResponse.json(await getOrdersSummary(8)),
-    { operationName: "Orders summary GET" }
+    { operationName: "Orders summary GET", cache: { scope: "shared" } }
   );
 }
