@@ -6,15 +6,18 @@ export interface ProductSize {
 }
 
 export const PRODUCT_CATEGORIES = [
-  "Blusas",
-  "Regatas",
+  "Vestidos",
+  "Macacões e Macaquinhos",
+  "Conjuntos",
+  "Blusas e Camisas",
   "Camisetas",
-  "Shorts",
+  "Regatas",
+  "Bodies e Tops",
+  "Casacos e Jaquetas",
   "Calças",
   "Saias",
-  "Conjuntos",
+  "Shorts e Bermudas",
   "Acessórios",
-  "Vestidos",
 ] as const;
 
 export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
