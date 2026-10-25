@@ -11,6 +11,7 @@ export interface CreateUserCommand {
 export interface UpdateUserRoleCommand {
   id: unknown;
   role: unknown;
+  actorId?: string;
 }
 
 export interface DeactivateUserCommand {

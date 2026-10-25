@@ -262,6 +262,8 @@ export interface StoreSettings {
   cnpj: string;
   footerMessage: string;
   exchangeDays: number;
+  /** Sellers' commission on their sales, in percent (3 = 3%). */
+  commissionPercent: number;
   discounts: DiscountSettings;
   updatedAt: Date;
 }

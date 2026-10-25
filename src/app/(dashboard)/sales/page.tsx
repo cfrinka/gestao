@@ -867,11 +867,15 @@ export default function SalesPage() {
                 </div>
               )}
 
-              {canEditSales && !selectedOrder.isPaidLater && !selectedOrder.isCancelled && (
+              {canEditSales &&
+                !selectedOrder.isCancelled &&
+                (!selectedOrder.isPaidLater || !(Number(selectedOrder.amountPaid || 0) > 0)) && (
                 <div className="space-y-3 border border-vermelho/30 bg-vermelho-tint p-3">
                   <p className="text-sm font-semibold text-vermelho">Cancelar venda <span className="font-normal">· administrador</span></p>
                   <p className="text-xs text-vermelho">
-                    O cancelamento mantém o histórico da venda, mas remove o impacto dela dos números de caixa e relatórios.
+                    {selectedOrder.isPaidLater
+                      ? "O cancelamento mantém o histórico da venda, devolve as peças ao estoque e tira o valor do saldo do cliente e dos relatórios."
+                      : "O cancelamento mantém o histórico da venda, mas remove o impacto dela dos números de caixa e relatórios."}
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1 sm:col-span-2">

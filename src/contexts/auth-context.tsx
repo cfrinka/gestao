@@ -21,6 +21,8 @@ interface AuthContextType {
   user: User | null;
   userData: UserData | null;
   loading: boolean;
+  /** Why the last sign-in was turned away (no access record, or deactivated), for the login screen. */
+  accessError: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -31,24 +33,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [accessError, setAccessError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-
       if (firebaseUser) {
         try {
           const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-          if (userDoc.exists()) {
-            setUserData({
-              id: firebaseUser.uid,
-              ...userDoc.data(),
-            } as UserData);
+          const data = userDoc.data();
+
+          // A Firebase login alone is not access: the account must have been created in
+          // Usuários and still be active. Otherwise the person would land in a shell where
+          // every screen fails with "não autorizado".
+          if (!userDoc.exists() || data?.isActive === false) {
+            setAccessError(
+              userDoc.exists()
+                ? "Este usuário foi desativado. Fale com o administrador da loja."
+                : "Este login não tem acesso ao sistema. Fale com o administrador da loja."
+            );
+            setUser(null);
+            setUserData(null);
+            setLoading(false);
+            await firebaseSignOut(auth);
+            return;
           }
+
+          setUser(firebaseUser);
+          setUserData({
+            id: firebaseUser.uid,
+            ...data,
+          } as UserData);
         } catch (error) {
           console.error("Failed to fetch user data:", error);
+          setUser(firebaseUser);
         }
       } else {
+        setUser(null);
         setUserData(null);
       }
 
@@ -59,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    setAccessError(null);
     await signInWithEmailAndPassword(auth, email, password);
   };
 
@@ -68,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, userData, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, userData, loading, accessError, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

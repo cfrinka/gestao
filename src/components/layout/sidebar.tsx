@@ -3,96 +3,17 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
-import {
-  ArrowLeftRight,
-  Barcode,
-  BarChart3,
-  Boxes,
-  CalendarDays,
-  Contact,
-  FilePen,
-  Home,
-  LogOut,
-  Package,
-  PackagePlus,
-  Percent,
-  Receipt,
-  ScrollText,
-  Settings,
-  ShoppingCart,
-  Tags,
-  Truck,
-  UserCog,
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
+import { allNavHrefs, navigation, type Role } from "@/components/layout/nav";
 
 interface SidebarProps {
   mobile?: boolean;
   onNavigate?: () => void;
 }
 
-type Role = "ADMIN" | "CASHIER";
-
-interface NavItem {
-  name: string;
-  href: string;
-  icon: typeof Home;
-  roles: Role[];
-}
-
-interface NavGroup {
-  label?: string;
-  items: NavItem[];
-}
-
-const BOTH: Role[] = ["ADMIN", "CASHIER"];
-const ADMIN: Role[] = ["ADMIN"];
-
-const navigation: NavGroup[] = [
-  {
-    items: [{ name: "Início", href: "/dashboard", icon: Home, roles: BOTH }],
-  },
-  {
-    label: "Balcão",
-    items: [
-      { name: "PDV", href: "/pos", icon: ShoppingCart, roles: BOTH },
-      { name: "Vendas", href: "/sales", icon: ScrollText, roles: BOTH },
-      { name: "Trocas", href: "/exchanges", icon: ArrowLeftRight, roles: BOTH },
-      { name: "Clientes e fiado", href: "/clients", icon: Contact, roles: BOTH },
-      { name: "Códigos de barras", href: "/barcodes", icon: Barcode, roles: BOTH },
-    ],
-  },
-  {
-    label: "Estoque",
-    items: [
-      { name: "Produtos", href: "/products", icon: Package, roles: ADMIN },
-      { name: "Categorias", href: "/products/categories", icon: Tags, roles: ADMIN },
-      { name: "Estoque", href: "/inventory", icon: Boxes, roles: ADMIN },
-      { name: "Entradas de estoque", href: "/stock-entries", icon: PackagePlus, roles: ADMIN },
-    ],
-  },
-  {
-    label: "Financeiro",
-    items: [
-      { name: "Vendas mensais", href: "/sales-month", icon: CalendarDays, roles: ADMIN },
-      { name: "Comissão", href: "/comission", icon: Percent, roles: BOTH },
-      { name: "Contas", href: "/bills", icon: Receipt, roles: ADMIN },
-      { name: "Fornecedores", href: "/suppliers", icon: Truck, roles: ADMIN },
-      { name: "Relatórios", href: "/reports", icon: BarChart3, roles: ADMIN },
-      { name: "Correções de débito", href: "/debt-corrections", icon: FilePen, roles: ADMIN },
-    ],
-  },
-  {
-    label: "Sistema",
-    items: [
-      { name: "Usuários", href: "/users", icon: UserCog, roles: ADMIN },
-      { name: "Configurações", href: "/settings", icon: Settings, roles: ADMIN },
-    ],
-  },
-];
-
-const allHrefs = navigation.flatMap((g) => g.items.map((i) => i.href));
+const allHrefs = allNavHrefs;
 
 export function Sidebar({ mobile = false, onNavigate }: SidebarProps) {
   const pathname = usePathname();

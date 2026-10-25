@@ -1,19 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { Logo } from "@/components/brand/logo";
+import { rolesForPath } from "@/components/layout/nav";
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
+  const { user, userData, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -44,6 +46,11 @@ export default function DashboardLayout({
     return null;
   }
 
+  // The menu hides screens a profile can't use; typing the address must not open them either
+  // (they'd only show failing requests). The server enforces the same rule on every request.
+  const allowedRoles = rolesForPath(pathname);
+  const canOpen = !allowedRoles || !userData || allowedRoles.includes(userData.role);
+
   return (
     <div className="flex h-[100dvh] bg-ground">
       <Sidebar />
@@ -62,7 +69,16 @@ export default function DashboardLayout({
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header onOpenMobileMenu={() => setMobileMenuOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+          {canOpen ? (
+            children
+          ) : (
+            <div className="flex h-96 flex-col items-center justify-center gap-1 text-center">
+              <p className="font-semibold text-ink">Sem permissão para esta tela</p>
+              <p className="text-sm text-ink-3">Ela é de uso do administrador. Use o menu para ir a outra área.</p>
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );

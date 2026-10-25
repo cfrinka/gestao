@@ -24,6 +24,7 @@ import { PriceTag } from "@/components/etiqueta/price-tag";
 import { LOW_STOCK, SizeGrid } from "@/components/etiqueta/size-grid";
 import { TagHeader, TagRow } from "@/components/etiqueta/tag-row";
 import { todayISO } from "@/lib/dates";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface ProductSize {
   size: string;
@@ -89,6 +90,7 @@ function normalizeProductSizes(sizes: ProductSize[]): ProductSize[] {
 
 export default function ProductsPage() {
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -186,7 +188,7 @@ export default function ProductsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este produto?")) return;
+    if (!(await confirm({ title: "Excluir este produto?", description: "As vendas antigas continuam no histórico.", confirmLabel: "Excluir", danger: true }))) return;
 
     try {
       await apiDelete(`/api/products/${id}`);
@@ -245,10 +247,19 @@ export default function ProductsPage() {
     setFormData({ ...formData, sizes: newSizes, stock: totalStock.toString() });
   };
 
-  const changeSizeType = (sizeType: ProductSizeType) => {
+  const changeSizeType = async (sizeType: ProductSizeType) => {
     if (sizeType === formData.sizeType) return;
     // Letter and numeric grids share no labels, so switching discards the current per-size stock.
-    if (editingProduct && Number(formData.stock) > 0 && !confirm("Trocar a grade vai zerar o estoque atual deste produto. Continuar?")) return;
+    if (
+      editingProduct &&
+      Number(formData.stock) > 0 &&
+      !(await confirm({
+        title: "Trocar a grade?",
+        description: "O estoque atual deste produto vai a zero e a mudança fica registrada como ajuste.",
+        confirmLabel: "Trocar grade",
+        danger: true,
+      }))
+    ) return;
     setFormData({
       ...formData,
       sizeType,
@@ -359,6 +370,7 @@ export default function ProductsPage() {
 
   return (
     <div>
+      {confirmDialog}
       <PageHeader
         title="Produtos"
         meta={

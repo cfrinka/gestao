@@ -1,9 +1,10 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
+import { getStoreSettings } from "@/domains/settings/settings-db";
 import type { SyncResult, UserCommission } from "@/domains/comission/types";
 import { toCompetencyMonth } from "@/lib/dates";
 
-const COMMISSION_RATE = 0.03;
+const DEFAULT_COMMISSION_PERCENT = 3;
 
 function mapOrderPaymentMethod(method: string): "cash" | "pix" | "credit" | "debit" {
   if (method === "DINHEIRO") return "cash";
@@ -178,6 +179,13 @@ export async function syncCommissionMovements(): Promise<SyncResult> {
 }
 
 export async function getCommissionReport(targetUserId: string | null): Promise<UserCommission[]> {
+  // The rate is set in Configurações (3% unless changed) and applies to every month shown.
+  const settings = await getStoreSettings();
+  const percent = Number.isFinite(Number(settings.commissionPercent))
+    ? Number(settings.commissionPercent)
+    : DEFAULT_COMMISSION_PERCENT;
+  const commissionRate = percent / 100;
+
   // Fetch all users (active and inactive) so old sales from deactivated users still show names
   const usersSnap = await adminDb.collection("users").get();
   const users = usersSnap.docs.map((doc) => ({
@@ -229,7 +237,7 @@ export async function getCommissionReport(targetUserId: string | null): Promise<
       .map(([month, totalSales]) => ({
         month,
         totalSales,
-        commission: Math.round(totalSales * COMMISSION_RATE * 100) / 100,
+        commission: Math.round(totalSales * commissionRate * 100) / 100,
       }));
 
     const totalSalesOverall = months.reduce((sum, m) => sum + m.totalSales, 0);

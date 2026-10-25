@@ -9,6 +9,11 @@ function toPublicErrorMessage(error: unknown): string {
   return "Internal server error";
 }
 
+// Older records may still say OWNER, which the server treats as ADMIN.
+function isAdminRole(role: string): boolean {
+  return role === "ADMIN" || role === "OWNER";
+}
+
 function isValidRole(role: string): role is "ADMIN" | "CASHIER" {
   return role === "ADMIN" || role === "CASHIER";
 }
@@ -116,7 +121,23 @@ export class UsersService {
       throw new HttpError(404, "Usuário não encontrado");
     }
 
+    if (isAdminRole(existing.role) && role !== "ADMIN") {
+      if (command.actorId && id === command.actorId) {
+        throw new HttpError(400, "Você não pode tirar o seu próprio acesso de administrador");
+      }
+      await this.assertAnotherActiveAdmin(id);
+    }
+
     return this.repository.updateUserRole(id, role);
+  }
+
+  /** The store must always keep an active admin, or nobody could manage users or settings again. */
+  private async assertAnotherActiveAdmin(exceptId: string): Promise<void> {
+    const users = await this.repository.getAll();
+    const otherAdmins = users.filter((user) => user.id !== exceptId && isAdminRole(user.role) && user.isActive !== false);
+    if (otherAdmins.length === 0) {
+      throw new HttpError(400, "A loja precisa de ao menos um administrador ativo");
+    }
   }
 
   // Firestore is updated first: if that fails, nothing has happened yet and the caller
@@ -135,6 +156,10 @@ export class UsersService {
     const existing = await this.repository.getById(id);
     if (!existing) {
       throw new HttpError(404, "Usuário não encontrado");
+    }
+
+    if (isAdminRole(existing.role)) {
+      await this.assertAnotherActiveAdmin(id);
     }
 
     await this.repository.deactivateUserRecord(id, command.actorId);

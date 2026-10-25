@@ -78,9 +78,18 @@ export async function cancelOrder(input: {
     if (order.isCancelled) {
       throw new HttpError(409, "Esta venda já foi cancelada");
     }
-    if (order.isPaidLater) {
-      throw new HttpError(400, "Vendas fiado não podem ser canceladas por aqui");
+    // A fiado sale can be cancelled as a whole only while nothing has been received for it;
+    // once the client has paid part of it, items are removed from the client's screen instead,
+    // where the payment already made is kept and credited.
+    const fiadoPaid = roundMoney(Number(order.amountPaid || 0));
+    if (order.isPaidLater && (fiadoPaid > 0 || (order.paymentHistory?.length ?? 0) > 0)) {
+      throw new HttpError(
+        409,
+        "Esta venda fiado já recebeu pagamento. Remova os itens pelo cadastro do cliente em Clientes e fiado."
+      );
     }
+    const clientRef = order.isPaidLater && order.clientId ? adminDb.collection("clients").doc(order.clientId) : null;
+    const clientSnap = clientRef ? await tx.get(clientRef) : null;
 
     // Get order items to restore stock
     const itemsQuery = adminDb.collection("orderItems").where("orderId", "==", input.orderId);
@@ -180,8 +189,18 @@ export async function cancelOrder(input: {
       cancelledAt: nowTs,
       cancelledBy: input.actorId,
       cancellationReason: safeReason || "Sem motivo informado",
+      ...(order.isPaidLater ? { remainingAmount: 0 } : {}),
       updatedAt: nowTs,
     });
+
+    if (clientRef && clientSnap?.exists) {
+      const stillOwed = roundMoney(
+        typeof order.remainingAmount === "number" ? order.remainingAmount : Number(order.totalAmount || 0)
+      );
+      if (stillOwed > 0) {
+        tx.update(clientRef, { balance: FieldValue.increment(-stillOwed), updatedAt: nowTs });
+      }
+    }
 
     if (!saleMovementSnapshot.empty) {
       tx.update(saleMovementSnapshot.docs[0].ref, {
@@ -213,7 +232,8 @@ export async function cancelOrder(input: {
     // running totals are safe to adjust; a cancellation against an already-closed
     // register is still recorded (via the audit log below) but doesn't rewrite it.
     const registerStatus = matchingRegister?.data()?.status;
-    const canAdjustRegister = Boolean(matchingRegister) && registerStatus === "OPEN";
+    // A fiado sale never added anything to the register, so cancelling it takes nothing out.
+    const canAdjustRegister = !order.isPaidLater && Boolean(matchingRegister) && registerStatus === "OPEN";
 
     if (canAdjustRegister && matchingRegister && currentTotal > 0) {
       const currentByMethod = paymentAmountByMethod(currentPayments);

@@ -185,6 +185,7 @@ interface StoreSettings {
   cnpj: string;
   footerMessage: string;
   exchangeDays: number;
+  commissionPercent: number;
   discounts: DiscountSettings;
 }
 
@@ -200,6 +201,7 @@ export default function SettingsPage() {
     cnpj: "",
     footerMessage: "",
     exchangeDays: 10,
+    commissionPercent: 3,
     discounts: {
       pixDiscountEnabled: false,
       pixDiscountPercent: 5,
@@ -236,6 +238,7 @@ export default function SettingsPage() {
         cnpj: data.cnpj || "",
         footerMessage: data.footerMessage || "",
         exchangeDays: Number.isFinite(data.exchangeDays) ? data.exchangeDays : 10,
+        commissionPercent: Number.isFinite(Number(data.commissionPercent)) ? Number(data.commissionPercent) : 3,
         discounts: {
           pixDiscountEnabled: data.discounts?.pixDiscountEnabled ?? false,
           pixDiscountPercent: data.discounts?.pixDiscountPercent ?? 5,
@@ -472,6 +475,29 @@ export default function SettingsPage() {
               />
               <p className="text-xs text-ink-3">
                 Esse prazo sai impresso no comprovante de troca do PDV.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="commissionPercent">Comissão dos vendedores (%)</Label>
+              <Input
+                id="commissionPercent"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                max="100"
+                step="0.1"
+                value={settings.commissionPercent}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    commissionPercent: Math.min(100, Math.max(0, Number(e.target.value) || 0)),
+                  })
+                }
+                className="w-28 tabular-nums"
+              />
+              <p className="text-xs text-ink-3">
+                Usada na tela Comissão para todos os meses mostrados.
               </p>
             </div>
 

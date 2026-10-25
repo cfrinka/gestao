@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
-  const { signIn } = useAuth();
+  const { signIn, accessError } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,10 +24,19 @@ export default function LoginPage() {
     try {
       await signIn(email, password);
       router.push("/dashboard");
-    } catch {
+    } catch (error) {
+      const code = (error as { code?: string })?.code || "";
+      const description =
+        code === "auth/too-many-requests"
+          ? "Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo."
+          : code === "auth/network-request-failed"
+            ? "Sem conexão com a internet. Confira a rede e tente de novo."
+            : code === "auth/user-disabled"
+              ? "Este usuário foi desativado. Fale com o administrador da loja."
+              : "E-mail ou senha incorretos. Confira e tente de novo.";
       toast({
         title: "Não foi possível entrar",
-        description: "E-mail ou senha incorretos. Confira e tente de novo.",
+        description,
         variant: "destructive",
       });
     } finally {
@@ -45,6 +54,12 @@ export default function LoginPage() {
             <h1 className="mt-6 font-tag text-sm font-bold uppercase tracking-[0.18em] text-ink-2">
               Gestão da loja
             </h1>
+
+            {accessError ? (
+              <p role="alert" className="mt-6 w-full border-l-[3px] border-vermelho bg-vermelho-tint px-3 py-2 text-sm text-ink">
+                {accessError}
+              </p>
+            ) : null}
 
             <form onSubmit={handleSubmit} className="mt-7 w-full space-y-4">
               <div className="space-y-2">

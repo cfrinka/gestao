@@ -22,7 +22,14 @@ export async function PUT(request: NextRequest) {
     request,
     async ({ request: authorizedRequest }) => {
       const body = await authorizedRequest.json();
-      const { storeName, address, phone, cnpj, footerMessage, exchangeDays, discounts } = body;
+      const { storeName, address, phone, cnpj, footerMessage, exchangeDays, discounts, commissionPercent } = body;
+
+      if (commissionPercent !== undefined) {
+        const percent = Number(commissionPercent);
+        if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+          throw new HttpError(400, "A comissão precisa ficar entre 0% e 100%");
+        }
+      }
 
       if (discounts !== undefined) {
         const result = discountSettingsSchema.safeParse(discounts);
@@ -39,6 +46,7 @@ export async function PUT(request: NextRequest) {
         footerMessage,
         exchangeDays,
         discounts,
+        ...(commissionPercent !== undefined ? { commissionPercent: Number(commissionPercent) } : {}),
       });
 
       return NextResponse.json(settings);

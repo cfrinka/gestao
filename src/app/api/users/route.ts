@@ -33,10 +33,10 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   return withAuthorizedRoute(
     request,
-    async ({ request: authorizedRequest }) => {
+    async ({ request: authorizedRequest, user: actor }) => {
       const body = await authorizedRequest.json();
       const service = new UsersService(new FirestoreUsersRepository());
-      const user = await service.updateRole(body);
+      const user = await service.updateRole({ id: body?.id, role: body?.role, actorId: actor.uid });
       return NextResponse.json(user);
     },
     { roles: ["ADMIN"], operationName: "Users PUT" }

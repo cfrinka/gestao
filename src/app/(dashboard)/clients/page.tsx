@@ -20,6 +20,7 @@ import { Plus, Pencil, Trash2, CreditCard, Eye, Printer, X, Search, AlertTriangl
 import { Badge } from "@/components/ui/badge";
 import { PageHeader, StateTag } from "@/components/layout/page-header";
 import { PriceTag } from "@/components/etiqueta/price-tag";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface FiadoPaymentEntry {
   id: string;
@@ -75,6 +76,7 @@ interface Client {
 export default function ClientsPage() {
   const { userData } = useAuth();
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -118,7 +120,12 @@ export default function ClientsPage() {
   const handleRemoveOrderItem = async (orderId: string, orderItemId: string) => {
     if (!selectedClient) return;
 
-    const confirmed = confirm("Remover este item do pedido? O estoque será devolvido e o saldo pendente será recalculado.");
+    const confirmed = await confirm({
+      title: "Remover este item da venda?",
+      description: "A peça volta para o estoque e o saldo do cliente é recalculado.",
+      confirmLabel: "Remover item",
+      danger: true,
+    });
     if (!confirmed) return;
 
     try {
@@ -278,7 +285,7 @@ export default function ClientsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este cliente?")) return;
+    if (!(await confirm({ title: "Excluir este cliente?", confirmLabel: "Excluir", danger: true }))) return;
 
     try {
       await apiDelete(`/api/clients/${id}`);
@@ -452,6 +459,7 @@ export default function ClientsPage() {
 
   return (
     <div>
+      {confirmDialog}
       <PageHeader
         title="Clientes e fiado"
         meta={

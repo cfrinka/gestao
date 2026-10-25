@@ -265,6 +265,30 @@ describe("UsersService.updateRole", () => {
     const updated = await service.updateRole({ id: "user-1", role: "ADMIN" });
     expect(updated.role).toBe("ADMIN");
   });
+
+  it("refuses to let an admin remove their own admin access", async () => {
+    const repo = new FakeUsersRepository();
+    repo.seed(makeUser({ id: "admin-1", role: "ADMIN" }));
+    repo.seed(makeUser({ id: "admin-2", role: "ADMIN" }));
+    const service = new UsersService(repo);
+    await expect(service.updateRole({ id: "admin-1", role: "CASHIER", actorId: "admin-1" })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+
+  it("refuses to demote the last active admin, but allows it when another remains", async () => {
+    const repo = new FakeUsersRepository();
+    repo.seed(makeUser({ id: "admin-1", role: "ADMIN" }));
+    repo.seed(makeUser({ id: "admin-2", role: "ADMIN", isActive: false }));
+    const service = new UsersService(repo);
+    await expect(service.updateRole({ id: "admin-1", role: "CASHIER", actorId: "someone" })).rejects.toMatchObject({
+      statusCode: 400,
+    });
+
+    repo.seed(makeUser({ id: "admin-3", role: "ADMIN" }));
+    const updated = await service.updateRole({ id: "admin-1", role: "CASHIER", actorId: "admin-3" });
+    expect(updated.role).toBe("CASHIER");
+  });
 });
 
 describe("UsersService.deactivate", () => {
@@ -283,6 +307,13 @@ describe("UsersService.deactivate", () => {
   it("rejects when the user does not exist", async () => {
     const service = new UsersService(new FakeUsersRepository());
     await expect(service.deactivate({ id: "missing", actorId: "admin-1" })).rejects.toThrow(HttpError);
+  });
+
+  it("refuses to deactivate the last active admin", async () => {
+    const repo = new FakeUsersRepository();
+    repo.seed(makeUser({ id: "admin-1", role: "ADMIN" }));
+    const service = new UsersService(repo);
+    await expect(service.deactivate({ id: "admin-1", actorId: "someone-else" })).rejects.toMatchObject({ statusCode: 400 });
   });
 
   it("deactivates Firestore first, then disables Auth", async () => {

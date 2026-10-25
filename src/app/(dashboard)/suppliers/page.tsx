@@ -25,6 +25,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 type PaymentMethod = "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX" | "FIADO";
 
@@ -49,6 +50,7 @@ const ALL_METHODS: { value: PaymentMethod; label: string }[] = [
 export default function SuppliersPage() {
   const { userData } = useAuth();
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirm();
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +113,7 @@ export default function SuppliersPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir este fornecedor?")) return;
+    if (!(await confirm({ title: "Excluir este fornecedor?", confirmLabel: "Excluir", danger: true }))) return;
 
     try {
       await apiDelete(`/api/suppliers/${id}`);
@@ -182,6 +184,7 @@ export default function SuppliersPage() {
 
   return (
     <div>
+      {confirmDialog}
       <PageHeader
         title="Fornecedores"
         meta={!loading ? <span><b className="font-semibold text-ink">{suppliers.length}</b> cadastrados</span> : null}

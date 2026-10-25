@@ -16,11 +16,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatCurrency } from "@/lib/utils";
 import { Check, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 import { currentMonthISO, todayISO } from "@/lib/dates";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 type BillStatus = "PENDING" | "PAID";
 
@@ -57,6 +59,7 @@ function formatDateBR(d: Date) {
 export default function BillsPage() {
   const { userData } = useAuth();
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const [loading, setLoading] = useState(true);
   const [bills, setBills] = useState<Bill[]>([]);
   const [month, setMonth] = useState(() => currentMonthISO());
@@ -124,19 +127,32 @@ export default function BillsPage() {
     return { pending, paid };
   }, [bills]);
 
-  const handleMarkPaid = async (billId: string) => {
-    const method = prompt("Forma de pagamento (DINHEIRO/DEBITO/CREDITO/PIX):", "DINHEIRO") || "DINHEIRO";
+  // Paying a bill asks how it was paid in a dialog; closing it pays nothing (the old prompt()
+  // marked the bill paid in cash even when cancelled).
+  const [payingBill, setPayingBill] = useState<{ id: string; name: string } | null>(null);
+  const [savingPayment, setSavingPayment] = useState(false);
+
+  const handleMarkPaid = async (method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX") => {
+    if (!payingBill || savingPayment) return;
+    setSavingPayment(true);
     try {
-      await apiPatch(`/api/bills/${billId}`, { action: "mark_paid", method });
+      await apiPatch(`/api/bills/${payingBill.id}`, { action: "mark_paid", method });
       toast({ title: "Conta marcada como paga" });
+      setPayingBill(null);
       fetchBills();
-    } catch {
-      toast({ title: "Erro ao atualizar conta", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Erro ao atualizar conta",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingPayment(false);
     }
   };
 
   const handleDelete = async (billId: string) => {
-    if (!confirm("Excluir esta conta?")) return;
+    if (!(await confirm({ title: "Excluir esta conta?", confirmLabel: "Excluir", danger: true }))) return;
     try {
       await apiDelete(`/api/bills/${billId}`);
       toast({ title: "Conta excluída" });
@@ -205,7 +221,28 @@ export default function BillsPage() {
 
   return (
     <div>
+      <Dialog open={payingBill !== null} onOpenChange={(open) => (!open && !savingPayment ? setPayingBill(null) : undefined)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Como foi paga?</DialogTitle>
+            {payingBill ? <DialogDescription>{payingBill.name}</DialogDescription> : null}
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              ["DINHEIRO", "Dinheiro"],
+              ["PIX", "PIX"],
+              ["DEBITO", "Débito"],
+              ["CREDITO", "Crédito"],
+            ] as const).map(([method, label]) => (
+              <Button key={method} variant="outline" className="h-11" disabled={savingPayment} onClick={() => handleMarkPaid(method)}>
+                {label}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
       <PageHeader title="Contas" meta={<span>Despesas e contas a pagar da loja</span>} />
+      {confirmDialog}
 
       <TotalsStrip
         className="mb-4 md:mb-6"
@@ -281,7 +318,7 @@ export default function BillsPage() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           {b.status === "PENDING" && (
-                            <Button size="icon" variant="ghost" className="text-verde hover:bg-verde-tint" onClick={() => handleMarkPaid(b.id)} title="Marcar como pago" aria-label={`Marcar ${b.name} como paga`}>
+                            <Button size="icon" variant="ghost" className="text-verde hover:bg-verde-tint" onClick={() => setPayingBill({ id: b.id, name: b.name })} title="Marcar como pago" aria-label={`Marcar ${b.name} como paga`}>
                               <Check className="h-4 w-4" />
                             </Button>
                           )}
