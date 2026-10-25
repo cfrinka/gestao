@@ -5,8 +5,8 @@ import type { Order } from "@/lib/db-types";
 import { HttpError } from "@/lib/api/http-errors";
 
 vi.mock("@/domains/products/products-db", () => ({
-  getProductsByIds: vi.fn(
-    async (ids: string[]) => new Map(ids.map((productId) => [productId, { id: productId, name: `Product ${productId}` }]))
+  getProductsCached: vi.fn(async () =>
+    ["p1", "p2", "p3", "product-1", "product-2"].map((productId) => ({ id: productId, name: `Product ${productId}` }))
   ),
 }));
 

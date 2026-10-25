@@ -206,14 +206,12 @@ export async function getCashRegisterOrders(registerId: string): Promise<Order[]
     .collection("orders")
     .where("createdAt", ">=", openedAt)
     .where("createdAt", "<=", closedAt)
-    .orderBy("createdAt", "desc")
     .get();
 
   const fiadoMovementsSnapshot = await adminDb
     .collection("financialMovements")
     .where("occurredAt", ">=", openedAt)
     .where("occurredAt", "<=", closedAt)
-    .orderBy("occurredAt", "desc")
     .get();
 
   const fiadoPaymentEntries: Order[] = fiadoMovementsSnapshot.docs

@@ -188,7 +188,7 @@ export default function DashboardPage() {
                 </div>
               ) : null}
               <div className="flex items-baseline justify-between gap-3 py-3">
-                <dt className="text-sm text-ink-2">Vendas registradas</dt>
+                <dt className="text-sm text-ink-2">Vendas · 30 dias</dt>
                 <dd className="font-tag text-2xl font-extrabold tabular-nums">{loading ? "…" : stats.totalOrders}</dd>
               </div>
               <div className="flex items-baseline justify-between gap-3 py-3">

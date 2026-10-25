@@ -36,7 +36,6 @@ export async function GET(request: NextRequest) {
         .collection("orders")
         .where("createdAt", ">=", Timestamp.fromDate(defaultStart))
         .where("createdAt", "<=", Timestamp.fromDate(defaultEnd))
-        .orderBy("createdAt", "asc")
         .get();
       const ordersDocs = ordersSnapshot.docs;
 
@@ -45,7 +44,6 @@ export async function GET(request: NextRequest) {
         .collection("financialMovements")
         .where("occurredAt", ">=", Timestamp.fromDate(defaultStart))
         .where("occurredAt", "<=", Timestamp.fromDate(defaultEnd))
-        .orderBy("occurredAt", "asc")
         .get();
       const fiadoDocs = fiadoPaymentsSnapshot.docs.filter((d) => d.data()?.type === "FIADO_PAYMENT");
 

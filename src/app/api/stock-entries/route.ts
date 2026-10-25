@@ -43,7 +43,6 @@ export async function GET(request: NextRequest) {
           .collection("stockPurchases")
           .where("createdAt", ">=", Timestamp.fromDate(defaultStart))
           .where("createdAt", "<=", Timestamp.fromDate(defaultEnd))
-          .orderBy("createdAt", "asc")
           .get();
         entriesDocs = snapshot.docs;
       } catch (err) {

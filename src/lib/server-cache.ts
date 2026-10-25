@@ -7,30 +7,54 @@
  * Between writes, repeated reads (the POS product list, settings, clients, the user's register…)
  * are answered from memory instead of a ~200 ms Firestore round trip each.
  *
+ * After a write, reads that someone used in the last few minutes are recomputed in the
+ * background, so the next person opening Vendas or Início after a sale finds them ready instead
+ * of paying for the recomputation.
+ *
  * The TTL only bounds changes made outside this process (Firebase console, a second server
  * instance); it is not what keeps the app correct after its own writes.
  */
 
 const DEFAULT_TTL_MS = 2 * 60 * 1000;
 const MAX_ENTRIES = 500;
+/** Reads used within this window are recomputed right after a write. */
+const REFRESH_WINDOW_MS = 5 * 60 * 1000;
+/** Writes often come in bursts (a sale, then its receipt reprint, a payment…): refresh once. */
+const REFRESH_DEBOUNCE_MS = 250;
+const REFRESH_CONCURRENCY = 3;
 
 let dataVersion = 0;
 
+interface Entry<T> {
+  version: number;
+  expiresAt: number;
+  ttlMs: number;
+  promise: Promise<T>;
+  load: () => Promise<T>;
+  lastAccess: number;
+}
+
+const entries = new Map<string, Entry<unknown>>();
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
 export function bumpDataVersion(): void {
   dataVersion += 1;
+  scheduleRefresh();
 }
 
 export function currentDataVersion(): number {
   return dataVersion;
 }
 
-interface Entry<T> {
-  version: number;
-  expiresAt: number;
-  promise: Promise<T>;
+function store<T>(key: string, load: () => Promise<T>, ttlMs: number, lastAccess: number): Promise<T> {
+  const promise = load();
+  const entry: Entry<T> = { version: dataVersion, expiresAt: Date.now() + ttlMs, ttlMs, promise, load, lastAccess };
+  entries.set(key, entry as Entry<unknown>);
+  promise.catch(() => {
+    if (entries.get(key)?.promise === promise) entries.delete(key);
+  });
+  return promise;
 }
-
-const entries = new Map<string, Entry<unknown>>();
 
 /**
  * Returns the cached value for `key` if it was loaded at the current data version and has not
@@ -41,32 +65,58 @@ export function cached<T>(key: string, load: () => Promise<T>, ttlMs: number = D
   const now = Date.now();
   const hit = entries.get(key) as Entry<T> | undefined;
   if (hit && hit.version === dataVersion && hit.expiresAt > now) {
+    hit.lastAccess = now;
     return hit.promise;
   }
 
-  const version = dataVersion;
-  const promise = load();
-  entries.set(key, { version, expiresAt: now + ttlMs, promise });
-  promise.catch(() => {
-    const current = entries.get(key);
-    if (current && current.promise === promise) entries.delete(key);
-  });
-
-  if (entries.size > MAX_ENTRIES) {
-    for (const [k, entry] of Array.from(entries.entries())) {
-      if (entry.version !== dataVersion || entry.expiresAt <= now) entries.delete(k);
-    }
-    if (entries.size > MAX_ENTRIES) {
-      const oldest = entries.keys().next().value;
-      if (oldest !== undefined) entries.delete(oldest);
-    }
-  }
-
+  const promise = store(key, load, ttlMs, now);
+  prune(now);
   return promise;
+}
+
+function prune(now: number) {
+  if (entries.size <= MAX_ENTRIES) return;
+  for (const [k, entry] of Array.from(entries.entries())) {
+    if (now - entry.lastAccess > REFRESH_WINDOW_MS || entry.expiresAt <= now) entries.delete(k);
+  }
+  while (entries.size > MAX_ENTRIES) {
+    const oldest = entries.keys().next().value;
+    if (oldest === undefined) break;
+    entries.delete(oldest);
+  }
+}
+
+function scheduleRefresh() {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    void refreshRecentlyUsed();
+  }, REFRESH_DEBOUNCE_MS);
+}
+
+async function refreshRecentlyUsed() {
+  const now = Date.now();
+  const due = Array.from(entries.entries()).filter(
+    ([, entry]) => entry.version !== dataVersion && now - entry.lastAccess <= REFRESH_WINDOW_MS
+  );
+
+  let next = 0;
+  const worker = async () => {
+    while (next < due.length) {
+      const [key, entry] = due[next++];
+      const current = entries.get(key);
+      // Someone may already have reloaded it at the new version.
+      if (!current || current.version === dataVersion) continue;
+      await store(key, entry.load, entry.ttlMs, entry.lastAccess).catch(() => undefined);
+    }
+  };
+  await Promise.all(Array.from({ length: REFRESH_CONCURRENCY }, worker));
 }
 
 /** Test helper. */
 export function resetServerCache(): void {
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = null;
   entries.clear();
   dataVersion = 0;
 }

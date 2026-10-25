@@ -1,5 +1,5 @@
 import { HttpError } from "@/lib/api/http-errors";
-import { getProductsByIds } from "@/domains/products/products-db";
+import { getProductsCached } from "@/domains/products/products-db";
 import type { OrdersRepository } from "@/domains/orders/repository";
 import type { CancelOrderCommand, ListOrdersQuery, UpdateOrderCommand } from "@/domains/orders/types";
 import type { Order } from "@/lib/db-types";
@@ -11,7 +11,8 @@ export class OrdersService {
 
   async list(query: ListOrdersQuery): Promise<unknown[]> {
     const orders = await this.repository.getOrders(query.startDate, query.endDate);
-    const productsById = await getProductsByIds(orders.flatMap((order) => (order.items || []).map((item) => item.productId)));
+    // Names and SKUs come from the cached catalogue: no extra database round trip per listing.
+    const productsById = new Map((await getProductsCached()).map((product) => [product.id, product]));
 
     return Promise.all(
       orders.map(async (order) => {

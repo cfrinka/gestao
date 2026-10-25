@@ -2,10 +2,11 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { Order, OrderItem } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { getProductsCached } from "@/domains/products/products-db";
 import { roundMoney } from "@/lib/money";
 import { normalizePayments } from "@/domains/checkout/cart-validation";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
-import { toCompetencyMonth } from "@/lib/dates";
+import { addDaysISO, endOfStoreDay, startOfStoreDay, toCompetencyMonth, todayISO } from "@/lib/dates";
 
 function normalizePositivePayments(
   payments: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>
@@ -418,25 +419,69 @@ export async function updateOrder(input: {
   });
 }
 
-export async function getOrders(startDate?: Date, endDate?: Date): Promise<Order[]> {
-  let query: FirebaseFirestore.Query = adminDb.collection("orders").orderBy("createdAt", "desc");
+const byNewestFirst = (a: { createdAt: Date }, b: { createdAt: Date }) =>
+  new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 
-  if (startDate && endDate) {
-    query = adminDb
+/**
+ * Orders in a period with their items. Both are read by date range, in parallel: asking Firestore
+ * to sort a date range ("orderBy desc") made the same query three times slower, and fetching items
+ * by order id ("in" queries) is slower still — so sorting happens here, and only orders whose
+ * items carry no date (very old sales) fall back to the id lookup.
+ */
+export async function getOrders(startDate?: Date, endDate?: Date): Promise<Order[]> {
+  if (!startDate || !endDate) {
+    const snapshot = await adminDb.collection("orders").orderBy("createdAt", "desc").get();
+    const itemsByOrderId = await getItemsForOrders(snapshot.docs.map((doc) => doc.id));
+    return snapshot.docs.map((orderDoc) => ({
+      id: orderDoc.id,
+      ...convertTimestamp<Omit<Order, "id">>(orderDoc.data()),
+      items: itemsByOrderId.get(orderDoc.id) ?? [],
+    }));
+  }
+
+  const [ordersSnapshot, itemsByOrderId] = await Promise.all([
+    adminDb
       .collection("orders")
       .where("createdAt", ">=", Timestamp.fromDate(startDate))
       .where("createdAt", "<=", Timestamp.fromDate(endDate))
-      .orderBy("createdAt", "desc");
-  }
+      .get(),
+    getItemsInRange(startDate, endDate),
+  ]);
 
-  const ordersSnapshot = await query.get();
-  const itemsByOrderId = await getItemsForOrders(ordersSnapshot.docs.map((doc) => doc.id));
-
-  return ordersSnapshot.docs.map((orderDoc) => ({
+  const orders: Order[] = ordersSnapshot.docs.map((orderDoc) => ({
     id: orderDoc.id,
     ...convertTimestamp<Omit<Order, "id">>(orderDoc.data()),
-    items: itemsByOrderId.get(orderDoc.id) ?? [],
   }));
+  await fillMissingItems(orders, itemsByOrderId);
+
+  return orders
+    .map((order) => ({ ...order, items: itemsByOrderId.get(order.id) ?? [] }))
+    .sort(byNewestFirst);
+}
+
+/** Items written in a period (checkout stamps each item with its sale's time). */
+async function getItemsInRange(startDate: Date, endDate: Date): Promise<Map<string, OrderItem[]>> {
+  const snapshot = await adminDb
+    .collection("orderItems")
+    .where("createdAt", ">=", Timestamp.fromDate(startDate))
+    .where("createdAt", "<=", Timestamp.fromDate(endDate))
+    .get();
+  const itemsByOrderId = new Map<string, OrderItem[]>();
+  for (const itemDoc of snapshot.docs) {
+    const item = { id: itemDoc.id, ...itemDoc.data() } as OrderItem;
+    const list = itemsByOrderId.get(item.orderId) ?? [];
+    list.push(item);
+    itemsByOrderId.set(item.orderId, list);
+  }
+  return itemsByOrderId;
+}
+
+/** Looks up by id the items of orders the date-range read did not cover (old undated items). */
+async function fillMissingItems(orders: Order[], itemsByOrderId: Map<string, OrderItem[]>): Promise<void> {
+  const missing = orders.filter((order) => !itemsByOrderId.has(order.id)).map((order) => order.id);
+  if (missing.length === 0) return;
+  const found = await getItemsForOrders(missing);
+  found.forEach((items, orderId) => itemsByOrderId.set(orderId, items));
 }
 
 /**
@@ -465,32 +510,45 @@ export async function getItemsForOrders(orderIds: string[]): Promise<Map<string,
   return itemsByOrderId;
 }
 
-/** What Início needs: how many sales and products exist, and the latest few sales. */
+/**
+ * What Início needs: sales in the last 30 days, how many products exist, and the latest sales.
+ * One date-range read gives both the count and the latest sales (the all-time count() aggregation
+ * took almost a second on its own); products come from the cached catalogue.
+ */
 export async function getOrdersSummary(recentLimit: number): Promise<{
   ordersCount: number;
   productsCount: number;
   recent: Array<{ id: string; createdAt: Date; totalAmount: number; itemCount: number }>;
 }> {
-  const [ordersCount, productsCount, recentSnapshot] = await Promise.all([
-    adminDb.collection("orders").count().get(),
-    adminDb.collection("products").count().get(),
-    adminDb.collection("orders").orderBy("createdAt", "desc").limit(recentLimit * 2).get(),
+  const today = todayISO();
+  const startDate = startOfStoreDay(addDaysISO(today, -29))!;
+  const endDate = endOfStoreDay(today)!;
+
+  const [ordersSnapshot, itemsByOrderId, products] = await Promise.all([
+    adminDb
+      .collection("orders")
+      .where("createdAt", ">=", Timestamp.fromDate(startDate))
+      .where("createdAt", "<=", Timestamp.fromDate(endDate))
+      .get(),
+    getItemsInRange(startDate, endDate),
+    getProductsCached(),
   ]);
 
-  const recentDocs = recentSnapshot.docs.filter((doc) => doc.data().isCancelled !== true).slice(0, recentLimit);
-  const itemsByOrderId = await getItemsForOrders(recentDocs.map((doc) => doc.id));
+  const sales = ordersSnapshot.docs
+    .map((doc) => ({ id: doc.id, ...convertTimestamp<Omit<Order, "id">>(doc.data()) }))
+    .filter((order) => order.isCancelled !== true)
+    .sort(byNewestFirst);
+  const recent = sales.slice(0, recentLimit);
+  await fillMissingItems(recent, itemsByOrderId);
 
   return {
-    ordersCount: ordersCount.data().count,
-    productsCount: productsCount.data().count,
-    recent: recentDocs.map((doc) => {
-      const data = convertTimestamp<Omit<Order, "id">>(doc.data());
-      return {
-        id: doc.id,
-        createdAt: data.createdAt,
-        totalAmount: Number(data.totalAmount || 0),
-        itemCount: (itemsByOrderId.get(doc.id) ?? []).length,
-      };
-    }),
+    ordersCount: sales.length,
+    productsCount: products.length,
+    recent: recent.map((order) => ({
+      id: order.id,
+      createdAt: order.createdAt,
+      totalAmount: Number(order.totalAmount || 0),
+      itemCount: (itemsByOrderId.get(order.id) ?? []).length,
+    })),
   };
 }

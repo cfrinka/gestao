@@ -36,6 +36,23 @@ describe("server cache", () => {
     vi.useRealTimers();
   });
 
+  it("recomputes recently used reads in the background after a write", async () => {
+    vi.useFakeTimers();
+    let value = 1;
+    const load = vi.fn(async () => value);
+    await cached("orders", load);
+
+    value = 2;
+    bumpDataVersion();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(load).toHaveBeenCalledTimes(2);
+
+    // The next reader gets the fresh value without loading again.
+    await expect(cached("orders", load)).resolves.toBe(2);
+    expect(load).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
   it("does not keep a failed load", async () => {
     const load = vi.fn().mockRejectedValueOnce(new Error("firestore down")).mockResolvedValue("ok");
     await expect(cached("k", load)).rejects.toThrow("firestore down");
