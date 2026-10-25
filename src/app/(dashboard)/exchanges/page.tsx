@@ -733,6 +733,7 @@ export default function ExchangesPage() {
                   src={selectedProduct.image}
                   name={selectedProduct.name}
                   className="aspect-square h-auto w-full max-w-[360px]"
+                  displaySize={360}
                 />
               </div>
               <div className="flex flex-col p-6">

@@ -17,11 +17,11 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatPercentage } from "@/lib/utils";
 import { apiGet } from "@/lib/api-client";
 import { AlertTriangle, Download, FileText, Loader2 } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 import { toStoreISODate, todayISO } from "@/lib/dates";
+import { loadPdf } from "@/lib/pdf";
+import type { jsPDF as JsPdfDoc } from "jspdf";
 
 interface StoreReport {
   grossRevenue: number;
@@ -310,7 +310,8 @@ export default function ReportsPage() {
     a.click();
   };
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
+    const { jsPDF, autoTable } = await loadPdf();
     const doc = new jsPDF();
 
     doc.setFontSize(20);
@@ -349,8 +350,8 @@ export default function ReportsPage() {
     });
 
     autoTable(doc, {
-      startY: (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY
-        ? (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
+      startY: (doc as JsPdfDoc & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY
+        ? (doc as JsPdfDoc & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
         : 80,
       head: [
         [

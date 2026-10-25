@@ -19,7 +19,7 @@ import { Plus, Pencil, Trash2, Upload, Loader2, Download, Search } from "lucide-
 import type { ProductSizeType } from "@/lib/db-types";
 import { useProductCategories, withCurrentCategory } from "@/lib/use-product-categories";
 import { PageHeader } from "@/components/layout/page-header";
-import { ProductPhoto } from "@/components/etiqueta/product-photo";
+import { ProductPhoto, thumbnailUrl } from "@/components/etiqueta/product-photo";
 import { PriceTag } from "@/components/etiqueta/price-tag";
 import { LOW_STOCK, SizeGrid } from "@/components/etiqueta/size-grid";
 import { TagHeader, TagRow } from "@/components/etiqueta/tag-row";
@@ -601,7 +601,7 @@ export default function ProductsPage() {
                   <div className="relative mt-2 h-24 w-24 overflow-hidden border border-rule bg-sub">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={formData.image}
+                      src={thumbnailUrl(formData.image, 96)}
                       alt="Prévia da foto"
                       className="h-full w-full object-cover"
                       onError={(e) => {

@@ -1,6 +1,6 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
-import type { FinancialMovementPaymentMethod, Order, OrderItem, PaymentMethod, Product } from "@/lib/db-types";
+import type { FinancialMovementPaymentMethod, OrderItem, PaymentMethod, Product } from "@/lib/db-types";
 import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, closedMonthError } from "@/lib/api/http-errors";
 import { roundMoney } from "@/lib/money";
 import type {

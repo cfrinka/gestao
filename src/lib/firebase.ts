@@ -1,8 +1,8 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 
+// The browser only signs in here. Every read and write goes through the app's API (the Firestore
+// rules allow nothing else), so the Firestore and Storage SDKs are not shipped to the browser.
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -15,8 +15,6 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
 
 setPersistence(auth, browserLocalPersistence).catch((error) => {
   console.error("Failed to set auth persistence:", error);

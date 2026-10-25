@@ -18,8 +18,6 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { roundMoney } from "@/lib/money";
 import { Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, ArrowDownCircle, ArrowUpCircle, Check, ScanLine, BadgePercent, AlertTriangle, ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { Label } from "@/components/ui/label";
 import { useProductCategories } from "@/lib/use-product-categories";
 import { PageHeader, StateTag } from "@/components/layout/page-header";
@@ -27,6 +25,8 @@ import { SizeGrid } from "@/components/etiqueta/size-grid";
 import { PriceTag } from "@/components/etiqueta/price-tag";
 import { ProductPhoto } from "@/components/etiqueta/product-photo";
 import { todayISO } from "@/lib/dates";
+import { loadPdf } from "@/lib/pdf";
+import type { jsPDF as JsPdfDoc } from "jspdf";
 
 interface ProductSize {
   size: string;
@@ -526,7 +526,8 @@ export default function POSPage() {
     setShowCloseRegisterModal(true);
   };
 
-  const exportClosingReportPDF = () => {
+  const exportClosingReportPDF = async () => {
+    const { jsPDF, autoTable } = await loadPdf();
     if (!closingReportData) return;
 
     const { register, orders } = closingReportData;
@@ -565,7 +566,7 @@ export default function POSPage() {
       ],
     });
 
-    const finalY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY || 120;
+    const finalY = (doc as JsPdfDoc & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY || 120;
 
     if (orders.length > 0) {
       doc.setFontSize(12);
@@ -1940,6 +1941,7 @@ export default function POSPage() {
                   src={selectedProduct.image}
                   name={selectedProduct.name}
                   className="aspect-square h-auto w-full max-w-[360px]"
+                  displaySize={360}
                 />
               </div>
               <div className="flex flex-col p-6">

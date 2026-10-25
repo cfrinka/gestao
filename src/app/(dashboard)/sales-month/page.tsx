@@ -17,11 +17,11 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import { apiGet } from "@/lib/api-client";
 import { FileText } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 import { todayISO } from "@/lib/dates";
+import { loadPdf } from "@/lib/pdf";
+import type { jsPDF as JsPdfDoc } from "jspdf";
 
 interface SalesMonthData {
   period: {
@@ -75,7 +75,8 @@ export default function SalesMonthPage() {
     fetchData();
   }, [fetchData]);
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
+    const { jsPDF, autoTable } = await loadPdf();
     if (!data) return;
 
     const doc = new jsPDF();
@@ -101,13 +102,13 @@ export default function SalesMonthPage() {
 
       // Day header
       doc.setFontSize(14);
-      (doc as jsPDF & { setFont: (font: string, style: string) => void }).setFont("helvetica", "bold");
+      (doc as JsPdfDoc & { setFont: (font: string, style: string) => void }).setFont("helvetica", "bold");
       doc.text(`${day.date} - Total: ${formatCurrency(day.total)}`, 14, currentY);
       currentY += 10;
 
       // Day orders table
       doc.setFontSize(10);
-      (doc as jsPDF & { setFont: (font: string, style: string) => void }).setFont("helvetica", "normal");
+      (doc as JsPdfDoc & { setFont: (font: string, style: string) => void }).setFont("helvetica", "normal");
 
       autoTable(doc, {
         startY: currentY,
@@ -132,7 +133,7 @@ export default function SalesMonthPage() {
       });
 
       // Get the Y position after the table
-      const finalY = (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || currentY;
+      const finalY = (doc as JsPdfDoc & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || currentY;
       currentY = finalY + 10;
     });
 

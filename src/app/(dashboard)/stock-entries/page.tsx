@@ -16,11 +16,11 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import { apiGet } from "@/lib/api-client";
 import { FileText } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 import { currentMonthISO, todayISO } from "@/lib/dates";
+import { loadPdf } from "@/lib/pdf";
+import type { jsPDF as JsPdfDoc } from "jspdf";
 
 interface StockEntry {
   id: string;
@@ -82,11 +82,12 @@ export default function StockEntriesPage() {
     fetchData();
   }, [fetchData]);
 
-  const exportPDF = () => {
+  const exportPDF = async () => {
+    const { jsPDF, autoTable } = await loadPdf();
     if (!data) return;
 
     const doc = new jsPDF();
-    const setFont = (doc as jsPDF & { setFont: (f: string, s: string) => void }).setFont.bind(doc);
+    const setFont = (doc as JsPdfDoc & { setFont: (f: string, s: string) => void }).setFont.bind(doc);
 
     doc.setFontSize(20);
     doc.text("Entradas de Estoque", 14, 22);
@@ -135,7 +136,7 @@ export default function StockEntriesPage() {
       });
 
       const finalY =
-        (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || currentY;
+        (doc as JsPdfDoc & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || currentY;
       currentY = finalY + 10;
     });
 

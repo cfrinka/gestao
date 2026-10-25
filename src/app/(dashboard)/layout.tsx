@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { Logo } from "@/components/brand/logo";
 import { rolesForPath } from "@/components/layout/nav";
+import { prefetchApi } from "@/lib/api-client";
 
 export default function DashboardLayout({
   children,
@@ -18,11 +19,24 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // A session restored from this browser counts as signed in until Firebase says otherwise.
+  const signedIn = Boolean(user || userData);
+
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !signedIn) {
       router.push("/login");
     }
-  }, [user, loading, router]);
+  }, [signedIn, loading, router]);
+
+  // The counter is the busiest screen: once someone is signed in, its data is fetched in the
+  // background so opening the PDV shows products, register and clients straight away.
+  useEffect(() => {
+    if (!userData) return;
+    const handle = window.setTimeout(() => {
+      prefetchApi(["/api/products", "/api/cash-register", "/api/settings", "/api/clients", "/api/categories"]);
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [userData]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -42,7 +56,7 @@ export default function DashboardLayout({
     );
   }
 
-  if (!user) {
+  if (!signedIn) {
     return null;
   }
 

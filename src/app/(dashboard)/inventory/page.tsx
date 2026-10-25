@@ -21,9 +21,8 @@ import { LOW_STOCK, SizeGrid } from "@/components/etiqueta/size-grid";
 import { TagHeader, TagRow } from "@/components/etiqueta/tag-row";
 import { PriceTag } from "@/components/etiqueta/price-tag";
 import { ProductPhoto } from "@/components/etiqueta/product-photo";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import { todayISO } from "@/lib/dates";
+import { loadPdf } from "@/lib/pdf";
 
 interface ProductSize {
   size: string;
@@ -125,7 +124,8 @@ export default function InventoryPage() {
   const totalInventoryValue = products.reduce((sum, p) => sum + p.stock * p.costPrice, 0);
   const totalStock = products.reduce((sum, p) => sum + p.stock, 0);
 
-  const printInventorySheet = () => {
+  const printInventorySheet = async () => {
+    const { jsPDF, autoTable } = await loadPdf();
     if (products.length === 0) return;
 
     const doc = new jsPDF();
