@@ -5,23 +5,6 @@ export interface ProductSize {
   stock: number;
 }
 
-export const PRODUCT_CATEGORIES = [
-  "Vestidos",
-  "Macacões e Macaquinhos",
-  "Conjuntos",
-  "Blusas e Camisas",
-  "Camisetas",
-  "Regatas",
-  "Bodies e Tops",
-  "Casacos e Jaquetas",
-  "Calças",
-  "Saias",
-  "Shorts e Bermudas",
-  "Acessórios",
-] as const;
-
-export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
-
 export type ProductImageSource = "uploaded" | "random" | "none";
 
 // "letter" = letter sizes (TU, P, M...), "numeric" = numbered sizes (36, 38, 40...).
@@ -34,7 +17,8 @@ export interface Product {
   ownerId?: string;
   plusSized?: boolean;
   sizeType?: ProductSizeType;
-  category?: ProductCategory;
+  // One of the names in settings/productCategories (see product-categories-db.ts).
+  category?: string;
   costPrice: number;
   salePrice: number;
   stock: number;

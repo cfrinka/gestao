@@ -19,7 +19,7 @@ import { ShoppingCart, Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartp
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Label } from "@/components/ui/label";
-import { PRODUCT_CATEGORIES } from "@/lib/db-types";
+import { useProductCategories } from "@/lib/use-product-categories";
 
 interface ProductSize {
   size: string;
@@ -184,6 +184,7 @@ export default function POSPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const productCategories = useProductCategories();
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1209,7 +1210,7 @@ export default function POSPage() {
           >
             Todos
           </Button>
-          {PRODUCT_CATEGORIES.map((cat) => (
+          {productCategories.map((cat) => (
             <Button
               key={cat}
               variant={selectedCategory === cat ? "default" : "outline"}

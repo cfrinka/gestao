@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { Save, Search, Tags, RefreshCw, ImageIcon, ImageOff, Printer, Upload, Loader2 } from "lucide-react";
-import { PRODUCT_CATEGORIES } from "@/lib/db-types";
+import { useProductCategories, withCurrentCategory } from "@/lib/use-product-categories";
 
 interface Product {
   id: string;
@@ -28,6 +28,7 @@ export default function BulkCategoryPage() {
   const [filterNoPhoto, setFilterNoPhoto] = useState(false);
   const [categories, setCategories] = useState<Record<string, string>>({});
   const [originalCategories, setOriginalCategories] = useState<Record<string, string>>({});
+  const productCategories = useProductCategories();
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -238,7 +239,7 @@ export default function BulkCategoryPage() {
           </div>
           <div className="flex flex-wrap gap-2 mt-3">
             <span className="text-sm text-gray-500 mr-1 self-center">Aplicar a todos visíveis:</span>
-            {PRODUCT_CATEGORIES.map((cat) => (
+            {productCategories.map((cat) => (
               <Button
                 key={cat}
                 variant="outline"
@@ -298,7 +299,7 @@ export default function BulkCategoryPage() {
                       className="flex-shrink-0 h-9 w-28 sm:w-40 rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <option value="">Sem categoria</option>
-                      {PRODUCT_CATEGORIES.map((cat) => (
+                      {withCurrentCategory(productCategories, categories[product.id]).map((cat) => (
                         <option key={cat} value={cat}>
                           {cat}
                         </option>

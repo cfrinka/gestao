@@ -24,7 +24,8 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, generateSku } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Package, RefreshCw, Upload, Loader2, Download } from "lucide-react";
-import { PRODUCT_CATEGORIES, type ProductSizeType } from "@/lib/db-types";
+import type { ProductSizeType } from "@/lib/db-types";
+import { useProductCategories, withCurrentCategory } from "@/lib/use-product-categories";
 
 interface ProductSize {
   size: string;
@@ -114,6 +115,7 @@ export default function ProductsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const productCategories = useProductCategories();
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
@@ -433,7 +435,7 @@ export default function ProductsPage() {
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <option value="">Sem categoria</option>
-                    {PRODUCT_CATEGORIES.map((cat) => (
+                    {withCurrentCategory(productCategories, formData.category).map((cat) => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
