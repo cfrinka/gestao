@@ -489,7 +489,58 @@ async function buildPeriodMonthAggregate(
   };
 }
 
+/**
+ * What is still open on fiado today, read from the fiado orders themselves (their remaining
+ * amount is kept current by every payment, correction and removed item) instead of replaying
+ * the store's entire movement history on every report.
+ */
+async function buildCurrentFiadoAging(asOf: Date) {
+  const snapshot = await adminDb.collection("orders").where("isPaidLater", "==", true).get();
+  const buckets = { current30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
+  const rows: Array<{ orderId: string; ageDays: number; outstanding: number }> = [];
+
+  for (const doc of snapshot.docs) {
+    const order = doc.data() as {
+      isCancelled?: boolean;
+      remainingAmount?: number;
+      totalAmount?: number;
+      paidAt?: Timestamp;
+      createdAt?: Timestamp;
+    };
+    if (order.isCancelled === true) continue;
+    // Same reading as the fiado payment code: old orders without remainingAmount are open for
+    // their total unless they were marked paid.
+    const outstanding = Number(
+      typeof order.remainingAmount === "number" ? order.remainingAmount : order.paidAt ? 0 : order.totalAmount || 0
+    );
+    if (!(outstanding >= 0.005)) continue;
+
+    const createdAt = order.createdAt?.toDate ? order.createdAt.toDate() : asOf;
+    const ageDays = Math.max(0, Math.floor((asOf.getTime() - createdAt.getTime()) / DAY_MS));
+    if (ageDays <= 30) buckets.current30 += outstanding;
+    else if (ageDays <= 60) buckets.days31to60 += outstanding;
+    else if (ageDays <= 90) buckets.days61to90 += outstanding;
+    else buckets.days90plus += outstanding;
+
+    rows.push({ orderId: doc.id, ageDays, outstanding });
+  }
+
+  rows.sort((a, b) => b.outstanding - a.outstanding);
+
+  return {
+    asOf: asOf.toISOString(),
+    totalOutstanding: sum([buckets.current30, buckets.days31to60, buckets.days61to90, buckets.days90plus]),
+    buckets,
+    topOpenOrders: rows.slice(0, 20),
+  };
+}
+
 async function buildFiadoAging(endDate: Date) {
+  // A period that ends today (the usual case) only needs what is open now.
+  if (endDate.getTime() >= Date.now() - DAY_MS) {
+    return buildCurrentFiadoAging(new Date(Math.min(endDate.getTime(), Date.now())));
+  }
+
   const sales = new Map<string, { occurredAt: Date; amount: number }>();
   const payments = new Map<string, number>();
 

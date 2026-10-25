@@ -45,6 +45,20 @@ export async function getProduct(id: string): Promise<Product | null> {
   return toProduct(doc.id, doc.data()!);
 }
 
+/** Several products by id in batched reads (missing ids are simply absent from the map). */
+export async function getProductsByIds(ids: string[]): Promise<Map<string, Product>> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  const result = new Map<string, Product>();
+  for (let i = 0; i < unique.length; i += 300) {
+    const refs = unique.slice(i, i + 300).map((id) => adminDb.collection("products").doc(id));
+    const docs = await adminDb.getAll(...refs);
+    for (const doc of docs) {
+      if (doc.exists) result.set(doc.id, toProduct(doc.id, doc.data()!));
+    }
+  }
+  return result;
+}
+
 export async function getProductBySku(sku: string): Promise<Product | null> {
   const snapshot = await adminDb.collection("products").where("sku", "==", sku).get();
   if (snapshot.empty) return null;

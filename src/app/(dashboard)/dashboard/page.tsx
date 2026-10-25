@@ -46,29 +46,20 @@ export default function DashboardPage() {
     async function fetchData() {
       try {
         // Reports are admin-only; cashiers see the counts without the money totals.
-        const [products, orders, report] = await Promise.all([
-          apiGet(`/api/products`),
-          apiGet("/api/orders"),
+        // Counts and the last few sales only — this screen used to download every sale ever made.
+        const [summary, report] = await Promise.all([
+          apiGet("/api/orders/summary"),
           apiGet("/api/reports").catch(() => null),
         ]);
 
         setStats({
-          totalProducts: Array.isArray(products) ? products.length : 0,
-          totalOrders: Array.isArray(orders) ? orders.length : 0,
+          totalProducts: Number(summary?.productsCount || 0),
+          totalOrders: Number(summary?.ordersCount || 0),
           totalRevenue: report ? report.revenue || 0 : null,
           totalProfit: report ? report.profit || 0 : null,
         });
 
-        if (Array.isArray(orders)) {
-          setRecentOrders(
-            orders.slice(0, 8).map((order: { id: string; createdAt: string; totalAmount: number; items?: unknown[] }) => ({
-              id: order.id,
-              createdAt: order.createdAt,
-              totalAmount: order.totalAmount,
-              itemCount: order.items?.length || 0,
-            }))
-          );
-        }
+        setRecentOrders(Array.isArray(summary?.recent) ? summary.recent : []);
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
       } finally {
@@ -186,13 +177,13 @@ export default function DashboardPage() {
             <dl className="divide-y divide-rule px-4 md:px-5">
               {stats.totalRevenue !== null ? (
                 <div className="flex items-baseline justify-between gap-3 py-3">
-                  <dt className="text-sm text-ink-2">Receita total</dt>
+                  <dt className="text-sm text-ink-2">Receita · 30 dias</dt>
                   <dd>{loading ? <span className="block h-5 w-24 animate-pulse bg-sub" /> : <PriceTag value={stats.totalRevenue} className="text-2xl" />}</dd>
                 </div>
               ) : null}
               {stats.totalProfit !== null ? (
                 <div className="flex items-baseline justify-between gap-3 py-3">
-                  <dt className="text-sm text-ink-2">Lucro total</dt>
+                  <dt className="text-sm text-ink-2">Lucro · 30 dias</dt>
                   <dd className="text-verde">{loading ? <span className="block h-5 w-24 animate-pulse bg-sub" /> : <PriceTag value={stats.totalProfit} className="text-2xl" />}</dd>
                 </div>
               ) : null}

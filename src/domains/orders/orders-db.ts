@@ -410,24 +410,67 @@ export async function getOrders(startDate?: Date, endDate?: Date): Promise<Order
   }
 
   const ordersSnapshot = await query.get();
-  const orders: Order[] = [];
+  const itemsByOrderId = await getItemsForOrders(ordersSnapshot.docs.map((doc) => doc.id));
 
-  for (const orderDoc of ordersSnapshot.docs) {
-    const orderData = convertTimestamp<Omit<Order, "id">>(orderDoc.data());
+  return ordersSnapshot.docs.map((orderDoc) => ({
+    id: orderDoc.id,
+    ...convertTimestamp<Omit<Order, "id">>(orderDoc.data()),
+    items: itemsByOrderId.get(orderDoc.id) ?? [],
+  }));
+}
 
-    const itemsSnapshot = await adminDb.collection("orderItems").where("orderId", "==", orderDoc.id).get();
+/**
+ * Line items for many orders at once: "in" queries of 30 ids, a few at a time. This replaces one
+ * sequential query per order, which made the Vendas screen slower with every sale ever made.
+ */
+export async function getItemsForOrders(orderIds: string[]): Promise<Map<string, OrderItem[]>> {
+  const itemsByOrderId = new Map<string, OrderItem[]>();
+  const chunks: string[][] = [];
+  for (let i = 0; i < orderIds.length; i += 30) chunks.push(orderIds.slice(i, i + 30));
 
-    const items = itemsSnapshot.docs.map((itemDoc) => ({
-      id: itemDoc.id,
-      ...itemDoc.data(),
-    })) as OrderItem[];
-
-    orders.push({
-      id: orderDoc.id,
-      ...orderData,
-      items,
-    });
+  for (let i = 0; i < chunks.length; i += 8) {
+    const snapshots = await Promise.all(
+      chunks.slice(i, i + 8).map((chunk) => adminDb.collection("orderItems").where("orderId", "in", chunk).get())
+    );
+    for (const snapshot of snapshots) {
+      for (const itemDoc of snapshot.docs) {
+        const item = { id: itemDoc.id, ...itemDoc.data() } as OrderItem;
+        const list = itemsByOrderId.get(item.orderId) ?? [];
+        list.push(item);
+        itemsByOrderId.set(item.orderId, list);
+      }
+    }
   }
 
-  return orders;
+  return itemsByOrderId;
+}
+
+/** What Início needs: how many sales and products exist, and the latest few sales. */
+export async function getOrdersSummary(recentLimit: number): Promise<{
+  ordersCount: number;
+  productsCount: number;
+  recent: Array<{ id: string; createdAt: Date; totalAmount: number; itemCount: number }>;
+}> {
+  const [ordersCount, productsCount, recentSnapshot] = await Promise.all([
+    adminDb.collection("orders").count().get(),
+    adminDb.collection("products").count().get(),
+    adminDb.collection("orders").orderBy("createdAt", "desc").limit(recentLimit * 2).get(),
+  ]);
+
+  const recentDocs = recentSnapshot.docs.filter((doc) => doc.data().isCancelled !== true).slice(0, recentLimit);
+  const itemsByOrderId = await getItemsForOrders(recentDocs.map((doc) => doc.id));
+
+  return {
+    ordersCount: ordersCount.data().count,
+    productsCount: productsCount.data().count,
+    recent: recentDocs.map((doc) => {
+      const data = convertTimestamp<Omit<Order, "id">>(doc.data());
+      return {
+        id: doc.id,
+        createdAt: data.createdAt,
+        totalAmount: Number(data.totalAmount || 0),
+        itemCount: (itemsByOrderId.get(doc.id) ?? []).length,
+      };
+    }),
+  };
 }

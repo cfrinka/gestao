@@ -5,7 +5,9 @@ import type { Order } from "@/lib/db-types";
 import { HttpError } from "@/lib/api/http-errors";
 
 vi.mock("@/domains/products/products-db", () => ({
-  getProduct: vi.fn(async (productId: string) => ({ id: productId, name: `Product ${productId}` })),
+  getProductsByIds: vi.fn(
+    async (ids: string[]) => new Map(ids.map((productId) => [productId, { id: productId, name: `Product ${productId}` }]))
+  ),
 }));
 
 class FakeOrdersRepository implements OrdersRepository {

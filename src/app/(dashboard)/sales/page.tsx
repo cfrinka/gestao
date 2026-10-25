@@ -29,7 +29,7 @@ import { Eye, Download, Banknote, CreditCard, Smartphone, Printer } from "lucide
 import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 import { PriceTag } from "@/components/etiqueta/price-tag";
-import { toStoreISODate, todayISO } from "@/lib/dates";
+import { addDaysISO, toStoreISODate, todayISO } from "@/lib/dates";
 
 interface OrderItem {
   id: string;
@@ -104,8 +104,10 @@ export default function SalesPage() {
     CREDITO: "0",
     PIX: "0",
   });
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Opens on the last 30 days ("Tudo" is one tap away): loading every sale ever made by default
+  // got slower with each one.
+  const [startDate, setStartDate] = useState(() => addDaysISO(todayISO(), -29));
+  const [endDate, setEndDate] = useState(() => todayISO());
   const [storeSettings, setStoreSettings] = useState<StoreSettings>({
     storeName: "Gestão Loja",
     address: "",
