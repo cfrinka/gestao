@@ -128,6 +128,7 @@ function baseCreateCommand(overrides: Record<string, unknown> = {}) {
     stock: 0,
     sizes: [],
     plusSized: false,
+    sizeType: undefined,
     category: undefined,
     image: undefined,
     imageSource: undefined,

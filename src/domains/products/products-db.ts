@@ -33,6 +33,7 @@ function toProduct(id: string, data: FirebaseFirestore.DocumentData): Product {
   return {
     id,
     plusSized: data?.plusSized === true,
+    sizeType: data?.sizeType === "numeric" ? "numeric" : "letter",
     ...convertTimestamp<Omit<Product, "id">>(data),
   };
 }

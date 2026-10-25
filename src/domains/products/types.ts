@@ -10,6 +10,7 @@ export interface CreateProductCommand {
   stock: unknown;
   sizes: unknown;
   plusSized: unknown;
+  sizeType: unknown;
   category: unknown;
   image: unknown;
   imageSource: unknown;
@@ -26,6 +27,7 @@ export interface UpdateProductCommand {
   stock: unknown;
   sizes: unknown;
   plusSized: unknown;
+  sizeType: unknown;
   category: unknown;
   image: unknown;
   imageSource: unknown;

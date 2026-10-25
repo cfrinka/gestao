@@ -21,12 +21,16 @@ export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
 
 export type ProductImageSource = "uploaded" | "random" | "none";
 
+// "letter" = letter sizes (TU, P, M...), "numeric" = numbered sizes (36, 38, 40...).
+export type ProductSizeType = "letter" | "numeric";
+
 export interface Product {
   id: string;
   name: string;
   sku: string;
   ownerId?: string;
   plusSized?: boolean;
+  sizeType?: ProductSizeType;
   category?: ProductCategory;
   costPrice: number;
   salePrice: number;

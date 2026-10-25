@@ -24,7 +24,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, generateSku } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Package, RefreshCw, Upload, Loader2, Download } from "lucide-react";
-import { PRODUCT_CATEGORIES } from "@/lib/db-types";
+import { PRODUCT_CATEGORIES, type ProductSizeType } from "@/lib/db-types";
 
 interface ProductSize {
   size: string;
@@ -36,6 +36,7 @@ interface Product {
   name: string;
   sku: string;
   plusSized?: boolean;
+  sizeType?: ProductSizeType;
   category?: string;
   costPrice: number;
   salePrice: number;
@@ -47,7 +48,13 @@ interface Product {
 
 const DEFAULT_SIZES = ["TU", "P", "M", "G", "GG", "XG"];
 const PLUS_SIZES = ["GG", "XG", "G1", "G2", "G3"];
+const NUMERIC_SIZES = ["36", "38", "40", "42", "44", "46", "48"];
 const MARKUP_MULTIPLIER = 2.8;
+
+function getSizeGrid(sizeType: ProductSizeType, plusSized: boolean): string[] {
+  if (sizeType === "numeric") return NUMERIC_SIZES;
+  return plusSized ? PLUS_SIZES : DEFAULT_SIZES;
+}
 
 function ProductImage({ src, name }: { src?: string; name: string }) {
   const [error, setError] = useState(false);
@@ -81,7 +88,7 @@ function normalizeProductSizes(sizes: ProductSize[]): ProductSize[] {
     bySize.set(normalizedSize, previous + Number(sizeEntry.stock || 0));
   }
 
-  const preferredOrder = ["TU", "P", "M", "G", "GG", "XG", "G1", "G2", "G3"];
+  const preferredOrder = ["TU", "P", "M", "G", "GG", "XG", "G1", "G2", "G3", ...NUMERIC_SIZES];
   const ordered: ProductSize[] = [];
 
   for (const size of preferredOrder) {
@@ -111,6 +118,7 @@ export default function ProductsPage() {
     name: "",
     sku: "",
     plusSized: false,
+    sizeType: "letter" as ProductSizeType,
     category: "",
     costPrice: "",
     salePrice: "",
@@ -122,7 +130,7 @@ export default function ProductsPage() {
 
   useEffect(() => {
     if (editingProduct) return;
-    const expected = formData.plusSized ? PLUS_SIZES : DEFAULT_SIZES;
+    const expected = getSizeGrid(formData.sizeType, formData.plusSized);
     const sameShape =
       Array.isArray(formData.sizes) &&
       formData.sizes.length === expected.length &&
@@ -134,7 +142,7 @@ export default function ProductsPage() {
       sizes: expected.map((size) => ({ size, stock: 0 })),
       stock: "0",
     }));
-  }, [formData.plusSized, editingProduct]);
+  }, [formData.sizeType, formData.plusSized, editingProduct]);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -200,18 +208,20 @@ export default function ProductsPage() {
   };
 
   const handleEdit = (product: Product) => {
+    const sizeType: ProductSizeType = product.sizeType === "numeric" ? "numeric" : "letter";
     setEditingProduct(product);
     setFormData({
       name: product.name,
       sku: product.sku,
       plusSized: product.plusSized === true,
+      sizeType,
       category: product.category || "",
       costPrice: product.costPrice.toString(),
       salePrice: product.salePrice.toString(),
       stock: product.stock.toString(),
-      sizes: product.sizes?.length > 0 
+      sizes: product.sizes?.length > 0
         ? normalizeProductSizes(product.sizes)
-        : (product.plusSized === true ? PLUS_SIZES : DEFAULT_SIZES).map(size => ({ size, stock: 0 })),
+        : getSizeGrid(sizeType, product.plusSized === true).map(size => ({ size, stock: 0 })),
       image: product.image || "",
       imageSource: product.imageSource || "none",
     });
@@ -224,6 +234,7 @@ export default function ProductsPage() {
       name: "",
       sku: "",
       plusSized: false,
+      sizeType: "letter",
       category: "",
       costPrice: "",
       salePrice: "",
@@ -239,6 +250,18 @@ export default function ProductsPage() {
     newSizes[sizeIndex] = { ...newSizes[sizeIndex], stock };
     const totalStock = newSizes.reduce((sum, s) => sum + s.stock, 0);
     setFormData({ ...formData, sizes: newSizes, stock: totalStock.toString() });
+  };
+
+  const changeSizeType = (sizeType: ProductSizeType) => {
+    if (sizeType === formData.sizeType) return;
+    // Letter and numeric grids share no labels, so switching discards the current per-size stock.
+    if (editingProduct && Number(formData.stock) > 0 && !confirm("Trocar a grade vai zerar o estoque atual deste produto. Continuar?")) return;
+    setFormData({
+      ...formData,
+      sizeType,
+      sizes: getSizeGrid(sizeType, formData.plusSized).map(size => ({ size, stock: 0 })),
+      stock: "0",
+    });
   };
 
   const openNewDialog = () => {
@@ -482,8 +505,28 @@ export default function ProductsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Estoque por Tamanho</Label>
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Estoque por {formData.sizeType === "numeric" ? "Numeração" : "Tamanho"}</Label>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={formData.sizeType === "letter" ? "default" : "outline"}
+                      onClick={() => changeSizeType("letter")}
+                    >
+                      Tamanho
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={formData.sizeType === "numeric" ? "default" : "outline"}
+                      onClick={() => changeSizeType("numeric")}
+                    >
+                      Numeração
+                    </Button>
+                  </div>
+                </div>
+                <div className={`grid grid-cols-3 gap-2 ${formData.sizeType === "numeric" ? "sm:grid-cols-7" : "sm:grid-cols-6"}`}>
                   {formData.sizes.map((sizeData, index) => (
                     <div key={sizeData.size} className="space-y-1">
                       <Label className="text-xs text-center block">{sizeData.size}</Label>

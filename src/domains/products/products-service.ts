@@ -1,12 +1,16 @@
 import { HttpError } from "@/lib/api/http-errors";
 import type { ProductsRepository } from "@/domains/products/repository";
 import type { CreateProductCommand, UpdateProductCommand } from "@/domains/products/types";
-import type { Product, ProductImageSource } from "@/lib/db-types";
+import type { Product, ProductImageSource, ProductSizeType } from "@/lib/db-types";
 
 function toPublicErrorMessage(error: unknown): string {
   if (error instanceof HttpError) return error.message;
   if (error instanceof Error) return error.message;
   return "Internal server error";
+}
+
+function parseSizeType(value: unknown): ProductSizeType {
+  return value === "numeric" ? "numeric" : "letter";
 }
 
 export class ProductsService {
@@ -48,6 +52,7 @@ export class ProductsService {
       name,
       sku,
       plusSized: command.plusSized === true,
+      sizeType: parseSizeType(command.sizeType),
       category: command.category ? (command.category as Product["category"]) : undefined,
       costPrice,
       salePrice: parseFloat(String(command.salePrice)),
@@ -107,6 +112,7 @@ export class ProductsService {
       name: nextName,
       sku: nextSku,
       plusSized: command.plusSized === undefined ? existing.plusSized === true : command.plusSized === true,
+      sizeType: command.sizeType === undefined ? parseSizeType(existing.sizeType) : parseSizeType(command.sizeType),
       category:
         command.category !== undefined
           ? ((command.category as Product["category"]) || undefined)
