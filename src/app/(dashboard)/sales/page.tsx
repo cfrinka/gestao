@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import { apiGet, apiPatch, apiPost } from "@/lib/api-client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,10 +22,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { auth } from "@/lib/firebase";
-import { ClipboardList, Eye, Download, Banknote, CreditCard, Smartphone, Printer } from "lucide-react";
+import { Eye, Download, Banknote, CreditCard, Smartphone, Printer } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
+import { TotalsStrip } from "@/components/etiqueta/totals-strip";
+import { PriceTag } from "@/components/etiqueta/price-tag";
 
 interface OrderItem {
   id: string;
@@ -580,154 +583,146 @@ export default function SalesPage() {
     }
   };
 
+  const paymentLabel = (method: string) =>
+    method === "DINHEIRO" ? "Dinheiro" : method === "DEBITO" ? "Débito" : method === "CREDITO" ? "Crédito" : method === "PIX" ? "PIX" : method;
+
+  const renderPayment = (order: (typeof orders)[number]) =>
+    order.isPaidLater ? (
+      <Badge variant={order.paidAt ? "positive" : "destructive"}>
+        {order.paidAt ? "Fiado pago" : `Fiado · ${formatCurrency(order.remainingAmount ?? order.totalAmount)}`}
+      </Badge>
+    ) : order.payments && order.payments.length > 0 ? (
+      <span className="text-sm text-ink-2">{order.payments.map((p) => paymentLabel(p.method)).join(" + ")}</span>
+    ) : (
+      <span className="text-ink-3">—</span>
+    );
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Vendas</h1>
-          <p className="text-gray-500">Histórico de vendas realizadas</p>
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Vendas"
+        meta={!loading ? <span><b className="font-semibold text-ink">{orders.length}</b> vendas no período</span> : null}
+        actions={
+          <Button variant="outline" size="sm" onClick={exportCSV}>
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Exportar CSV
+          </Button>
+        }
+        className="mb-0 md:mb-0"
+      />
+
+      <div className="space-y-3">
+        <div className="-mx-3 flex gap-1.5 scroll-row overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" role="group" aria-label="Períodos rápidos">
+          {([
+            ["today", "Hoje"],
+            ["yesterday", "Ontem"],
+            ["this_week", "Esta semana"],
+            ["this_month", "Este mês"],
+            ["last_30", "Últimos 30 dias"],
+            ["last_90", "Últimos 90 dias"],
+            ["all", "Todo o período"],
+          ] as const).map(([preset, label]) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => applyPreset(preset)}
+              className="inline-flex h-9 flex-shrink-0 items-center border border-rule-strong bg-paper px-3 text-sm font-semibold text-ink transition-colors hover:border-ink"
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <Button variant="outline" onClick={exportCSV}>
-          <Download className="h-4 w-4 mr-2" />
-          Exportar CSV
-        </Button>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="sales-start" className="text-xs">De</Label>
+            <Input
+              id="sales-start"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="h-9 w-[160px]"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="sales-end" className="text-xs">Até</Label>
+            <Input
+              id="sales-end"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="h-9 w-[160px]"
+            />
+          </div>
+          <Button size="sm" onClick={handleFilter}>Filtrar</Button>
+          <Button variant="ghost" size="sm" onClick={handleClearFilter}>
+            Limpar
+          </Button>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filtros</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2 mb-4">
-            <Button variant="outline" size="sm" onClick={() => applyPreset("today")}>Hoje</Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("yesterday")}>Ontem</Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("this_week")}>Esta Semana</Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("this_month")}>Este Mês</Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("last_30")}>Últimos 30 dias</Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("last_90")}>Últimos 90 dias</Button>
-            <Button variant="outline" size="sm" onClick={() => applyPreset("all")}>Todo Período</Button>
-          </div>
+      <TotalsStrip
+        items={[
+          { label: "Total vendido", value: loading ? "…" : formatCurrency(periodTotalSold) },
+          { label: "Fiado a receber", value: loading ? "…" : formatCurrency(periodFiadoOutstanding), tone: !loading && periodFiadoOutstanding > 0 ? "debt" : "neutral" },
+          { label: "Recebido", value: loading ? "…" : formatCurrency(periodReceived), tone: "positive" },
+        ]}
+      />
 
-          <div className="flex gap-4 items-end">
-            <div className="space-y-2">
-              <Label>Data Inicial</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Data Final</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
-            <Button onClick={handleFilter}>Filtrar</Button>
-            <Button variant="outline" onClick={handleClearFilter}>
-              Limpar
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-4 flex-col sm:flex-row">
-            <CardTitle className="flex items-center gap-2">
-              <ClipboardList className="h-5 w-5" />
-              Lista de Vendas
-            </CardTitle>
-            <div className="text-sm text-gray-600 grid grid-cols-1 gap-1 text-right">
-              <div>
-                <span className="font-medium">Total vendido:</span> {formatCurrency(periodTotalSold)}
-              </div>
-              <div>
-                <span className="font-medium">Total fiado (pendente):</span> {formatCurrency(periodFiadoOutstanding)}
-              </div>
-              <div>
-                <span className="font-medium">Total recebido:</span> {formatCurrency(periodReceived)}
-              </div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-center py-4">Carregando...</p>
-          ) : orders.length === 0 ? (
-            <p className="text-center py-4 text-gray-500">
-              Nenhuma venda encontrada
-            </p>
-          ) : (
+      {loading ? (
+        <div className="space-y-2" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-12 animate-pulse border border-rule bg-paper" />
+          ))}
+        </div>
+      ) : orders.length === 0 ? (
+        <p className="border border-rule bg-paper px-5 py-12 text-center text-sm text-ink-3">
+          Nenhuma venda no período. Escolha outro período acima.
+        </p>
+      ) : (
+        <>
+          <div className="hidden border border-rule bg-paper md:block">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Pedido</TableHead>
+                  <TableHead className="pl-4">Pedido</TableHead>
                   <TableHead>Data</TableHead>
-                  <TableHead>Itens</TableHead>
+                  <TableHead className="text-right">Itens</TableHead>
                   <TableHead>Pagamento</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead className="pr-4 text-right"><span className="sr-only">Ações</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {orders?.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-medium">
+                  <TableRow key={order.id} className={order.isCancelled ? "text-ink-3" : undefined}>
+                    <TableCell className="pl-4 font-semibold">
                       <div className="flex items-center gap-2">
                         <span>#{order.id.slice(-6).toUpperCase()}</span>
-                        {order.isCancelled && (
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-red-100 text-red-700">Cancelada</span>
-                        )}
+                        {order.isCancelled && <Badge variant="destructive">Cancelada</Badge>}
                       </div>
                     </TableCell>
-                    <TableCell>{formatDate(new Date(order.createdAt))}</TableCell>
-                    <TableCell>{order.items.length}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        {order.isPaidLater ? (
-                          <span className={`text-xs px-2 py-1 rounded ${order.paidAt ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
-                            {order.paidAt
-                              ? 'Fiado (Pago)'
-                              : `Fiado (${formatCurrency(order.remainingAmount ?? order.totalAmount)})`}
-                          </span>
-                        ) : (
-                          <>
-                            {order.payments?.map((p, i) => (
-                              <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                {p.method === "DINHEIRO" && "Dinheiro"}
-                                {p.method === "DEBITO" && "Débito"}
-                                {p.method === "CREDITO" && "Crédito"}
-                                {p.method === "PIX" && "PIX"}
-                              </span>
-                            ))}
-                            {(!order.payments || order.payments.length === 0) && (
-                              <span className="text-xs text-gray-400">-</span>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </TableCell>
+                    <TableCell className="whitespace-nowrap tabular-nums text-ink-2">{formatDate(new Date(order.createdAt))}</TableCell>
+                    <TableCell className="text-right tabular-nums">{order.items.length}</TableCell>
+                    <TableCell>{renderPayment(order)}</TableCell>
                     <TableCell>
                       {order.clientName ? (
-                        <span className="text-sm text-blue-600">{order.clientName}</span>
+                        <span className="text-sm">{order.clientName}</span>
                       ) : (
-                        <span className="text-xs text-gray-400">-</span>
+                        <span className="text-ink-3">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right font-bold">
+                    <TableCell className={cn("text-right font-semibold tabular-nums", order.isCancelled && "line-through")}>
                       {order.isCancelled ? "R$ 0,00" : formatCurrency(order.totalAmount)}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="pr-4 text-right">
                       <div className="flex justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
                           onClick={() => printReceipt(order)}
                           title="Reimprimir cupom"
+                          aria-label={`Reimprimir cupom do pedido ${order.id.slice(-6).toUpperCase()}`}
                         >
                           <Printer className="h-4 w-4" />
                         </Button>
@@ -735,6 +730,8 @@ export default function SalesPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => setSelectedOrder(order)}
+                          title="Ver detalhes"
+                          aria-label={`Ver pedido ${order.id.slice(-6).toUpperCase()}`}
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
@@ -744,28 +741,53 @@ export default function SalesPage() {
                 ))}
               </TableBody>
             </Table>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+
+          <ul className="divide-y divide-rule border border-rule bg-paper md:hidden">
+            {orders?.map((order) => (
+              <li key={order.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrder(order)}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 px-3 py-3 text-left"
+                >
+                  <span className="font-semibold">
+                    #{order.id.slice(-6).toUpperCase()}
+                    {order.isCancelled ? <Badge variant="destructive" className="ml-2 align-[1px]">Cancelada</Badge> : null}
+                  </span>
+                  <span className={cn("text-right font-tag text-xl font-extrabold tabular-nums", order.isCancelled && "text-ink-3 line-through")}>
+                    {order.isCancelled ? "R$ 0,00" : formatCurrency(order.totalAmount)}
+                  </span>
+                  <span className="text-sm text-ink-3">
+                    {formatDate(new Date(order.createdAt))} · {order.items.length} {order.items.length === 1 ? "item" : "itens"}
+                    {order.clientName ? ` · ${order.clientName}` : ""}
+                  </span>
+                  <span className="text-right">{renderPayment(order)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              Detalhes do Pedido #{selectedOrder?.id.slice(-6).toUpperCase()}
+              Pedido #{selectedOrder?.id.slice(-6).toUpperCase()}
             </DialogTitle>
           </DialogHeader>
           {selectedOrder && (
             <div className="space-y-4">
-              <div className="flex justify-between text-sm text-gray-600">
-                <span>Data: {formatDate(new Date(selectedOrder.createdAt))}</span>
-                <span className="font-bold text-lg">
-                  Total: {selectedOrder.isCancelled ? "R$ 0,00" : formatCurrency(selectedOrder.totalAmount)}
+              <div className="flex items-end justify-between gap-3 border-b-[1.5px] border-dashed border-rule-strong pb-3">
+                <span className="text-sm text-ink-2">{formatDate(new Date(selectedOrder.createdAt))}</span>
+                <span className={selectedOrder.isCancelled ? "text-ink-3 line-through" : undefined}>
+                  <PriceTag value={selectedOrder.isCancelled ? 0 : selectedOrder.totalAmount} className="text-[32px]" />
                 </span>
               </div>
 
               {selectedOrder.isCancelled && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800 space-y-1">
+                <div className="space-y-1 border border-vermelho/30 bg-vermelho-tint p-3 text-sm text-vermelho">
                   <p className="font-medium">Venda cancelada</p>
                   <p>
                     Motivo: {selectedOrder.cancellationReason || "Sem motivo informado"}
@@ -777,9 +799,9 @@ export default function SalesPage() {
               )}
 
               {canEditSales && !selectedOrder.isPaidLater && !selectedOrder.isCancelled && (
-                <div className="rounded-lg border p-3 space-y-3">
+                <div className="space-y-3 border border-rule p-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">Correção da venda (somente administrador)</p>
+                    <p className="text-sm font-semibold">Corrigir venda <span className="font-normal text-ink-3">· administrador</span></p>
                     {!isEditingSale ? (
                       <Button variant="outline" size="sm" onClick={() => setIsEditingSale(true)}>
                         Editar venda
@@ -834,7 +856,7 @@ export default function SalesPage() {
 
                       <div className="sm:col-span-2 flex justify-end">
                         <Button onClick={handleSaveSaleEdit} disabled={savingSaleEdit}>
-                          {savingSaleEdit ? "Salvando..." : "Salvar correções"}
+                          {savingSaleEdit ? "Salvando…" : "Salvar correções"}
                         </Button>
                       </div>
                     </div>
@@ -843,9 +865,9 @@ export default function SalesPage() {
               )}
 
               {canEditSales && !selectedOrder.isPaidLater && !selectedOrder.isCancelled && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-3">
-                  <p className="text-sm font-medium text-red-800">Cancelar venda (somente administrador)</p>
-                  <p className="text-xs text-red-700">
+                <div className="space-y-3 border border-vermelho/30 bg-vermelho-tint p-3">
+                  <p className="text-sm font-semibold text-vermelho">Cancelar venda <span className="font-normal">· administrador</span></p>
+                  <p className="text-xs text-vermelho">
                     O cancelamento mantém o histórico da venda, mas remove o impacto dela dos números de caixa e relatórios.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -868,7 +890,7 @@ export default function SalesPage() {
                     </div>
                     <div className="sm:col-span-2 flex justify-end">
                       <Button variant="destructive" onClick={handleCancelSale} disabled={cancellingSale}>
-                        {cancellingSale ? "Cancelando..." : "Cancelar venda"}
+                        {cancellingSale ? "Cancelando…" : "Cancelar venda"}
                       </Button>
                     </div>
                   </div>
@@ -876,20 +898,20 @@ export default function SalesPage() {
               )}
 
               {selectedOrder.isPaidLater && (
-                <div className={`p-3 rounded-lg ${selectedOrder.paidAt ? 'bg-green-50 border border-green-200' : 'bg-orange-50 border border-orange-200'}`}>
+                <div className={`border p-3 ${selectedOrder.paidAt ? 'border-verde/30 bg-verde-tint' : 'border-vermelho/30 bg-vermelho-tint'}`}>
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className={`font-medium ${selectedOrder.paidAt ? 'text-green-700' : 'text-orange-700'}`}>
-                        {selectedOrder.paidAt ? 'Venda Fiado (Pago)' : 'Venda Fiado (Pendente)'}
+                      <p className={`font-semibold ${selectedOrder.paidAt ? 'text-verde' : 'text-vermelho'}`}>
+                        {selectedOrder.paidAt ? 'Venda no fiado · paga' : 'Venda no fiado · em aberto'}
                       </p>
-                      <p className="text-sm text-gray-600">Cliente: {selectedOrder.clientName}</p>
-                      <p className="text-xs text-gray-600">
-                        Pago: {formatCurrency(selectedOrder.amountPaid || 0)} | Restante: {formatCurrency(selectedOrder.remainingAmount ?? selectedOrder.totalAmount)}
+                      <p className="text-sm text-ink-2">Cliente: {selectedOrder.clientName}</p>
+                      <p className="text-xs text-ink-2">
+                        Pago {formatCurrency(selectedOrder.amountPaid || 0)} · falta {formatCurrency(selectedOrder.remainingAmount ?? selectedOrder.totalAmount)}
                       </p>
                     </div>
                     {selectedOrder.paidAt && (
-                      <p className="text-xs text-green-600">
-                        Pago em: {formatDate(new Date(selectedOrder.paidAt))}
+                      <p className="text-xs text-verde">
+                        Quitado em {formatDate(new Date(selectedOrder.paidAt))}
                       </p>
                     )}
                   </div>
@@ -898,7 +920,7 @@ export default function SalesPage() {
 
               {selectedOrder.isPaidLater && selectedOrder.paymentHistory && selectedOrder.paymentHistory.length > 0 && (
                 <div>
-                  <h4 className="font-semibold mb-2">Histórico de Pagamentos</h4>
+                  <h4 className="mb-2 font-tag text-base font-bold uppercase tracking-[0.06em] text-ink-2">Pagamentos recebidos</h4>
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -927,21 +949,21 @@ export default function SalesPage() {
 
               {selectedOrder.payments && selectedOrder.payments.length > 0 && (
                 <div>
-                  <h4 className="font-semibold mb-2">Formas de Pagamento</h4>
+                  <h4 className="mb-2 font-tag text-base font-bold uppercase tracking-[0.06em] text-ink-2">Formas de pagamento</h4>
                   <div className="grid grid-cols-2 gap-2">
                     {selectedOrder.payments.map((payment, index) => (
-                      <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                        {payment.method === "DINHEIRO" && <Banknote className="h-4 w-4 text-green-600" />}
-                        {payment.method === "DEBITO" && <CreditCard className="h-4 w-4 text-blue-600" />}
-                        {payment.method === "CREDITO" && <CreditCard className="h-4 w-4 text-purple-600" />}
-                        {payment.method === "PIX" && <Smartphone className="h-4 w-4 text-teal-600" />}
+                      <div key={index} className="flex items-center gap-2 border border-rule bg-sub p-2">
+                        {payment.method === "DINHEIRO" && <Banknote className="h-4 w-4 text-ink-2" />}
+                        {payment.method === "DEBITO" && <CreditCard className="h-4 w-4 text-ink-2" />}
+                        {payment.method === "CREDITO" && <CreditCard className="h-4 w-4 text-ink-2" />}
+                        {payment.method === "PIX" && <Smartphone className="h-4 w-4 text-ink-2" />}
                         <span className="text-sm">
                           {payment.method === "DINHEIRO" && "Dinheiro"}
                           {payment.method === "DEBITO" && "Débito"}
                           {payment.method === "CREDITO" && "Crédito"}
                           {payment.method === "PIX" && "PIX"}
                         </span>
-                        <span className="ml-auto font-medium">{formatCurrency(payment.amount)}</span>
+                        <span className="ml-auto font-semibold tabular-nums">{formatCurrency(payment.amount)}</span>
                       </div>
                     ))}
                   </div>
@@ -949,7 +971,7 @@ export default function SalesPage() {
               )}
 
               <div>
-                <h4 className="font-semibold mb-2">Itens</h4>
+                <h4 className="mb-2 font-tag text-base font-bold uppercase tracking-[0.06em] text-ink-2">Itens</h4>
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -980,7 +1002,7 @@ export default function SalesPage() {
 
               <div className="flex justify-end">
                 <Button variant="outline" onClick={() => printReceipt(selectedOrder)}>
-                  <Printer className="h-4 w-4 mr-2" />
+                  <Printer className="h-4 w-4" aria-hidden="true" />
                   Reimprimir cupom
                 </Button>
               </div>

@@ -1,0 +1,490 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T15:58:32+00:00",
+  "title": "Design System: Benê Brasil · Gestão",
+  "extensions": {
+    "colorMeta": {
+      "ground": {
+        "role": "neutral",
+        "displayName": "Card Grey",
+        "canonical": "hsl(80 8% 92%)",
+        "tonalRamp": [
+          "#1C1D1B",
+          "#323431",
+          "#4B4D49",
+          "#6A6C68",
+          "#8C8F8B",
+          "#B3B5B0",
+          "#D3D5D0",
+          "#F5F6F3"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Card Stock",
+        "canonical": "hsl(0 0% 100%)",
+        "tonalRamp": [
+          "#1C1D1B",
+          "#323431",
+          "#4B4D49",
+          "#6A6C68",
+          "#8C8F8B",
+          "#B3B5B0",
+          "#D3D5D0",
+          "#F5F6F3"
+        ]
+      },
+      "sub": {
+        "role": "neutral",
+        "displayName": "Sub Stock",
+        "canonical": "hsl(80 14% 96%)",
+        "tonalRamp": [
+          "#1C1D1B",
+          "#323431",
+          "#4B4D49",
+          "#6A6C68",
+          "#8C8F8B",
+          "#B3B5B0",
+          "#D3D5D0",
+          "#F5F6F3"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Grafite",
+        "canonical": "hsl(0 0% 16%)",
+        "tonalRamp": [
+          "#141414",
+          "#282828",
+          "#3D3D3D",
+          "#575757",
+          "#737373",
+          "#999999",
+          "#C2C2C2",
+          "#EBEBEB"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "hsl(210 4% 36%)",
+        "tonalRamp": [
+          "#1A1B1C",
+          "#2E3032",
+          "#45484B",
+          "#575B5F",
+          "#76797D",
+          "#9B9EA1",
+          "#C3C5C7",
+          "#ECEDEE"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink 3",
+        "canonical": "hsl(210 3% 41%)",
+        "tonalRamp": [
+          "#1A1B1C",
+          "#2E3032",
+          "#45484B",
+          "#575B5F",
+          "#76797D",
+          "#9B9EA1",
+          "#C3C5C7",
+          "#ECEDEE"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "hsl(84 6% 82%)",
+        "tonalRamp": [
+          "#1C1D1B",
+          "#323431",
+          "#4B4D49",
+          "#6A6C68",
+          "#8C8F8B",
+          "#B3B5B0",
+          "#D3D5D0",
+          "#F5F6F3"
+        ]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Strong Rule",
+        "canonical": "hsl(100 2% 56%)",
+        "tonalRamp": [
+          "#1C1D1B",
+          "#323431",
+          "#4B4D49",
+          "#6A6C68",
+          "#8C8F8B",
+          "#B3B5B0",
+          "#D3D5D0",
+          "#F5F6F3"
+        ]
+      },
+      "denim": {
+        "role": "primary",
+        "displayName": "Denim",
+        "canonical": "hsl(205 47% 31%)",
+        "tonalRamp": [
+          "#14283A",
+          "#1C3A52",
+          "#21455E",
+          "#2A5473",
+          "#4A7393",
+          "#7E9DB6",
+          "#B5C8D7",
+          "#E4EBF1"
+        ]
+      },
+      "denim-hover": {
+        "role": "primary",
+        "displayName": "Deep Denim",
+        "canonical": "hsl(205 48% 25%)",
+        "tonalRamp": [
+          "#14283A",
+          "#1C3A52",
+          "#21455E",
+          "#2A5473",
+          "#4A7393",
+          "#7E9DB6",
+          "#B5C8D7",
+          "#E4EBF1"
+        ]
+      },
+      "denim-tint": {
+        "role": "primary",
+        "displayName": "Denim Wash",
+        "canonical": "hsl(208 30% 92%)",
+        "tonalRamp": [
+          "#14283A",
+          "#1C3A52",
+          "#21455E",
+          "#2A5473",
+          "#4A7393",
+          "#7E9DB6",
+          "#B5C8D7",
+          "#E4EBF1"
+        ]
+      },
+      "verde": {
+        "role": "secondary",
+        "displayName": "Verde",
+        "canonical": "hsl(149 23% 27%)",
+        "tonalRamp": [
+          "#18261F",
+          "#24382D",
+          "#355444",
+          "#4A6F5B",
+          "#6B8C7A",
+          "#97B0A1",
+          "#C3D3C9",
+          "#E1EAE4"
+        ]
+      },
+      "verde-tint": {
+        "role": "secondary",
+        "displayName": "Verde Wash",
+        "canonical": "hsl(140 18% 90%)",
+        "tonalRamp": [
+          "#18261F",
+          "#24382D",
+          "#355444",
+          "#4A6F5B",
+          "#6B8C7A",
+          "#97B0A1",
+          "#C3D3C9",
+          "#E1EAE4"
+        ]
+      },
+      "vermelho": {
+        "role": "tertiary",
+        "displayName": "Vermelho",
+        "canonical": "hsl(356 79% 42%)",
+        "tonalRamp": [
+          "#4A080D",
+          "#740C14",
+          "#9D101A",
+          "#BE1622",
+          "#DB4A54",
+          "#E8858C",
+          "#F0B8BC",
+          "#F7E3E4"
+        ]
+      },
+      "vermelho-hover": {
+        "role": "tertiary",
+        "displayName": "Deep Vermelho",
+        "canonical": "hsl(356 81% 34%)",
+        "tonalRamp": [
+          "#4A080D",
+          "#740C14",
+          "#9D101A",
+          "#BE1622",
+          "#DB4A54",
+          "#E8858C",
+          "#F0B8BC",
+          "#F7E3E4"
+        ]
+      },
+      "vermelho-tint": {
+        "role": "tertiary",
+        "displayName": "Vermelho Wash",
+        "canonical": "hsl(357 56% 93%)",
+        "tonalRamp": [
+          "#4A080D",
+          "#740C14",
+          "#9D101A",
+          "#BE1622",
+          "#DB4A54",
+          "#E8858C",
+          "#F0B8BC",
+          "#F7E3E4"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Total print",
+        "purpose": "The 52px sale total on the stub; PDV tag prices use the same setting at 26-30px, with R$ raised at 0.48em."
+      },
+      "headline": {
+        "displayName": "Screen title",
+        "purpose": "Uppercase condensed title in the sticky 64px top bar (26px phones, 28px desktop)."
+      },
+      "title": {
+        "displayName": "Panel title",
+        "purpose": "Stub, panel and dialog section heads in condensed caps."
+      },
+      "body": {
+        "displayName": "UI",
+        "purpose": "Barlow working text, tables, nav, buttons; tabular figures on."
+      },
+      "label": {
+        "displayName": "Tag label",
+        "purpose": "Column heads, badges and nav group labels in condensed caps."
+      },
+      "logo": {
+        "displayName": "Logo line",
+        "purpose": "Only the BRASIL line of the logo lockup."
+      }
+    },
+    "shadows": [
+      {
+        "name": "dialog",
+        "value": "0 18px 40px -12px rgba(40,40,40,0.45)",
+        "purpose": "Modal dialogs."
+      },
+      {
+        "name": "menu",
+        "value": "0 12px 28px -10px rgba(40,40,40,0.35)",
+        "purpose": "Select popovers and dropdown menus."
+      },
+      {
+        "name": "toast",
+        "value": "0 14px 32px -12px rgba(40,40,40,0.45)",
+        "purpose": "Toasts."
+      },
+      {
+        "name": "drawer",
+        "value": "12px 0 32px -12px rgba(40,40,40,0.4)",
+        "purpose": "Mobile nav drawer over a 50% grafite scrim."
+      },
+      {
+        "name": "login-tag",
+        "value": "drop-shadow(0 18px 28px rgba(40,40,40,0.16))",
+        "purpose": "Filter on the login hang tag only."
+      }
+    ],
+    "motion": [
+      {
+        "name": "line-in",
+        "value": "0.9s cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "A new cart line flashes Denim Wash and fades to paper."
+      },
+      {
+        "name": "control",
+        "value": "150ms",
+        "purpose": "Colour transitions on buttons and inputs; 100ms on nav items and size boxes."
+      },
+      {
+        "name": "overlay",
+        "value": "200ms",
+        "purpose": "Dialog fade and zoom; mobile drawer slide-in."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "0.01ms",
+        "purpose": "All animation and transition durations collapse under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      },
+      {
+        "name": "2xl",
+        "value": "1400px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Denim action button: Finalizar venda, Entrar, Salvar.",
+      "html": "<button class=\"ds-btn-primary\">Finalizar venda</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 1px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 150ms, color 150ms; font-family: var(--font-barlow), system-ui, sans-serif; background: hsl(var(--denim)); color: #fff; border: none; } .ds-btn-primary:hover { background: hsl(var(--denim-hover)); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--denim)); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Card stock with a 1.5px grafite printed rule: Troco, Sangria, Sair.",
+      "html": "<button class=\"ds-btn-outline\">Sangria</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 1px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 150ms, color 150ms; font-family: var(--font-barlow), system-ui, sans-serif; background: #fff; color: hsl(var(--ink)); border: 1.5px solid hsl(var(--ink)); } .ds-btn-outline:hover { background: hsl(var(--sub)); } .ds-btn-outline:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--denim)); }"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Vermelho outline for stepping into a destructive flow (Fechar caixa); solid vermelho confirms inside the dialog.",
+      "html": "<button class=\"ds-btn-danger\">Fechar caixa</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 1px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 150ms, color 150ms; font-family: var(--font-barlow), system-ui, sans-serif; height: 36px; padding: 0 12px; background: #fff; color: hsl(var(--vermelho)); border: 1.5px solid hsl(var(--vermelho)); } .ds-btn-danger:hover { background: hsl(var(--vermelho-tint)); } .ds-btn-danger:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--denim)); }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Card stock field with a Strong Rule border that turns denim on focus.",
+      "html": "<input class=\"ds-input\" placeholder=\"Bipe ou busque o produto\" />",
+      "css": ".ds-input { font-family: var(--font-barlow), system-ui, sans-serif; height: 40px; width: 280px; padding: 8px 12px; border: 1px solid hsl(var(--rule-strong)); border-radius: 1px; background: #fff; color: hsl(var(--ink)); font-size: 14px; caret-color: hsl(var(--denim)); transition: border-color 150ms; } .ds-input::placeholder { color: hsl(var(--ink-3)); } .ds-input:hover { border-color: hsl(var(--ink-2)); } .ds-input:focus-visible { outline: none; border-color: hsl(var(--denim)); box-shadow: 0 0 0 1px hsl(var(--denim)); }"
+    },
+    {
+      "name": "Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "White rail with grouped items; the active item prints inverse, white on grafite.",
+      "html": "<nav class=\"ds-nav\"><h2 class=\"ds-nav-group\">Balcão</h2><a class=\"ds-nav-item ds-nav-active\" href=\"#\">PDV</a><a class=\"ds-nav-item\" href=\"#\">Vendas</a><a class=\"ds-nav-item\" href=\"#\">Trocas</a></nav>",
+      "css": ".ds-nav { width: 220px; background: #fff; border-right: 1px solid hsl(var(--rule)); padding: 8px 0; font-family: var(--font-barlow), system-ui, sans-serif; } .ds-nav-group { margin: 0; padding: 0 20px 4px; font-family: var(--font-barlow-condensed), var(--font-barlow), system-ui, sans-serif; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: hsl(var(--ink-3)); } .ds-nav-item { display: flex; align-items: center; height: 28px; padding: 0 20px; font-size: 14px; color: hsl(var(--ink)); text-decoration: none; transition: background-color 100ms; } .ds-nav-item:hover { background: hsl(var(--sub)); } .ds-nav-item:focus-visible { outline: 2px solid hsl(var(--denim)); outline-offset: -2px; } .ds-nav-active, .ds-nav-active:hover { background: hsl(var(--ink)); color: #fff; font-weight: 600; }"
+    },
+    {
+      "name": "Category Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Filter chip with its count; the chosen chip prints inverse.",
+      "html": "<div class=\"ds-chips\"><button class=\"ds-chip ds-chip-on\">Todos <span>174</span></button><button class=\"ds-chip\">Vestidos <span>36</span></button></div>",
+      "css": ".ds-chips { display: flex; gap: 6px; } .ds-chip { font-family: var(--font-barlow), system-ui, sans-serif; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 1px solid hsl(var(--rule-strong)); background: #fff; color: hsl(var(--ink)); font-size: 14px; font-weight: 600; cursor: pointer; transition: border-color 150ms, background-color 150ms; } .ds-chip span { font-size: 12px; font-weight: 500; color: hsl(var(--ink-3)); font-variant-numeric: tabular-nums; } .ds-chip:hover { border-color: hsl(var(--ink)); } .ds-chip:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff, 0 0 0 4px hsl(var(--denim)); } .ds-chip-on { background: hsl(var(--ink)); border-color: hsl(var(--ink)); color: #fff; } .ds-chip-on span { color: rgba(255,255,255,0.7); }"
+    },
+    {
+      "name": "Size Grid",
+      "kind": "custom",
+      "refersTo": "size-box",
+      "description": "Signature: boxed sizes joined by 1.5px grafite rules with stock under each; low stock (2 or fewer) vermelho, sold-out faded, picked sizes inverse, hover denim.",
+      "html": "<div class=\"ds-sizes\"><button class=\"ds-size ds-size-on\"><b>P</b><i>3</i></button><button class=\"ds-size\"><b>M</b><i class=\"ds-low\">2</i></button><button class=\"ds-size\"><b>G</b><i>5</i></button><button class=\"ds-size ds-size-out\" disabled><b>GG</b><i>0</i></button></div>",
+      "css": ".ds-sizes { display: inline-flex; border: 1.5px solid hsl(var(--ink)); background: #fff; } .ds-size { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 44px; height: 44px; padding: 0 6px; border: none; background: #fff; color: hsl(var(--ink)); cursor: pointer; transition: background-color 100ms; } .ds-size + .ds-size { border-left: 1.5px solid hsl(var(--ink)); } .ds-size b { font-family: var(--font-barlow-condensed), var(--font-barlow), system-ui, sans-serif; font-size: 17px; font-weight: 700; line-height: 1; } .ds-size i { font-family: var(--font-barlow), system-ui, sans-serif; font-style: normal; margin-top: 2px; font-size: 11px; font-weight: 600; line-height: 1; color: hsl(var(--ink-3)); font-variant-numeric: tabular-nums; } .ds-size i.ds-low { color: hsl(var(--vermelho)); } .ds-size:hover:not(:disabled):not(.ds-size-on) { background: hsl(var(--denim)); color: #fff; } .ds-size:hover:not(:disabled):not(.ds-size-on) i { color: #fff; } .ds-size:focus-visible { position: relative; z-index: 1; outline: none; box-shadow: 0 0 0 1px #fff, 0 0 0 3px hsl(var(--denim)); } .ds-size-on { background: hsl(var(--ink)); color: #fff; } .ds-size-on i { color: rgba(255,255,255,0.8); } .ds-size-out { background: hsl(var(--sub)); color: hsl(var(--ink-3) / 0.6); cursor: not-allowed; } .ds-size-out i { color: hsl(var(--ink-3) / 0.6); }"
+    },
+    {
+      "name": "Tag Row",
+      "kind": "custom",
+      "refersTo": "tag-row",
+      "description": "Signature: a product on its notched hang tag with an eyelet; photo, name and code, sizes, then price.",
+      "html": "<div class=\"ds-tag\"><span class=\"ds-eyelet\"></span><div class=\"ds-photo\"></div><div class=\"ds-name\"><strong>Bermuda</strong><small>D64A70W872</small></div><span class=\"ds-price\"><sup>R$</sup>40,00</span></div>",
+      "css": ".ds-tag { position: relative; display: flex; align-items: center; gap: 16px; width: 520px; padding: 10px 16px 10px 28px; background: #fff; clip-path: polygon(14px 0, 100% 0, 100% 100%, 14px 100%, 0 50%); font-family: var(--font-barlow), system-ui, sans-serif; color: hsl(var(--ink)); } .ds-eyelet { position: absolute; left: 9px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: hsl(var(--ground)); } .ds-photo { width: 48px; height: 48px; background: hsl(var(--sub)); flex-shrink: 0; } .ds-name { display: flex; flex-direction: column; flex: 1; } .ds-name strong { font-size: 15px; font-weight: 600; } .ds-name small { font-size: 12px; color: hsl(var(--ink-3)); } .ds-price { display: inline-flex; align-items: baseline; font-family: var(--font-barlow-condensed), var(--font-barlow), system-ui, sans-serif; font-size: 30px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; } .ds-price sup { align-self: flex-start; margin-right: 0.12em; font-size: 0.48em; line-height: 1.15; }"
+    },
+    {
+      "name": "Sale Stub Total",
+      "kind": "custom",
+      "refersTo": "button-primary",
+      "description": "Signature: the stub's settlement under a 2px grafite rule, behind a dashed tear edge; total in 52px condensed print, discounts in verde.",
+      "html": "<div class=\"ds-stub\"><div class=\"ds-line\"><span>Subtotal</span><span>R$ 135,00</span></div><div class=\"ds-line ds-disc\"><span>Desconto PIX (5%)</span><span>−R$ 6,75</span></div><div class=\"ds-total\"><span>Total</span><span class=\"ds-big\"><sup>R$</sup>128,25</span></div></div>",
+      "css": ".ds-stub { width: 340px; padding: 12px 20px 20px; background: #fff; border-left: 1.5px dashed hsl(var(--rule-strong)); border-top: 2px solid hsl(var(--ink)); font-family: var(--font-barlow), system-ui, sans-serif; font-variant-numeric: tabular-nums; } .ds-line { display: flex; justify-content: space-between; font-size: 14px; color: hsl(var(--ink-2)); } .ds-disc { color: hsl(var(--verde)); font-weight: 500; } .ds-total { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px; padding: 8px 0; } .ds-total > span:first-child { font-family: var(--font-barlow-condensed), var(--font-barlow), system-ui, sans-serif; font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; padding-bottom: 4px; } .ds-big { display: inline-flex; align-items: baseline; font-family: var(--font-barlow-condensed), var(--font-barlow), system-ui, sans-serif; font-size: 52px; font-weight: 800; line-height: 1; letter-spacing: -0.01em; color: hsl(var(--ink)); } .ds-big sup { align-self: flex-start; margin-right: 0.12em; font-size: 0.48em; line-height: 1.15; }"
+    },
+    {
+      "name": "Totals Strip",
+      "kind": "card",
+      "refersTo": "tag-row",
+      "description": "A screen's figures on one strip divided by hairlines, coloured by tone. Figures, not tiles.",
+      "html": "<dl class=\"ds-strip\"><div><dt>Vendas</dt><dd>R$ 2.318,40</dd></div><div><dt>Recebido</dt><dd class=\"ds-pos\">R$ 1.980,00</dd></div><div><dt>Fiado em aberto</dt><dd class=\"ds-debt\">R$ 338,40</dd></div></dl>",
+      "css": ".ds-strip { display: flex; margin: 0; border: 1px solid hsl(var(--rule)); background: #fff; font-family: var(--font-barlow), system-ui, sans-serif; } .ds-strip > div { flex: 1; min-width: 140px; padding: 10px 16px; } .ds-strip > div + div { border-left: 1px solid hsl(var(--rule)); } .ds-strip dt { font-size: 14px; color: hsl(var(--ink-2)); } .ds-strip dd { margin: 2px 0 0; font-family: var(--font-barlow-condensed), var(--font-barlow), system-ui, sans-serif; font-size: 22px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; color: hsl(var(--ink)); } .ds-strip dd.ds-pos { color: hsl(var(--verde)); } .ds-strip dd.ds-debt { color: hsl(var(--vermelho)); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Etiqueta",
+    "overview": "Every product in the system wears its hang tag, and every money screen settles like the tag's stub. The app is printed, not rendered: white card stock laid on a cool card-grey ground, grafite ink, 1.5px printed rules and 1px hairlines, square corners. Sizes print as a boxed grid with the stock under each size; codes, prices, titles and totals are set in condensed tag print; totals sit below a tear line.\n\nThis is an Operate-mode tool for a shop counter PC and the owner's notebook under daylight and shop lighting, and for phones doing stock lookups and sales without a scanner. Density is high and calm: one strip of figures instead of KPI tiles, lists of tags instead of card grids. The logo's three colours carry jobs, never decoration: denim acts, verde settles, vermelho owes. There is one light theme; no dark theme exists.\n\nThe system rejects the admin template: rounded cards, KPI tiles, soft-shadowed surfaces and grey-on-white. It also rejects a playful tone around money and the logo colours splashed for flavour.",
+    "keyCharacteristics": [
+      "Cool card-grey ground, white card-stock surfaces, grafite ink.",
+      "1.5px grafite printed rules for things you handle; 1px hairlines for structure.",
+      "Square corners (2px at most).",
+      "Barlow Condensed tag print for titles, sizes, prices and totals; Barlow for the UI; tabular figures everywhere.",
+      "Colour is a job: denim acts, verde settles, vermelho owes.",
+      "The boxed size grid with stock under each size is the signature, wherever a product with sizes appears.",
+      "Inverse print (white on grafite) marks the current thing: active nav, chosen chip, picked size."
+    ],
+    "rules": [
+      {
+        "name": "The Colour Has a Job Rule",
+        "body": "Denim acts, verde settles, vermelho owes. A logo colour that is not doing its job does not appear; there is no decorative use of any of the three.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Threshold Rule",
+        "body": "Low stock is 2 pieces or fewer (`LOW_STOCK = 2` in the size grid), everywhere. At or below it the count prints in vermelho; at zero the size fades.",
+        "section": "colors"
+      },
+      {
+        "name": "The No Amber Rule",
+        "body": "There is no warning colour. A state is either fine (ink), settled (verde) or owed (vermelho).",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Tabular figures are on for the whole body (`\"tnum\" 1`). Money, stock and counts align to the comma in every list, table and strip.",
+        "section": "typography"
+      },
+      {
+        "name": "The Price Print Rule",
+        "body": "A price is condensed extrabold numerals with \"R$\" raised at 0.48em beside them, never the same size as the number. Discounts and withdrawals carry a leading minus sign.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Page Rule",
+        "body": "Nothing that sits in the page flow casts a shadow. Tags, strips, tables and panels separate by paper, rule and ground only.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do give every logo colour its job: denim (#2A5473) for actions, focus and selection; verde (#355444) for paid, positive, discount and an open register; vermelho (#BE1622) for debt, negative values, low stock and destructive actions.",
+      "Do print the current thing inverse, white on grafite (#282828): the active nav item, the chosen chip, picked sizes.",
+      "Do show a product as photo, name, code, sizes with stock, then price, using the shared SizeGrid wherever sizes appear.",
+      "Do use one low-stock threshold, 2 pieces or fewer, and print it in vermelho.",
+      "Do set prices, sizes, titles and totals in Barlow Condensed and keep tabular figures on everywhere.",
+      "Do use 1.5px grafite rules for things you handle and 1px hairlines (#D3D5D0) for structure; write border widths as arbitrary values (`border-[1.5px]`), because `cn()` runs tailwind-merge, which drops a custom named border width.",
+      "Do settle money screens under a tear line: 1.5px dashed Strong Rule (#8C8F8B), then the total in condensed print."
+    ],
+    "donts": [
+      "Don't use rounded cards, KPI tiles, soft shadows on in-page surfaces, or grey-on-white admin styling.",
+      "Don't splash the logo colours for decoration or brand flavour.",
+      "Don't introduce a warning or amber colour; it was removed on purpose.",
+      "Don't add a size-picker dialog on the PDV; clicking a size box adds that size.",
+      "Don't round corners past 2px.",
+      "Don't add a dark theme without designing one; the system is a single light theme for a shop counter and a notebook in daylight."
+    ]
+  }
+}

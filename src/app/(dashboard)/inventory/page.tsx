@@ -2,15 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { apiGet, apiPost } from "@/lib/api-client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,8 +14,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { formatCurrency } from "@/lib/utils";
-import { Boxes, TrendingUp, Settings2, Printer } from "lucide-react";
+import { cn, formatCurrency } from "@/lib/utils";
+import { Settings2, Printer, Search } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
+import { LOW_STOCK, SizeGrid } from "@/components/etiqueta/size-grid";
+import { TagHeader, TagRow } from "@/components/etiqueta/tag-row";
+import { PriceTag } from "@/components/etiqueta/price-tag";
+import { ProductPhoto } from "@/components/etiqueta/product-photo";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -41,6 +37,7 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  image?: string;
 }
 
 export default function InventoryPage() {
@@ -52,6 +49,7 @@ export default function InventoryPage() {
   const [adjustReason, setAdjustReason] = useState("");
   const [sizeDeltas, setSizeDeltas] = useState<Record<string, string>>({});
   const [submittingAdjust, setSubmittingAdjust] = useState(false);
+  const [search, setSearch] = useState("");
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -164,190 +162,177 @@ export default function InventoryPage() {
     doc.save(`inventario-${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleProducts = normalizedSearch
+    ? products.filter(
+        (p) =>
+          (p.name || "").toLowerCase().includes(normalizedSearch) ||
+          (p.sku || "").toLowerCase().includes(normalizedSearch)
+      )
+    : products;
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Estoque</h1>
-          <p className="text-gray-500">Controle de inventário</p>
+    <div>
+      <PageHeader
+        title="Estoque"
+        meta={
+          !loading ? (
+            <span>
+              <b className="font-semibold text-ink">{totalStock}</b> peças ·{" "}
+              <b className="font-semibold text-ink">{products.length}</b> produtos ·{" "}
+              <b className="font-semibold text-ink">{formatCurrency(totalInventoryValue)}</b> pelo custo
+            </span>
+          ) : null
+        }
+        actions={
+          <Button variant="outline" size="sm" onClick={printInventorySheet} disabled={loading || products.length === 0}>
+            <Printer className="h-4 w-4" aria-hidden="true" />
+            Imprimir folha de contagem
+          </Button>
+        }
+      />
+
+      <div className="relative mb-4 w-full sm:max-w-sm">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-2" aria-hidden="true" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar por nome ou código"
+          aria-label="Buscar produto no estoque"
+          className="pl-9"
+        />
+      </div>
+
+      {loading ? (
+        <div className="space-y-2" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-14 animate-pulse border border-rule bg-paper" />
+          ))}
         </div>
-        <Button variant="outline" onClick={printInventorySheet} disabled={loading || products.length === 0}>
-          <Printer className="h-4 w-4 mr-2" />
-          Imprimir Inventário
-        </Button>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Valor Total do Estoque</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {formatCurrency(totalInventoryValue)}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total de Itens</CardTitle>
-            <Boxes className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalStock}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Produtos Cadastrados</CardTitle>
-            <Boxes className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{products.length}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Detalhes do Estoque</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-center py-4">Carregando...</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Produto</TableHead>
-                  <TableHead>SKU</TableHead>
-                  <TableHead className="text-right">Custo Unit.</TableHead>
-                  <TableHead className="text-right">Estoque Total</TableHead>
-                  <TableHead>Estoque por Tamanho</TableHead>
-                  <TableHead className="text-right">Valor Total</TableHead>
-                  <TableHead className="text-right">Receita Projetada</TableHead>
-                  <TableHead className="text-right">Lucro Projetado</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {products.map((product) => (
-                  <TableRow key={product.id}>
-                    <TableCell className="font-medium">{product.name}</TableCell>
-                    <TableCell>{product.sku}</TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(product.costPrice)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <span
-                        className={
-                          product.stock === 0
-                            ? "text-red-500 font-bold"
-                            : product.stock < 5
-                            ? "text-yellow-500 font-bold"
-                            : ""
-                        }
-                      >
-                        {product.stock}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {product.sizes?.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {product.sizes.map((s) => (
-                            <span
-                              key={s.size}
-                              className={`text-xs px-1.5 py-0.5 rounded ${
-                                s.stock === 0
-                                  ? "bg-red-100 text-red-600"
-                                  : s.stock < 3
-                                  ? "bg-yellow-100 text-yellow-700"
-                                  : "bg-gray-100 text-gray-700"
-                              }`}
-                            >
-                              {s.size}: {s.stock}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 text-xs">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(product.stock * product.costPrice)}
-                    </TableCell>
-                    <TableCell className="text-right text-blue-600">
-                      {formatCurrency(product.stock * product.salePrice)}
-                    </TableCell>
-                    <TableCell className="text-right font-medium text-emerald-600">
-                      {formatCurrency(product.stock * (product.salePrice - product.costPrice))}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openAdjust(product)}
-                      >
-                        <Settings2 className="h-3.5 w-3.5 mr-1" />
-                        Ajustar
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      ) : visibleProducts.length === 0 ? (
+        <div className="border border-rule bg-paper px-6 py-14 text-center">
+          <p className="font-semibold text-ink">
+            {normalizedSearch ? `Nenhum produto com “${search.trim()}”` : "Nenhum produto no estoque"}
+          </p>
+        </div>
+      ) : (
+        <>
+          <TagHeader className="hidden xl:grid xl:grid-cols-[minmax(0,1fr)_262px_116px_56px_220px_96px] xl:gap-x-4">
+            <span>Produto</span>
+            <span>Tamanhos · estoque</span>
+            <span className="text-right">Venda</span>
+            <span className="text-right">Peças</span>
+            <span className="text-right">Custo · receita · lucro</span>
+            <span />
+          </TagHeader>
+          <ul className="space-y-2">
+            {visibleProducts.map((product) => (
+              <li key={product.id}>
+                <TagRow className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5 xl:grid-cols-[minmax(0,1fr)_262px_116px_56px_220px_96px]">
+                  <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
+                    <ProductPhoto src={product.image} name={product.name} className="h-12 w-12" />
+                    <div className="min-w-0">
+                      <p className="line-clamp-2 font-semibold leading-snug">{product.name}</p>
+                      <p className="text-xs tracking-[0.04em] text-ink-3">{product.sku}</p>
+                    </div>
+                  </div>
+                  <div className="col-span-2 row-start-2 xl:col-span-1 xl:col-start-2 xl:row-start-1">
+                    {product.sizes?.length > 0 ? (
+                      <SizeGrid sizes={product.sizes} size="sm" lowAt={LOW_STOCK} />
+                    ) : (
+                      <span className="text-sm text-ink-3">Sem grade</span>
+                    )}
+                  </div>
+                  <div className="col-start-2 row-start-1 text-right xl:col-start-3">
+                    <PriceTag value={product.salePrice} className="text-2xl" />
+                    <p className="text-xs text-ink-3 xl:hidden">
+                      <StockCount value={product.stock} /> peças
+                    </p>
+                  </div>
+                  <p className="hidden text-right xl:col-start-4 xl:row-start-1 xl:block">
+                    <span className="sr-only">Peças em estoque: </span>
+                    <StockCount value={product.stock} />
+                  </p>
+                  <dl className="col-start-1 row-start-3 flex flex-wrap gap-x-3 text-xs text-ink-3 xl:col-start-5 xl:row-start-1 xl:block xl:text-right">
+                    <div className="flex gap-1 xl:justify-end">
+                      <dt>Custo</dt>
+                      <dd className="tabular-nums text-ink-2">{formatCurrency(product.stock * product.costPrice)}</dd>
+                    </div>
+                    <div className="flex gap-1 xl:justify-end">
+                      <dt>Receita</dt>
+                      <dd className="tabular-nums text-ink-2">{formatCurrency(product.stock * product.salePrice)}</dd>
+                    </div>
+                    <div className="flex gap-1 xl:justify-end">
+                      <dt>Lucro</dt>
+                      <dd className="font-semibold tabular-nums text-verde">
+                        {formatCurrency(product.stock * (product.salePrice - product.costPrice))}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="col-start-2 row-start-3 flex justify-end xl:col-start-6 xl:row-start-1">
+                    <Button variant="outline" size="sm" onClick={() => openAdjust(product)}>
+                      <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      Ajustar
+                    </Button>
+                  </div>
+                </TagRow>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       <Dialog open={!!adjustingProduct} onOpenChange={(open) => !open && closeAdjust()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Ajuste de Estoque</DialogTitle>
+            <DialogTitle>Ajustar estoque</DialogTitle>
           </DialogHeader>
           {adjustingProduct && (
             <div className="space-y-4">
-              <div className="rounded-md bg-gray-50 p-3 text-sm">
-                <p className="font-medium">{adjustingProduct.name}</p>
-                <p className="text-xs text-gray-500">SKU: {adjustingProduct.sku}</p>
-                <p className="text-xs text-gray-500">Estoque atual: {adjustingProduct.stock}</p>
+              <div className="border border-rule bg-sub p-3 text-sm">
+                <p className="font-semibold">{adjustingProduct.name}</p>
+                <p className="text-xs text-ink-3">
+                  {adjustingProduct.sku} · {adjustingProduct.stock} peças agora
+                </p>
               </div>
 
-              <p className="text-xs text-gray-500">
-                Use valores positivos para aumentar e negativos para reduzir. Ajustes não afetam o relatório de entradas nem o financeiro.
+              <p className="text-sm text-ink-3">
+                Use números positivos para somar e negativos para tirar. O ajuste não entra no relatório de entradas nem no financeiro.
               </p>
 
               {adjustingProduct.sizes && adjustingProduct.sizes.length > 0 ? (
-                <div className="space-y-2">
-                  <Label>Ajuste por tamanho</Label>
-                  <div className="grid grid-cols-2 gap-2">
+                <fieldset className="space-y-2">
+                  <legend className="text-sm font-semibold">Ajuste por tamanho</legend>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {adjustingProduct.sizes.map((s) => (
-                      <div key={s.size} className="flex items-center gap-2">
-                        <span className="text-xs w-20 text-gray-600">
-                          {s.size} ({s.stock})
+                      <label key={s.size} className="flex items-center border border-rule-strong bg-paper">
+                        <span className="flex h-10 w-16 flex-shrink-0 flex-col items-center justify-center border-r border-rule-strong bg-sub leading-none">
+                          <span className="font-tag text-base font-bold">{s.size}</span>
+                          <span className="text-[11px] text-ink-3">{s.stock}</span>
                         </span>
-                        <Input
+                        <input
                           type="number"
+                          inputMode="numeric"
                           placeholder="0"
+                          aria-label={`Ajuste do tamanho ${s.size}`}
                           value={sizeDeltas[s.size] || ""}
                           onChange={(e) =>
                             setSizeDeltas((prev) => ({ ...prev, [s.size]: e.target.value }))
                           }
+                          className="h-10 w-full min-w-0 bg-paper px-2 text-right text-base font-semibold tabular-nums focus:bg-denim-tint focus:outline-none"
                         />
-                      </div>
+                      </label>
                     ))}
                   </div>
-                </div>
+                </fieldset>
               ) : (
                 <div className="space-y-2">
-                  <Label htmlFor="delta">Variação (positiva ou negativa)</Label>
+                  <Label htmlFor="delta">Quantidade a somar ou tirar</Label>
                   <Input
                     id="delta"
                     type="number"
-                    placeholder="Ex: -3 ou 5"
+                    inputMode="numeric"
+                    placeholder="Ex.: −3 ou 5"
                     value={adjustDelta}
                     onChange={(e) => setAdjustDelta(e.target.value)}
                   />
@@ -358,7 +343,7 @@ export default function InventoryPage() {
                 <Label htmlFor="reason">Motivo</Label>
                 <Textarea
                   id="reason"
-                  placeholder="Ex: Contagem física, perda, dano..."
+                  placeholder="Ex.: contagem física, perda, peça com defeito"
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
                   rows={3}
@@ -371,11 +356,24 @@ export default function InventoryPage() {
               Cancelar
             </Button>
             <Button onClick={submitAdjustment} disabled={submittingAdjust}>
-              {submittingAdjust ? "Aplicando..." : "Aplicar Ajuste"}
+              {submittingAdjust ? "Aplicando…" : "Aplicar ajuste"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function StockCount({ value }: { value: number }) {
+  return (
+    <span
+      className={cn(
+        "font-tag text-xl font-extrabold tabular-nums",
+        value <= LOW_STOCK ? "text-vermelho" : "text-ink"
+      )}
+    >
+      {value}
+    </span>
   );
 }

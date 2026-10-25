@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -24,7 +23,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { Plus, Pencil, Trash2, Truck } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
 
 type PaymentMethod = "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX" | "FIADO";
 
@@ -175,56 +175,55 @@ export default function SuppliersPage() {
   if (userData?.role !== "ADMIN") {
     return (
       <div className="flex items-center justify-center h-96">
-        <p className="text-gray-500">Você não tem permissão para acessar esta página.</p>
+        <p className="text-ink-3">Você não tem permissão para acessar esta página.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Fornecedores</h1>
-          <p className="text-gray-500">Cadastre e gerencie seus fornecedores</p>
-        </div>
-
+    <div>
+      <PageHeader
+        title="Fornecedores"
+        meta={!loading ? <span><b className="font-semibold text-ink">{suppliers.length}</b> cadastrados</span> : null}
+        actions={
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={openNewDialog}>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Fornecedor
+            <Button size="sm" onClick={openNewDialog}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Novo fornecedor
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{editingSupplier ? "Editar Fornecedor" : "Novo Fornecedor"}</DialogTitle>
+              <DialogTitle>{editingSupplier ? "Editar fornecedor" : "Novo fornecedor"}</DialogTitle>
             </DialogHeader>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label>Nome *</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                <Label htmlFor="sup-name">Nome</Label>
+                <Input id="sup-name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label>Instagram</Label>
-                  <Input value={formData.instagram} onChange={(e) => setFormData({ ...formData, instagram: e.target.value })} placeholder="@fornecedor" />
+                  <Label htmlFor="sup-ig">Instagram</Label>
+                  <Input id="sup-ig" value={formData.instagram} onChange={(e) => setFormData({ ...formData, instagram: e.target.value })} placeholder="@fornecedor" />
                 </div>
                 <div className="space-y-2">
-                  <Label>WhatsApp</Label>
-                  <Input value={formData.whatsapp} onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })} placeholder="(11) 99999-9999" />
+                  <Label htmlFor="sup-wa">WhatsApp</Label>
+                  <Input id="sup-wa" type="tel" inputMode="tel" value={formData.whatsapp} onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })} placeholder="(11) 99999-9999" />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Website</Label>
-                <Input value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="https://..." />
+                <Label htmlFor="sup-site">Site</Label>
+                <Input id="sup-site" value={formData.website} onChange={(e) => setFormData({ ...formData, website: e.target.value })} placeholder="https://..." />
               </div>
 
               <div className="space-y-2">
-                <Label>Observações</Label>
+                <Label htmlFor="sup-notes">Observações</Label>
                 <Textarea
+                  id="sup-notes"
                   value={formData.observations}
                   onChange={(e) => setFormData({ ...formData, observations: e.target.value })}
                   rows={3}
@@ -238,6 +237,7 @@ export default function SuppliersPage() {
                     <label key={m.value} className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
+                        className="h-[18px] w-[18px] accent-[hsl(var(--denim))]"
                         checked={formData.acceptedPaymentMethods.includes(m.value)}
                         onChange={() => toggleMethod(m.value)}
                       />
@@ -247,58 +247,52 @@ export default function SuppliersPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end gap-2 border-t border-rule pt-4">
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit">{editingSupplier ? "Salvar" : "Criar"}</Button>
+                <Button type="submit">{editingSupplier ? "Salvar alterações" : "Cadastrar fornecedor"}</Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>
-      </div>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Truck className="h-5 w-5" />
-            Lista de Fornecedores
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="border border-rule bg-paper">
           {loading ? (
-            <p className="text-center py-4">Carregando...</p>
+            <div className="space-y-2 p-4" aria-hidden="true">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-sub" />)}</div>
           ) : suppliers.length === 0 ? (
-            <p className="text-center py-4 text-gray-500">Nenhum fornecedor cadastrado</p>
+            <p className="px-5 py-12 text-center text-sm text-ink-3">Nenhum fornecedor cadastrado. Use Novo fornecedor para começar.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nome</TableHead>
+                  <TableHead className="pl-4">Nome</TableHead>
                   <TableHead>Instagram</TableHead>
                   <TableHead>WhatsApp</TableHead>
                   <TableHead>Website</TableHead>
                   <TableHead>Observações</TableHead>
                   <TableHead>Pagamentos</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead className="pr-4 text-right"><span className="sr-only">Ações</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {suppliers.map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell className="font-medium">{s.name}</TableCell>
-                    <TableCell>{s.instagram || "-"}</TableCell>
-                    <TableCell>{s.whatsapp || "-"}</TableCell>
-                    <TableCell>{s.website || "-"}</TableCell>
-                    <TableCell>{s.observations || "-"}</TableCell>
-                    <TableCell>{(s.acceptedPaymentMethods || []).join(", ") || "-"}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(s)} title="Editar">
+                    <TableCell className="pl-4 font-semibold">{s.name}</TableCell>
+                    <TableCell className="text-ink-2">{s.instagram || "—"}</TableCell>
+                    <TableCell className="text-ink-2">{s.whatsapp || "—"}</TableCell>
+                    <TableCell className="text-ink-2">{s.website || "—"}</TableCell>
+                    <TableCell className="max-w-[260px] truncate text-ink-2" title={s.observations || undefined}>{s.observations || "—"}</TableCell>
+                    <TableCell className="text-ink-2">{(s.acceptedPaymentMethods || []).join(", ") || "—"}</TableCell>
+                    <TableCell className="pr-4 text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(s)} title="Editar" aria-label={`Editar ${s.name}`}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(s.id)} title="Excluir">
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                        <Button variant="ghost" size="icon" className="hover:bg-vermelho-tint hover:text-vermelho" onClick={() => handleDelete(s.id)} title="Excluir" aria-label={`Excluir ${s.name}`}>
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>
@@ -307,8 +301,7 @@ export default function SuppliersPage() {
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

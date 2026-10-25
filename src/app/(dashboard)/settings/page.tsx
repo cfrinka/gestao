@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { Save, Store, Receipt, Percent, Search, X, Key } from "lucide-react";
+import { Save, Search, X, AlertTriangle } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { discountSettingsSchema } from "@/domains/settings/discount-settings-schema";
+import { PageHeader } from "@/components/layout/page-header";
 
 interface Product {
   id: string;
@@ -81,35 +82,35 @@ function ProductDiscountSelector({ productDiscounts, onChange }: ProductDiscount
       <div className="space-y-2">
         <Label>Adicionar Produto</Label>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-2" aria-hidden="true" />
           <Input
-            placeholder="Buscar por nome ou SKU..."
+            placeholder="Buscar por nome ou código"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
           />
         </div>
         {search && !loading && (
-          <div className="border rounded-lg max-h-40 overflow-y-auto">
+          <div className="max-h-40 overflow-y-auto border border-rule">
             {filteredProducts.length === 0 ? (
-              <p className="text-center py-2 text-sm text-gray-500">Nenhum produto encontrado</p>
+              <p className="text-center py-2 text-sm text-ink-3">Nenhum produto encontrado</p>
             ) : (
               filteredProducts.map((product) => {
                 const hasDiscount = productDiscounts.some(pd => pd.productId === product.id);
                 return (
                   <div
                     key={product.id}
-                    className={`p-2 hover:bg-gray-50 cursor-pointer flex justify-between items-center ${
-                      hasDiscount ? "bg-gray-50" : ""
+                    className={`p-2 hover:bg-sub cursor-pointer flex justify-between items-center ${
+                      hasDiscount ? "bg-sub" : ""
                     }`}
                     onClick={() => !hasDiscount && addProductDiscount(product.id)}
                   >
                     <div>
                       <p className="font-medium">{product.name}</p>
-                      <p className="text-sm text-gray-500">{product.sku}</p>
+                      <p className="text-sm text-ink-3">{product.sku}</p>
                     </div>
                     {hasDiscount ? (
-                      <span className="text-xs text-green-600">Já adicionado</span>
+                      <span className="text-xs text-verde">Já adicionado</span>
                     ) : (
                       <Button size="sm" variant="outline">Adicionar</Button>
                     )}
@@ -131,7 +132,7 @@ function ProductDiscountSelector({ productDiscounts, onChange }: ProductDiscount
                 <div key={pd.productId} className="flex items-center gap-2 p-2 border rounded">
                   <div className="flex-1">
                     <p className="font-medium">{product?.name || "Produto não encontrado"}</p>
-                    <p className="text-sm text-gray-500">{product?.sku}</p>
+                    <p className="text-sm text-ink-3">{product?.sku}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <Input
@@ -143,7 +144,7 @@ function ProductDiscountSelector({ productDiscounts, onChange }: ProductDiscount
                       onChange={(e) => updateProductDiscount(pd.productId, parseFloat(e.target.value) || 0)}
                       className="w-16 text-right"
                     />
-                    <span className="text-gray-500 text-sm">%</span>
+                    <span className="text-ink-3 text-sm">%</span>
                   </div>
                   <Button
                     size="sm"
@@ -370,31 +371,35 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-[#2A5473]">Configurações</h1>
-        <p className="text-gray-500">Personalize as informações da sua loja</p>
-      </div>
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Configurações"
+        meta={<span>Dados da loja, cupom, descontos e senha do administrador</span>}
+        actions={
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            <Save className="h-4 w-4" aria-hidden="true" />
+            {saving ? "Salvando…" : "Salvar configurações"}
+          </Button>
+        }
+        className="mb-0 md:mb-0"
+      />
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Store className="h-5 w-5 text-[#355444]" />
-              Dados da Loja
-            </CardTitle>
+            <CardTitle>Dados da loja</CardTitle>
             <CardDescription>
               Informações que aparecem no cabeçalho do cupom
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="storeName">Nome da Loja</Label>
+              <Label htmlFor="storeName">Nome da loja</Label>
               <Input
                 id="storeName"
                 value={settings.storeName}
                 onChange={(e) => setSettings({ ...settings, storeName: e.target.value })}
-                placeholder="Minha Loja"
+                placeholder="Benê Brasil"
               />
             </div>
             <div className="space-y-2">
@@ -429,17 +434,14 @@ export default function SettingsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Receipt className="h-5 w-5 text-[#355444]" />
-              Cupom Fiscal
-            </CardTitle>
+            <CardTitle>Cupom</CardTitle>
             <CardDescription>
               Personalize a mensagem do rodapé do cupom
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="footerMessage">Mensagem do Rodapé</Label>
+              <Label htmlFor="footerMessage">Mensagem do rodapé</Label>
               <Textarea
                 id="footerMessage"
                 value={settings.footerMessage}
@@ -447,7 +449,7 @@ export default function SettingsPage() {
                 placeholder="Obrigado pela preferência!&#10;Volte sempre!"
                 rows={4}
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-ink-3">
                 Use Enter para quebrar linhas
               </p>
             </div>
@@ -467,21 +469,21 @@ export default function SettingsPage() {
                   })
                 }
               />
-              <p className="text-xs text-gray-500">
-                Esse prazo sera usado no comprovante para troca impresso no PDV.
+              <p className="text-xs text-ink-3">
+                Esse prazo sai impresso no comprovante de troca do PDV.
               </p>
             </div>
 
-            <div className="p-4 bg-gray-100 rounded-lg">
-              <p className="text-xs text-gray-500 mb-2">Prévia do Cupom:</p>
-              <div className="font-mono text-xs bg-white p-3 rounded border">
+            <div className="bg-sub p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-3">Prévia do cupom</p>
+              <div className="mx-auto max-w-[300px] border border-rule bg-paper p-3 font-mono text-xs shadow-[0_6px_16px_-10px_rgba(40,40,40,0.4)]">
                 <div className="text-center border-b border-dashed pb-2 mb-2">
                   <p className="font-bold">{settings.storeName || "NOME DA LOJA"}</p>
                   {settings.address && <p>{settings.address}</p>}
                   {settings.phone && <p>Tel: {settings.phone}</p>}
                   {settings.cnpj && <p>CNPJ: {settings.cnpj}</p>}
                 </div>
-                <p className="text-center text-gray-500">... itens da venda ...</p>
+                <p className="text-center text-ink-3">... itens da venda ...</p>
                 <div className="text-center border-t border-dashed pt-2 mt-2">
                   <p className="font-semibold">Comprovante para troca</p>
                   <p>Trocas em ate {Math.max(0, Math.floor(settings.exchangeDays || 0))} dias corridos</p>
@@ -500,20 +502,17 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Percent className="h-5 w-5 text-[#355444]" />
-            Descontos Automáticos
-          </CardTitle>
+          <CardTitle>Descontos automáticos</CardTitle>
           <CardDescription>
             Configure descontos que serão aplicados automaticamente nas vendas
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-4 p-4 border rounded-lg">
+          <div className="space-y-4 border border-rule p-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base font-medium">Desconto PIX</Label>
-                <p className="text-sm text-gray-500">Aplica desconto em pagamentos via PIX</p>
+                <p className="text-sm text-ink-3">Aplica desconto em pagamentos via PIX</p>
               </div>
               <Checkbox
                 checked={settings.discounts.pixDiscountEnabled}
@@ -526,7 +525,7 @@ export default function SettingsPage() {
               />
             </div>
             {settings.discounts.pixDiscountEnabled && (
-              <div className="flex items-center gap-2 pl-4 border-l-2 border-[#355444]">
+              <div className="flex items-center gap-2 border-l border-rule-strong pl-4">
                 <Label htmlFor="pixPercent" className="whitespace-nowrap">Porcentagem:</Label>
                 <Input
                   id="pixPercent"
@@ -543,16 +542,16 @@ export default function SettingsPage() {
                   }
                   className="w-24"
                 />
-                <span className="text-gray-500">%</span>
+                <span className="text-ink-3">%</span>
               </div>
             )}
           </div>
 
-          <div className="space-y-4 p-4 border rounded-lg">
+          <div className="space-y-4 border border-rule p-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base font-medium">Desconto Fixo</Label>
-                <p className="text-sm text-gray-500">Aplica um percentual fixo de desconto em todas as vendas</p>
+                <p className="text-sm text-ink-3">Aplica um percentual fixo de desconto em todas as vendas</p>
               </div>
               <Checkbox
                 checked={settings.discounts.fixedDiscountEnabled}
@@ -565,7 +564,7 @@ export default function SettingsPage() {
               />
             </div>
             {settings.discounts.fixedDiscountEnabled && (
-              <div className="flex items-center gap-2 pl-4 border-l-2 border-[#355444]">
+              <div className="flex items-center gap-2 border-l border-rule-strong pl-4">
                 <Label htmlFor="fixedPercent" className="whitespace-nowrap">Porcentagem:</Label>
                 <Input
                   id="fixedPercent"
@@ -582,16 +581,16 @@ export default function SettingsPage() {
                   }
                   className="w-24"
                 />
-                <span className="text-gray-500">%</span>
+                <span className="text-ink-3">%</span>
               </div>
             )}
           </div>
 
-          <div className="space-y-4 p-4 border rounded-lg">
+          <div className="space-y-4 border border-rule p-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base font-medium">Desconto Progressivo</Label>
-                <p className="text-sm text-gray-500">Desconto baseado na quantidade de itens</p>
+                <p className="text-sm text-ink-3">Desconto baseado na quantidade de itens</p>
               </div>
               <Checkbox
                 checked={settings.discounts.progressiveDiscountEnabled}
@@ -604,7 +603,7 @@ export default function SettingsPage() {
               />
             </div>
             {settings.discounts.progressiveDiscountEnabled && (
-              <div className="space-y-3 pl-4 border-l-2 border-[#355444]">
+              <div className="space-y-3 border-l border-rule-strong pl-4">
                 <div className="flex items-center gap-2">
                   <Label className="w-24 whitespace-nowrap">1 item:</Label>
                   <Input
@@ -621,7 +620,7 @@ export default function SettingsPage() {
                     }
                     className="w-20"
                   />
-                  <span className="text-gray-500">%</span>
+                  <span className="text-ink-3">%</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Label className="w-24 whitespace-nowrap">2 itens:</Label>
@@ -639,7 +638,7 @@ export default function SettingsPage() {
                     }
                     className="w-20"
                   />
-                  <span className="text-gray-500">%</span>
+                  <span className="text-ink-3">%</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Label className="w-24 whitespace-nowrap">3 itens:</Label>
@@ -657,7 +656,7 @@ export default function SettingsPage() {
                     }
                     className="w-20"
                   />
-                  <span className="text-gray-500">%</span>
+                  <span className="text-ink-3">%</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Label className="w-24 whitespace-nowrap">4+ itens:</Label>
@@ -675,17 +674,17 @@ export default function SettingsPage() {
                     }
                     className="w-20"
                   />
-                  <span className="text-gray-500">%</span>
+                  <span className="text-ink-3">%</span>
                 </div>
               </div>
             )}
           </div>
 
-          <div className="space-y-4 p-4 border rounded-lg">
+          <div className="space-y-4 border border-rule p-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base font-medium">Descontos por Produto</Label>
-                <p className="text-sm text-gray-500">Configure descontos específicos para produtos selecionados</p>
+                <p className="text-sm text-ink-3">Configure descontos específicos para produtos selecionados</p>
               </div>
               <Checkbox
                 checked={settings.discounts.productDiscountsEnabled}
@@ -698,7 +697,7 @@ export default function SettingsPage() {
               />
             </div>
             {settings.discounts.productDiscountsEnabled && (
-              <ProductDiscountSelector 
+              <ProductDiscountSelector
                 productDiscounts={settings.discounts.productDiscounts}
                 onChange={(productDiscounts) =>
                   setSettings({
@@ -714,10 +713,7 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Receipt className="h-5 w-5 text-[#355444]" />
-            Contas da Loja
-          </CardTitle>
+          <CardTitle>Contas da loja</CardTitle>
           <CardDescription>
             Cadastre contas fixas, avulsas e parceladas
           </CardDescription>
@@ -735,7 +731,7 @@ export default function SettingsPage() {
             <div className="space-y-2">
               <Label>Tipo</Label>
               <select
-                className="w-full p-2 border rounded-md"
+                className="h-10 w-full border border-input bg-paper px-3 text-sm text-ink focus-visible:border-denim focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-denim"
                 value={billKind}
                 onChange={(e) => setBillKind(e.target.value as typeof billKind)}
               >
@@ -803,7 +799,7 @@ export default function SettingsPage() {
 
           <div className="flex justify-end">
             <Button onClick={handleCreateBill} disabled={billSaving}>
-              {billSaving ? "Salvando..." : "Adicionar Conta"}
+              {billSaving ? "Salvando…" : "Adicionar Conta"}
             </Button>
           </div>
         </CardContent>
@@ -811,53 +807,49 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Key className="h-5 w-5 text-[#355444]" />
-            Senha de Administrador
-          </CardTitle>
+          <CardTitle>Senha do administrador</CardTitle>
           <CardDescription>
             Configure a senha para correções administrativas de débito e outras funções restritas
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md">
-              <p className="text-sm text-yellow-800">
-                <strong>⚠️ Importante:</strong> Esta senha é necessária para realizar correções de débito e outras operações administrativas sensíveis.
-              </p>
-            </div>
-            
+            <p className="flex gap-2 border border-rule bg-sub p-3 text-sm text-ink">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-vermelho" aria-hidden="true" />
+              <span>Esta senha autoriza correções de débito, descontos acima do limite do caixa e outras operações sensíveis.</span>
+            </p>
+
             <div className="space-y-2">
-              <Label htmlFor="adminPassword">Nova Senha de Administrador</Label>
+              <Label htmlFor="adminPassword">Nova senha do administrador</Label>
               <Input
                 id="adminPassword"
                 type="password"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Digite a nova senha (mín. 4 caracteres)"
+                autoComplete="new-password"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-ink-3">
                 A senha deve ter pelo menos 4 caracteres
               </p>
             </div>
 
             <div className="flex justify-end">
-              <Button 
-                onClick={handleSetAdminPassword} 
+              <Button
+                onClick={handleSetAdminPassword}
                 disabled={adminPasswordSaving || !adminPassword.trim() || adminPassword.length < 4}
                 variant="outline"
               >
-                {adminPasswordSaving ? "Salvando..." : "Definir Senha"}
+                {adminPasswordSaving ? "Salvando…" : "Definir senha"}
               </Button>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving} className="bg-[#2A5473] hover:bg-[#2A5473]/90">
-          <Save className="h-4 w-4 mr-2" />
-          {saving ? "Salvando..." : "Salvar Configurações"}
+      <div className="flex justify-end border-t border-rule pt-4">
+        <Button onClick={handleSave} disabled={saving}>
+          <Save className="h-4 w-4" aria-hidden="true" />
+          {saving ? "Salvando…" : "Salvar configurações"}
         </Button>
       </div>
     </div>

@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiGet } from "@/lib/api-client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -13,9 +12,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { formatCurrency } from "@/lib/utils";
-import { Search, FileText } from "lucide-react";
+import { Search } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
 
 interface DebtCorrection {
   id: string;
@@ -59,71 +58,59 @@ export default function DebtCorrectionsPage() {
   if (userData?.role === "CASHIER") {
     return (
       <div className="flex items-center justify-center h-96">
-        <p className="text-gray-500">Você não tem permissão para acessar esta página.</p>
+        <p className="text-ink-3">Você não tem permissão para acessar esta página.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Correções de Débito</h1>
-          <p className="text-gray-500">Histórico de correções administrativas de débito</p>
-        </div>
-      </div>
+    <div>
+      <PageHeader
+        title="Correções de débito"
+        meta={<span>Registro de todas as correções feitas nas contas de fiado</span>}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <FileText className="h-5 w-5" />
-            Auditoria de Correções
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="search">Buscar:</Label>
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <div className="relative w-full sm:max-w-sm">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-2" aria-hidden="true" />
                 <Input
                   id="search"
-                  placeholder="Cliente ou motivo..."
+                  aria-label="Buscar correção"
+                  placeholder="Buscar por cliente ou motivo"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="pl-9"
                 />
               </div>
-            </div>
 
             {loading ? (
-              <p className="text-center py-4">Carregando...</p>
+              <div className="space-y-2" aria-hidden="true">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-10 animate-pulse border border-rule bg-paper" />)}</div>
             ) : filteredCorrections.length === 0 ? (
-              <p className="text-center py-4 text-gray-500">
-                {searchTerm ? "Nenhuma correção encontrada" : "Nenhuma correção registrada"}
+              <p className="border border-rule bg-paper px-5 py-12 text-center text-sm text-ink-3">
+                {searchTerm ? "Nenhuma correção encontrada com essa busca." : "Nenhuma correção registrada até agora."}
               </p>
             ) : (
-              <div className="rounded-md border">
+              <div className="border border-rule bg-paper">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Data</TableHead>
+                      <TableHead className="pl-4">Data</TableHead>
                       <TableHead>Cliente</TableHead>
-                      <TableHead>Valor Corrigido</TableHead>
-                      <TableHead>Saldo Anterior</TableHead>
-                      <TableHead>Novo Saldo</TableHead>
+                      <TableHead>Correção</TableHead>
+                      <TableHead>Saldo antes</TableHead>
+                      <TableHead>Saldo depois</TableHead>
                       <TableHead>Motivo</TableHead>
-                      <TableHead>Mês Competência</TableHead>
+                      <TableHead>Competência</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredCorrections.map((correction) => (
                       <TableRow key={correction.id}>
-                        <TableCell>
+                        <TableCell className="pl-4 tabular-nums">
                           {new Date(correction.createdAt).toLocaleDateString("pt-BR")}
                         </TableCell>
                         <TableCell className="font-medium">{correction.clientName}</TableCell>
-                        <TableCell className={correction.correctionAmount < 0 ? "text-green-600" : "text-red-600"}>
+                        <TableCell className={`font-semibold tabular-nums ${correction.correctionAmount < 0 ? "text-verde" : "text-vermelho"}`}>
                           {formatCurrency(correction.correctionAmount)}
                         </TableCell>
                         <TableCell>{formatCurrency(correction.previousBalance)}</TableCell>
@@ -139,8 +126,6 @@ export default function DebtCorrectionsPage() {
               </div>
             )}
           </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -2,15 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiGet, apiPost, apiPatch } from "@/lib/api-client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/ui/use-toast";
-import { formatCurrency, formatDate } from "@/lib/utils";
-import { ClipboardList, Minus, Plus, Search, ShoppingCart, Trash2, Banknote } from "lucide-react";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Minus, Plus, Search, Trash2, Banknote } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
+import { SizeGrid } from "@/components/etiqueta/size-grid";
+import { PriceTag } from "@/components/etiqueta/price-tag";
+import { ProductPhoto } from "@/components/etiqueta/product-photo";
 
 type ExchangeDirection = "IN" | "OUT";
 type ExchangePaymentMethod = "cash" | "pix" | "credit" | "debit";
@@ -51,24 +55,6 @@ interface ExchangeRecord {
   addedToCashRegisterSales?: boolean;
   createdByName: string;
   createdAt: string;
-}
-
-function ProductImage({ src, name, className = "w-12 h-12" }: { src?: string; name: string; className?: string }) {
-  const [error, setError] = useState(false);
-  const seed = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const fallbackSrc = `https://picsum.photos/seed/${seed}/100/100`;
-  const imageSrc = error || !src ? fallbackSrc : src;
-
-  return (
-    <div className={`rounded overflow-hidden bg-gray-100 flex-shrink-0 ${className}`}>
-      <img
-        src={imageSrc}
-        alt={name}
-        className="w-full h-full object-cover"
-        onError={() => setError(true)}
-      />
-    </div>
-  );
 }
 
 export default function ExchangesPage() {
@@ -277,327 +263,365 @@ export default function ExchangesPage() {
     }
   };
 
+  const renderLines = (items: ExchangeCartItem[], label: string) =>
+    items.map((item) => (
+      <li
+        key={`${item.product.id}-${item.size}-${item.direction}`}
+        className="grid animate-line-in grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b-[1.5px] border-dashed border-rule-strong py-2.5 last:border-b-0"
+      >
+        <div className="min-w-0">
+          <p className="font-semibold leading-snug">
+            {item.product.name}
+            {item.size ? (
+              <span className="ml-1.5 inline-block border-[1.5px] border-ink px-1.5 align-[1px] font-tag text-sm font-bold leading-5">
+                {item.size}
+              </span>
+            ) : null}
+          </p>
+          <p className="text-xs text-ink-3">
+            {label} · {formatCurrency(item.product.salePrice)} cada
+          </p>
+        </div>
+        <span className="self-start pt-0.5 font-tag text-lg font-extrabold tabular-nums">
+          {formatCurrency(item.product.salePrice * item.quantity)}
+        </span>
+        <div className="col-span-2 mt-1.5 flex items-center justify-between">
+          <div className="inline-flex items-stretch border border-rule-strong">
+            <button
+              type="button"
+              aria-label={`Diminuir ${item.product.name}`}
+              onClick={() => updateQuantity(item.product.id, item.size, item.direction, -1)}
+              className="flex h-8 w-8 items-center justify-center text-ink-2 hover:bg-sub hover:text-ink"
+            >
+              <Minus className="h-3.5 w-3.5" />
+            </button>
+            <span className="flex w-9 items-center justify-center border-x border-rule-strong text-sm font-semibold tabular-nums">
+              {item.quantity}
+            </span>
+            <button
+              type="button"
+              aria-label={`Aumentar ${item.product.name}`}
+              onClick={() => updateQuantity(item.product.id, item.size, item.direction, 1)}
+              className="flex h-8 w-8 items-center justify-center text-ink-2 hover:bg-sub hover:text-ink"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => removeFromCart(item.product.id, item.size, item.direction)}
+            className="inline-flex h-8 items-center gap-1.5 px-2 text-sm font-medium text-vermelho hover:bg-vermelho-tint"
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            Remover
+          </button>
+        </div>
+      </li>
+    ));
+
   return (
     <div className="space-y-6">
-      <div className="h-[calc(100vh-18rem)] min-h-[440px] flex gap-6">
-        <div className="flex-1 flex flex-col">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Trocas</h1>
-              <p className="text-gray-500">Operação de troca no estilo PDV</p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant={addDirection === "IN" ? "default" : "outline"}
+      <div className="-mx-3 -mt-3 flex flex-col sm:-mx-4 sm:-mt-4 md:-mx-6 md:-mt-6 lg:h-[calc(100dvh-4rem)] lg:min-h-[560px]">
+        <PageHeader
+          className="static m-0 sm:m-0 md:m-0"
+          title="Trocas"
+          meta={<span>Peça que volta, peça que sai; a diferença entra no caixa aberto</span>}
+          actions={
+            <div className="inline-flex border-[1.5px] border-ink" role="group" aria-label="O que está sendo lançado">
+              <button
+                type="button"
+                aria-pressed={addDirection === "IN"}
                 onClick={() => setAddDirection("IN")}
+                className={cn(
+                  "inline-flex h-9 items-center gap-1.5 px-3 text-sm font-semibold transition-colors",
+                  addDirection === "IN" ? "bg-ink text-white" : "bg-paper text-ink hover:bg-sub"
+                )}
               >
-                Entrada
-              </Button>
-              <Button
-                variant={addDirection === "OUT" ? "default" : "outline"}
+                <ArrowDownLeft className="h-4 w-4" aria-hidden="true" />
+                Volta para a loja
+              </button>
+              <button
+                type="button"
+                aria-pressed={addDirection === "OUT"}
                 onClick={() => setAddDirection("OUT")}
+                className={cn(
+                  "inline-flex h-9 items-center gap-1.5 border-l-[1.5px] border-ink px-3 text-sm font-semibold transition-colors",
+                  addDirection === "OUT" ? "bg-ink text-white" : "bg-paper text-ink hover:bg-sub"
+                )}
               >
-                Saída
-              </Button>
+                <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                Sai com o cliente
+              </button>
             </div>
-          </div>
+          }
+        />
 
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Buscar produto por nome ou SKU..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-10"
-            />
-          </div>
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_380px]">
+          <section className="flex min-h-0 flex-col px-3 pt-3 sm:px-4 md:px-6 md:pt-5" aria-label="Produtos">
+            <p className="mb-2 text-sm text-ink-2">
+              Tocando num tamanho, a peça entra como{" "}
+              <b className="font-semibold text-ink">{addDirection === "IN" ? "volta para a loja" : "sai com o cliente"}</b>.
+            </p>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-2" aria-hidden="true" />
+              <Input
+                aria-label="Buscar produto"
+                placeholder="Buscar produto por nome ou código"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-[52px] border-[1.5px] border-ink pl-12 text-base"
+              />
+            </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {loading ? (
-              <p className="text-center py-4">Carregando produtos...</p>
-            ) : (
-              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {filteredProducts.map((product) => {
-                  const outDisabled = addDirection === "OUT" && Number(product.stock || 0) <= 0;
-                  return (
-                    <Card
-                      key={product.id}
-                      className={`cursor-pointer transition-all hover:shadow-md ${outDisabled ? "opacity-50" : ""}`}
-                      onClick={() => {
-                        if (!outDisabled) handleProductClick(product);
-                      }}
-                    >
-                      <CardContent className="p-4 relative">
-                        {product.plusSized === true && (
-                          <div className="absolute right-3 top-3">
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#355444] text-white">
-                              PLUS
+            <div className="-mx-3 mt-3 min-h-0 flex-1 overflow-y-auto px-3 pb-4 sm:-mx-4 sm:px-4 md:-mx-6 md:px-6 max-lg:max-h-[60dvh]">
+              {loading ? (
+                <ul className="space-y-2" aria-hidden="true">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <li key={i} className="tag-shape flex h-[68px] items-center bg-paper pl-7">
+                      <div className="h-3 w-40 animate-pulse bg-sub" />
+                    </li>
+                  ))}
+                </ul>
+              ) : filteredProducts.length === 0 ? (
+                <p className="px-6 py-14 text-center text-sm text-ink-3">Nenhum produto encontrado.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {filteredProducts.map((product) => {
+                    const outDisabled = addDirection === "OUT" && Number(product.stock || 0) <= 0;
+                    const hasSizes = product.sizes?.length > 0;
+                    return (
+                      <li key={product.id}>
+                        <div
+                          className={cn(
+                            "tag-shape relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2.5 bg-paper py-2.5 pl-7 pr-3 sm:pr-4 xl:grid-cols-[minmax(0,1fr)_auto_120px]",
+                            outDisabled && "opacity-60"
+                          )}
+                        >
+                          <span aria-hidden="true" className="absolute left-[9px] top-1/2 h-[7px] w-[7px] -translate-y-1/2 rounded-full bg-ground" />
+                          <button
+                            type="button"
+                            disabled={outDisabled}
+                            onClick={() => handleProductClick(product)}
+                            className="col-start-1 row-start-1 flex min-w-0 items-center gap-3 text-left disabled:cursor-not-allowed"
+                          >
+                            <ProductPhoto src={product.image} name={product.name} className="h-11 w-11" />
+                            <span className="min-w-0">
+                              <span className="line-clamp-2 font-semibold leading-snug">
+                                {product.name}
+                                {product.plusSized === true ? (
+                                  <span className="ml-1.5 inline-block bg-ink px-1 align-[2px] font-tag text-[11px] font-bold uppercase leading-4 tracking-[0.06em] text-white">
+                                    Plus
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="block text-xs tracking-[0.04em] text-ink-3">{product.sku}</span>
                             </span>
+                          </button>
+                          <div className="col-span-2 row-start-2 xl:col-span-1 xl:col-start-2 xl:row-start-1">
+                            {hasSizes ? (
+                              <SizeGrid
+                                sizes={product.sizes}
+                                productName={product.name}
+                                pickEmpty={addDirection === "IN"}
+                                onPick={(size) => addToCart(product, size, addDirection)}
+                              />
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={outDisabled}
+                                onClick={() => addToCart(product, "", addDirection)}
+                              >
+                                <Plus className="h-4 w-4" aria-hidden="true" />
+                                Adicionar
+                              </Button>
+                            )}
                           </div>
-                        )}
-                        <div className="flex flex-col">
-                          <span className="font-medium text-sm truncate">{product.name}</span>
-                          <span className="text-xs text-gray-500">{product.sku}</span>
-                          <div className="flex justify-between items-center mt-2">
-                            <span className="font-bold text-green-600">{formatCurrency(product.salePrice)}</span>
-                            <span className="text-xs text-gray-400">Est: {product.stock}</span>
-                          </div>
+                          <PriceTag
+                            value={product.salePrice}
+                            className="col-start-2 row-start-1 justify-self-end text-2xl xl:col-start-3"
+                          />
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </section>
 
-        <Card className="w-96 flex flex-col">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5" />
-              Troca atual
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 flex flex-col">
-            <Button
-              type="button"
-              variant="outline"
-              className="mb-3"
-              onClick={() => setShowOptionalDetails((prev) => !prev)}
-            >
-              {showOptionalDetails ? "Ocultar detalhes" : "Mais detalhes"}
-            </Button>
+          <aside className="flex min-h-0 flex-col border-t-2 border-ink bg-paper lg:border-l-[1.5px] lg:border-t-0 lg:border-dashed lg:border-rule-strong" aria-label="Troca atual">
+            <div className="flex items-baseline justify-between gap-3 px-5 pb-2 pt-5">
+              <h2 className="font-tag text-xl font-extrabold uppercase tracking-[0.04em]">Troca atual</h2>
+              <button
+                type="button"
+                className="text-sm font-semibold text-denim hover:underline"
+                onClick={() => setShowOptionalDetails((prev) => !prev)}
+                aria-expanded={showOptionalDetails}
+              >
+                {showOptionalDetails ? "Ocultar cliente e observação" : "Cliente e observação"}
+              </button>
+            </div>
 
             {showOptionalDetails && (
-              <>
-                <div className="space-y-2 mb-3">
-                  <Label>Cliente (opcional)</Label>
-                  <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Nome do cliente" />
+              <div className="space-y-3 px-5 pb-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ex-customer">Cliente (opcional)</Label>
+                  <Input id="ex-customer" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Nome do cliente" />
                 </div>
-                <div className="space-y-2 mb-4">
-                  <Label>Observações</Label>
-                  <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ex: Troca por tamanho" />
+                <div className="space-y-1.5">
+                  <Label htmlFor="ex-notes">Observação</Label>
+                  <Input id="ex-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ex.: troca por tamanho" />
                 </div>
-              </>
+              </div>
             )}
 
             {cart.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-gray-400">Nenhum item na troca</div>
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 py-10 text-center">
+                <ArrowLeftRight className="h-8 w-8 text-ink-3/60" strokeWidth={1.5} aria-hidden="true" />
+                <p className="font-semibold">Nenhuma peça na troca</p>
+                <p className="max-w-[260px] text-sm text-ink-3">
+                  Lance primeiro o que volta para a loja, depois troque o lado e lance o que sai.
+                </p>
+              </div>
             ) : (
               <>
-                <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-green-700">Entradas</p>
-                      <p className="text-xs text-green-700">{formatCurrency(totalInValue)}</p>
+                <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5">
+                  <div>
+                    <div className="flex items-baseline justify-between border-b border-rule pb-1">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold">
+                        <ArrowDownLeft className="h-4 w-4 text-verde" aria-hidden="true" />
+                        Volta para a loja
+                      </p>
+                      <p className="text-sm font-semibold tabular-nums text-verde">{formatCurrency(totalInValue)}</p>
                     </div>
                     {entryItems.length === 0 ? (
-                      <p className="text-xs text-gray-400">Nenhum item de entrada</p>
+                      <p className="py-2 text-sm text-ink-3">Nenhuma peça voltando.</p>
                     ) : (
-                      entryItems.map((item) => (
-                        <div key={`${item.product.id}-${item.size}-${item.direction}`} className="flex items-center gap-2 p-2 bg-green-50 rounded-lg">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">
-                              {item.product.name}
-                              {item.size && <span className="ml-1 text-blue-600">({item.size})</span>}
-                            </p>
-                            <p className="text-xs text-gray-500">Entrada • {formatCurrency(item.product.salePrice)}</p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => updateQuantity(item.product.id, item.size, item.direction, -1)}
-                            >
-                              <Minus className="h-3 w-3" />
-                            </Button>
-                            <span className="w-8 text-center text-sm">{item.quantity}</span>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => updateQuantity(item.product.id, item.size, item.direction, 1)}
-                            >
-                              <Plus className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-red-500"
-                              onClick={() => removeFromCart(item.product.id, item.size, item.direction)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))
+                      <ul>{renderLines(entryItems, "volta")}</ul>
                     )}
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-red-700">Saídas</p>
-                      <p className="text-xs text-red-700">{formatCurrency(totalOutValue)}</p>
+                  <div>
+                    <div className="flex items-baseline justify-between border-b border-rule pb-1">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold">
+                        <ArrowUpRight className="h-4 w-4 text-ink-2" aria-hidden="true" />
+                        Sai com o cliente
+                      </p>
+                      <p className="text-sm font-semibold tabular-nums">{formatCurrency(totalOutValue)}</p>
                     </div>
                     {outputItems.length === 0 ? (
-                      <p className="text-xs text-gray-400">Nenhum item de saída</p>
+                      <p className="py-2 text-sm text-ink-3">Nenhuma peça saindo.</p>
                     ) : (
-                      outputItems.map((item) => (
-                        <div key={`${item.product.id}-${item.size}-${item.direction}`} className="flex items-center gap-2 p-2 bg-red-50 rounded-lg">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm truncate">
-                              {item.product.name}
-                              {item.size && <span className="ml-1 text-blue-600">({item.size})</span>}
-                            </p>
-                            <p className="text-xs text-gray-500">Saída • {formatCurrency(item.product.salePrice)}</p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => updateQuantity(item.product.id, item.size, item.direction, -1)}
-                            >
-                              <Minus className="h-3 w-3" />
-                            </Button>
-                            <span className="w-8 text-center text-sm">{item.quantity}</span>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => updateQuantity(item.product.id, item.size, item.direction, 1)}
-                            >
-                              <Plus className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-red-500"
-                              onClick={() => removeFromCart(item.product.id, item.size, item.direction)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))
+                      <ul>{renderLines(outputItems, "sai")}</ul>
                     )}
                   </div>
                 </div>
 
-                <div className="space-y-1 text-sm border-t pt-3 mt-3">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total de entradas:</span>
-                    <span className="text-green-600 font-medium">{formatCurrency(totalInValue)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Total de saídas:</span>
-                    <span className="text-red-600 font-medium">{formatCurrency(totalOutValue)}</span>
-                  </div>
+                <div className="border-t-2 border-ink px-5 pb-5 pt-3">
                   {grossDifference > 0 && (
-                    <div className="space-y-2 mt-2">
-                      <Label htmlFor="exchange-discount">Desconto na troca</Label>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <Label htmlFor="exchange-discount" className="font-medium text-ink-2">Desconto na troca</Label>
                       <Input
                         id="exchange-discount"
                         type="number"
+                        inputMode="decimal"
                         min="0"
                         step="0.01"
                         value={discountAmount}
                         onChange={(e) => setDiscountAmount(e.target.value)}
                         placeholder="0,00"
+                        className="h-9 w-28 text-right tabular-nums"
                       />
                     </div>
                   )}
                   {appliedDiscountAmount > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Desconto aplicado:</span>
-                      <span className="text-amber-600 font-medium">- {formatCurrency(appliedDiscountAmount)}</span>
+                    <div className="flex justify-between text-sm font-medium text-verde">
+                      <span>Desconto aplicado</span>
+                      <span className="tabular-nums">−{formatCurrency(appliedDiscountAmount)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-base font-bold">
-                    <span>Diferença:</span>
-                    <span>{formatCurrency(totalDifference)}</span>
+                  <div className="mt-1 flex items-end justify-between gap-3 py-1">
+                    <span className="pb-1 font-tag text-lg font-extrabold uppercase tracking-[0.06em]">
+                      {totalDifference > 0 ? "Cliente paga" : totalDifference < 0 ? "A favor do cliente" : "Diferença"}
+                    </span>
+                    <PriceTag value={Math.abs(totalDifference)} className="text-[44px]" />
                   </div>
-                </div>
 
-                {totalDifference > 0 && (
-                  <div className="space-y-2 mt-3">
-                    <Label>Forma de pagamento da diferença</Label>
-                    <select
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                      value={differencePaymentMethod}
-                      onChange={(e) => setDifferencePaymentMethod(e.target.value as ExchangePaymentMethod | "")}
-                    >
-                      <option value="">Selecione</option>
-                      <option value="cash">Dinheiro</option>
-                      <option value="pix">Pix</option>
-                      <option value="debit">Débito</option>
-                      <option value="credit">Crédito</option>
-                    </select>
+                  {totalDifference > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      <Label htmlFor="ex-pay">Forma de pagamento da diferença</Label>
+                      <select
+                        id="ex-pay"
+                        className="h-10 w-full border border-input bg-paper px-3 text-sm text-ink focus-visible:border-denim focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-denim"
+                        value={differencePaymentMethod}
+                        onChange={(e) => setDifferencePaymentMethod(e.target.value as ExchangePaymentMethod | "")}
+                      >
+                        <option value="">Selecione</option>
+                        <option value="cash">Dinheiro</option>
+                        <option value="pix">PIX</option>
+                        <option value="debit">Débito</option>
+                        <option value="credit">Crédito</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex gap-2">
+                    <Button variant="outline" onClick={clearCart}>
+                      Limpar
+                    </Button>
+                    <Button size="lg" className="flex-1" onClick={registerExchange} disabled={processing}>
+                      {processing ? "Registrando…" : "Registrar troca"}
+                    </Button>
                   </div>
-                )}
-
-                <div className="flex gap-2 mt-4">
-                  <Button variant="outline" className="flex-1" onClick={clearCart}>
-                    Limpar
-                  </Button>
-                  <Button className="flex-1" onClick={registerExchange} disabled={processing}>
-                    {processing ? "Registrando..." : "Registrar"}
-                  </Button>
                 </div>
               </>
             )}
-          </CardContent>
-        </Card>
+          </aside>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ClipboardList className="h-5 w-5" />
-            Últimas trocas
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <section className="border border-rule bg-paper" aria-labelledby="recent-exchanges">
+        <h2 id="recent-exchanges" className="border-b border-rule px-4 py-3 font-tag text-lg font-bold uppercase tracking-[0.04em]">
+          Últimas trocas
+        </h2>
           {loading ? (
-            <p className="text-center py-4">Carregando...</p>
+            <div className="space-y-2 p-4" aria-hidden="true">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-sub" />)}</div>
           ) : exchanges.length === 0 ? (
-            <p className="text-center py-4 text-gray-500">Nenhuma troca registrada</p>
+            <p className="px-5 py-10 text-center text-sm text-ink-3">Nenhuma troca registrada</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Data</TableHead>
+                  <TableHead className="pl-4">Data</TableHead>
                   <TableHead>Cliente</TableHead>
-                  <TableHead>Pagamento Diferença</TableHead>
-                  <TableHead className="text-right">Entradas</TableHead>
-                  <TableHead className="text-right">Saídas</TableHead>
+                  <TableHead>Pagamento</TableHead>
+                  <TableHead className="text-right">Voltou</TableHead>
+                  <TableHead className="text-right">Saiu</TableHead>
                   <TableHead className="text-right">Desconto</TableHead>
                   <TableHead className="text-right">Diferença</TableHead>
                   <TableHead>Operador</TableHead>
-                  <TableHead></TableHead>
+                  <TableHead className="pr-4"><span className="sr-only">Caixa</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {exchanges.map((exchange) => (
                   <TableRow key={exchange.id}>
-                    <TableCell>{formatDate(new Date(exchange.createdAt))}</TableCell>
-                    <TableCell>{exchange.customerName || "-"}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap pl-4 tabular-nums text-ink-2">{formatDate(new Date(exchange.createdAt))}</TableCell>
+                    <TableCell>{exchange.customerName || "—"}</TableCell>
+                    <TableCell className="text-ink-2">
                       {exchange.paymentMethod === "cash" && "Dinheiro"}
-                      {exchange.paymentMethod === "pix" && "Pix"}
+                      {exchange.paymentMethod === "pix" && "PIX"}
                       {exchange.paymentMethod === "debit" && "Débito"}
                       {exchange.paymentMethod === "credit" && "Crédito"}
-                      {!exchange.paymentMethod && "-"}
+                      {!exchange.paymentMethod && "—"}
                     </TableCell>
-                    <TableCell className="text-right text-green-600">{formatCurrency(exchange.totalInValue || 0)}</TableCell>
-                    <TableCell className="text-right text-red-600">{formatCurrency(exchange.totalOutValue || 0)}</TableCell>
-                    <TableCell className="text-right text-amber-600">{formatCurrency(exchange.discountAmount || 0)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(exchange.difference || 0)}</TableCell>
-                    <TableCell>{exchange.createdByName || "-"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(exchange.totalInValue || 0)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatCurrency(exchange.totalOutValue || 0)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-verde">{formatCurrency(exchange.discountAmount || 0)}</TableCell>
+                    <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(exchange.difference || 0)}</TableCell>
+                    <TableCell className="text-ink-2">{exchange.createdByName || "—"}</TableCell>
+                    <TableCell className="pr-4">
                       {exchange.difference > 0 && !exchange.addedToCashRegisterSales && (
                         <Button
                           variant="outline"
@@ -605,12 +629,12 @@ export default function ExchangesPage() {
                           disabled={addingToRegister === exchange.id}
                           onClick={() => handleAddToRegister(exchange.id)}
                         >
-                          <Banknote className="h-4 w-4 mr-1" />
-                          {addingToRegister === exchange.id ? "Incluindo..." : "Incluir no Caixa"}
+                          <Banknote className="h-4 w-4" aria-hidden="true" />
+                          {addingToRegister === exchange.id ? "Incluindo…" : "Incluir no caixa"}
                         </Button>
                       )}
                       {exchange.addedToCashRegisterSales && (
-                        <span className="text-xs text-green-600 font-medium">Incluído no caixa</span>
+                        <Badge variant="positive">No caixa</Badge>
                       )}
                     </TableCell>
                   </TableRow>
@@ -618,43 +642,44 @@ export default function ExchangesPage() {
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+      </section>
 
       <Dialog open={!!selectedProduct} onOpenChange={() => setSelectedProduct(null)}>
-        <DialogContent className="sm:max-w-5xl p-0 overflow-hidden">
+        <DialogContent className="overflow-hidden p-0 sm:max-w-4xl">
           {selectedProduct && (
-            <div className="grid grid-cols-1 md:grid-cols-2 h-[70vh]">
-              {/* Left column - large product image */}
-              <div className="bg-gray-50 flex items-center justify-center p-6">
-                <ProductImage
+            <div className="grid grid-cols-1 md:grid-cols-2">
+              <div className="flex items-center justify-center bg-sub p-6">
+                <ProductPhoto
                   src={selectedProduct.image}
                   name={selectedProduct.name}
-                  className="w-full h-full max-h-[60vh] rounded-lg shadow-sm"
+                  className="aspect-square h-auto w-full max-w-[360px]"
                 />
               </div>
-              {/* Right column - sizes */}
-              <div className="p-6 flex flex-col">
-                <DialogHeader className="mb-4">
-                  <DialogTitle className="text-xl">{selectedProduct.name}</DialogTitle>
-                  <p className="text-lg font-semibold text-green-600">{formatCurrency(selectedProduct.salePrice)}</p>
+              <div className="flex flex-col p-6">
+                <DialogHeader className="mb-1">
+                  <DialogTitle className="font-sans text-xl font-bold normal-case tracking-normal">{selectedProduct.name}</DialogTitle>
+                  <p className="text-sm text-ink-3">
+                    {addDirection === "IN" ? "Escolha o tamanho que volta para a loja" : "Escolha o tamanho que sai com o cliente"}
+                  </p>
                 </DialogHeader>
-                <div className="grid grid-cols-3 gap-3">
+                <PriceTag value={selectedProduct.salePrice} className="mt-2 text-[36px]" />
+                <div className="mt-6 grid grid-cols-3 border-l-[1.5px] border-t-[1.5px] border-ink">
                   {selectedProduct.sizes?.map((sizeData) => {
                     const disabled = addDirection === "OUT" && sizeData.stock <= 0;
                     return (
-                      <Button
+                      <button
                         key={sizeData.size}
-                        variant={disabled ? "ghost" : "outline"}
+                        type="button"
                         disabled={disabled}
-                        className={`h-16 text-lg ${disabled ? "opacity-50" : "hover:bg-gray-100"}`}
                         onClick={() => addToCart(selectedProduct, sizeData.size, addDirection)}
+                        className={cn(
+                          "flex h-[72px] flex-col items-center justify-center border-b-[1.5px] border-r-[1.5px] border-ink transition-colors focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-denim",
+                          disabled ? "cursor-not-allowed bg-sub text-ink-3/60" : "bg-paper text-ink hover:bg-denim hover:text-white"
+                        )}
                       >
-                        <div className="flex flex-col">
-                          <span className="font-bold">{sizeData.size}</span>
-                          <span className="text-xs text-gray-500">({sizeData.stock})</span>
-                        </div>
-                      </Button>
+                        <span className="font-tag text-2xl font-bold leading-none">{sizeData.size}</span>
+                        <span className="mt-1 text-xs font-semibold opacity-70">{sizeData.stock} em estoque</span>
+                      </button>
                     );
                   })}
                 </div>

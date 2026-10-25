@@ -4,12 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { apiGet } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
-import { Barcode, Printer, Search } from "lucide-react";
+import { Printer, Search } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PageHeader } from "@/components/layout/page-header";
 
 interface ProductSize {
   size: string;
@@ -94,7 +93,7 @@ export default function BarcodesPage() {
     }
 
     const selectedProductsList = products.filter((p) => selectedProducts.has(p.id));
-    
+
     const printWindow = window.open("", "_blank", "width=800,height=600");
     if (!printWindow) {
       toast({ title: "Erro ao abrir janela de impressão", variant: "destructive" });
@@ -128,7 +127,7 @@ export default function BarcodesPage() {
         <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
+          body {
             font-family: Arial, sans-serif;
             padding: 10mm;
           }
@@ -206,89 +205,85 @@ export default function BarcodesPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Códigos de Barras</h1>
-          <p className="text-gray-500">Gere etiquetas com códigos de barras para os produtos</p>
+    <div>
+      <PageHeader
+        title="Códigos de barras"
+        meta={<span>Escolha os produtos e imprima as etiquetas</span>}
+        actions={
+          <Button size="sm" onClick={generateBarcodes} disabled={selectedProducts.size === 0}>
+            <Printer className="h-4 w-4" aria-hidden="true" />
+            Imprimir etiquetas{selectedProducts.size > 0 ? ` · ${selectedProducts.size}` : ""}
+          </Button>
+        }
+      />
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-2" aria-hidden="true" />
+          <Input
+            aria-label="Buscar produto"
+            placeholder="Buscar por nome ou código"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
         </div>
-        <Button onClick={generateBarcodes} disabled={selectedProducts.size === 0}>
-          <Printer className="h-4 w-4 mr-2" />
-          Imprimir ({selectedProducts.size})
-        </Button>
+        {selectedProducts.size > 0 ? (
+          <p className="text-sm text-ink-2">
+            <b className="font-semibold text-ink">{selectedProducts.size}</b> selecionado{selectedProducts.size === 1 ? "" : "s"}
+          </p>
+        ) : null}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Barcode className="h-5 w-5" />
-            Selecione os Produtos
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-4 items-end">
-            <div className="flex-1 space-y-2">
-              <Label>Buscar</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder="Buscar por nome ou SKU..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-          </div>
-
           {loading ? (
-            <p className="text-center py-4">Carregando...</p>
+            <div className="space-y-2" aria-hidden="true">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 animate-pulse border border-rule bg-paper" />)}</div>
           ) : filteredProducts.length === 0 ? (
-            <p className="text-center py-4 text-gray-500">Nenhum produto encontrado</p>
+            <p className="border border-rule bg-paper px-5 py-12 text-center text-sm text-ink-3">Nenhum produto encontrado.</p>
           ) : (
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left">
+            <div className="overflow-x-auto border border-rule bg-paper">
+              <table className="w-full text-sm tabular-nums">
+                <thead>
+                  <tr className="border-b border-ink/80">
+                    <th className="w-12 px-4 py-2.5 text-left">
                       <Checkbox
+                        aria-label="Selecionar todos"
                         checked={selectedProducts.size === filteredProducts.length && filteredProducts.length > 0}
                         onCheckedChange={toggleAll}
                       />
                     </th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">Produto</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">SKU</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Estoque</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">Preço</th>
+                    <th className="px-3 py-2.5 text-left font-tag text-xs font-bold uppercase tracking-[0.08em] text-ink-2">Produto</th>
+                    <th className="px-3 py-2.5 text-left font-tag text-xs font-bold uppercase tracking-[0.08em] text-ink-2">Código</th>
+                    <th className="px-3 py-2.5 text-right font-tag text-xs font-bold uppercase tracking-[0.08em] text-ink-2">Estoque</th>
+                    <th className="px-4 py-2.5 text-right font-tag text-xs font-bold uppercase tracking-[0.08em] text-ink-2">Preço</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y">
+                <tbody className="divide-y divide-rule">
                   {filteredProducts.map((product) => (
                     <tr
                       key={product.id}
-                      className={`hover:bg-gray-50 cursor-pointer ${
-                        selectedProducts.has(product.id) ? "bg-blue-50" : ""
+                      className={`cursor-pointer transition-colors hover:bg-sub ${
+                        selectedProducts.has(product.id) ? "bg-denim-tint hover:bg-denim-tint" : ""
                       }`}
                       onClick={() => toggleProduct(product.id)}
                     >
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2.5">
                         <Checkbox
+                          aria-label={`Selecionar ${product.name}`}
                           checked={selectedProducts.has(product.id)}
                           onCheckedChange={() => toggleProduct(product.id)}
+                          onClick={(e) => e.stopPropagation()}
                         />
                       </td>
-                      <td className="px-4 py-3 font-medium">{product.name}</td>
-                      <td className="px-4 py-3 text-gray-500 font-mono">{product.sku}</td>
-                      <td className="px-4 py-3 text-right">{product.stock}</td>
-                      <td className="px-4 py-3 text-right">{formatCurrency(product.salePrice)}</td>
+                      <td className="px-3 py-2.5 font-semibold">{product.name}</td>
+                      <td className="px-3 py-2.5 tracking-[0.04em] text-ink-2">{product.sku}</td>
+                      <td className="px-3 py-2.5 text-right">{product.stock}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold">{formatCurrency(product.salePrice)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

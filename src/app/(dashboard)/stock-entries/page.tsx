@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,9 +15,11 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import { apiGet } from "@/lib/api-client";
-import { Calendar, FileText, Loader2 } from "lucide-react";
+import { FileText } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { PageHeader } from "@/components/layout/page-header";
+import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 
 interface StockEntry {
   id: string;
@@ -143,148 +144,108 @@ export default function StockEntriesPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Entradas de Estoque</h1>
-          <p className="text-gray-500">Total investido em estoque no período (pelo preço de custo)</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={exportPDF} disabled={loading || !data}>
-            <FileText className="h-4 w-4 mr-2" />
-            PDF
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Entradas de estoque"
+        meta={<span>Quanto entrou no estoque, pelo preço de custo</span>}
+        actions={
+          <Button variant="outline" size="sm" onClick={exportPDF} disabled={loading || !data}>
+            <FileText className="h-4 w-4" aria-hidden="true" />
+            Exportar PDF
           </Button>
-        </div>
-      </div>
+        }
+        className="mb-0 md:mb-0"
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Período
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="startDate">Data Inicial</Label>
-              <Input
-                id="startDate"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="endDate">Data Final</Label>
-              <Input
-                id="endDate"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="startDate" className="text-xs">De</Label>
+            <Input
+              id="startDate"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="h-9 w-[160px]"
+            />
           </div>
-        </CardContent>
-      </Card>
+          <div className="space-y-1">
+            <Label htmlFor="endDate" className="text-xs">Até</Label>
+            <Input
+              id="endDate"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="h-9 w-[160px]"
+            />
+          </div>
+        </div>
 
       {loading ? (
-        <Card>
-          <CardContent className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin" />
-          </CardContent>
-        </Card>
+        <div className="space-y-2" aria-hidden="true">
+          <div className="h-16 animate-pulse border border-rule bg-paper" />
+          <div className="h-64 animate-pulse border border-rule bg-paper" />
+        </div>
       ) : data ? (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Resumo</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-600">Período</p>
-                  <p className="text-lg font-semibold">
-                    {data.period.start} até {data.period.end}
-                  </p>
-                </div>
-                <div className="p-4 bg-orange-50 rounded-lg">
-                  <p className="text-sm text-orange-600">Total investido</p>
-                  <p className="text-2xl font-bold text-orange-700">
-                    {formatCurrency(data.monthTotal)}
-                  </p>
-                </div>
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <p className="text-sm text-purple-600">Peças recebidas</p>
-                  <p className="text-2xl font-bold text-purple-700">{data.monthQuantity}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <TotalsStrip
+            items={[
+              { label: "Período", value: <span className="text-lg">{data.period.start} a {data.period.end}</span> },
+              { label: "Investido", value: formatCurrency(data.monthTotal) },
+              { label: "Peças recebidas", value: data.monthQuantity },
+            ]}
+          />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Entradas por Dia</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {data.days.length === 0 ? (
-                <p className="text-gray-500 text-sm">Nenhuma entrada no período</p>
-              ) : (
-                <div className="space-y-6">
-                  {data.days.map((day) => (
-                    <div key={day.date} className="border rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-lg">{day.date}</h3>
-                        <div className="text-right">
-                          <div className="text-sm text-gray-500">{day.quantity} peças</div>
-                          <div className="text-lg font-bold text-orange-600">
-                            {formatCurrency(day.total)}
-                          </div>
-                        </div>
-                      </div>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Hora</TableHead>
-                            <TableHead>Produto</TableHead>
-                            <TableHead>SKU</TableHead>
-                            <TableHead className="text-right">Qtd</TableHead>
-                            <TableHead className="text-right">Custo un.</TableHead>
-                            <TableHead className="text-right">Total</TableHead>
-                            <TableHead>Origem</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {day.entries.map((e) => (
-                            <TableRow key={e.id}>
-                              <TableCell>{e.time}</TableCell>
-                              <TableCell>{e.productName}</TableCell>
-                              <TableCell className="text-xs text-gray-500">{e.sku}</TableCell>
-                              <TableCell className="text-right">{e.quantity}</TableCell>
-                              <TableCell className="text-right">
-                                {formatCurrency(e.unitCost)}
-                              </TableCell>
-                              <TableCell className="text-right font-medium">
-                                {formatCurrency(e.totalCost)}
-                              </TableCell>
-                              <TableCell>{sourceLabel(e.source)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {data.days.length === 0 ? (
+            <p className="border border-rule bg-paper px-5 py-12 text-center text-sm text-ink-3">Nenhuma entrada no período.</p>
+          ) : (
+            <div className="space-y-4">
+              {data.days.map((day) => (
+                <section key={day.date} className="border border-rule bg-paper" aria-label={`Entradas de ${day.date}`}>
+                  <div className="flex items-baseline justify-between gap-3 border-b-2 border-ink px-4 py-2.5">
+                    <h3 className="font-tag text-lg font-bold uppercase tracking-[0.04em]">{day.date}</h3>
+                    <span className="text-right">
+                      <span className="mr-3 text-sm text-ink-3">{day.quantity} peças</span>
+                      <span className="font-tag text-xl font-extrabold tabular-nums">{formatCurrency(day.total)}</span>
+                    </span>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[80px] pl-4">Hora</TableHead>
+                        <TableHead>Produto</TableHead>
+                        <TableHead className="text-right">Qtd</TableHead>
+                        <TableHead className="text-right">Custo un.</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="pr-4">Origem</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {day.entries.map((e) => (
+                        <TableRow key={e.id}>
+                          <TableCell className="pl-4 tabular-nums text-ink-2">{e.time}</TableCell>
+                          <TableCell>
+                            <span className="font-semibold">{e.productName}</span>
+                            <span className="block text-xs tracking-[0.04em] text-ink-3">{e.sku}</span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{e.quantity}</TableCell>
+                          <TableCell className="text-right tabular-nums text-ink-2">
+                            {formatCurrency(e.unitCost)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums">
+                            {formatCurrency(e.totalCost)}
+                          </TableCell>
+                          <TableCell className="pr-4 text-ink-2">{sourceLabel(e.source)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </section>
+              ))}
+            </div>
+          )}
         </>
       ) : (
-        <Card>
-          <CardContent className="flex items-center justify-center py-12">
-            <p className="text-gray-500">Nenhum dado encontrado</p>
-          </CardContent>
-        </Card>
+        <p className="border border-rule bg-paper px-5 py-12 text-center text-sm text-ink-3">Nenhum dado encontrado para o período.</p>
       )}
     </div>
   );

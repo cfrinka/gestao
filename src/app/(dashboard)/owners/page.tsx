@@ -2,8 +2,9 @@
 
 export default function OwnersPage() {
   return (
-    <div className="flex items-center justify-center h-96">
-      <p className="text-gray-500">Página não disponível.</p>
+    <div className="flex h-96 flex-col items-center justify-center gap-1 text-center">
+      <p className="font-semibold text-ink">Página não disponível</p>
+      <p className="text-sm text-ink-3">Use o menu ao lado para ir a outra área.</p>
     </div>
   );
 }

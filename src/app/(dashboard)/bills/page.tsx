@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,6 +18,8 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import { Check, Trash2 } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
+import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 
 type BillStatus = "PENDING" | "PAID";
 
@@ -195,92 +197,125 @@ export default function BillsPage() {
   if (userData?.role !== "ADMIN") {
     return (
       <div className="flex items-center justify-center h-96">
-        <p className="text-gray-500">Você não tem permissão para acessar esta página.</p>
+        <p className="text-ink-3">Você não tem permissão para acessar esta página.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Contas</h1>
-        <p className="text-gray-500">Controle de contas e despesas da loja</p>
-      </div>
+    <div>
+      <PageHeader title="Contas" meta={<span>Despesas e contas a pagar da loja</span>} />
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Lucro (mês)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-[#355444]">
-              {reportLoading ? "..." : formatCurrency(report?.profit || 0)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Pendente (mês)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{formatCurrency(totals.pending)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Pago (mês)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(totals.paid)}</div>
-          </CardContent>
-        </Card>
-      </div>
+      <TotalsStrip
+        className="mb-4 md:mb-6"
+        items={[
+          { label: "Lucro do mês", value: reportLoading ? "…" : formatCurrency(report?.profit || 0), tone: "positive" },
+          { label: "A pagar no mês", value: formatCurrency(totals.pending), tone: totals.pending > 0 ? "debt" : "neutral" },
+          { label: "Pago no mês", value: formatCurrency(totals.paid), tone: "positive" },
+        ]}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filtros</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4 md:flex-row md:items-end">
-          <div className="space-y-2">
-            <Label>Mês</Label>
-            <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>Status</Label>
-            <select
-              className="w-full p-2 border rounded-md md:w-48"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as typeof status)}
-            >
-              <option value="pending">Pendentes</option>
-              <option value="paid">Pagas</option>
-              <option value="all">Todas</option>
-            </select>
-          </div>
-          <Button variant="outline" onClick={fetchBills}>
-            Atualizar
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Adicionar Conta</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="space-y-2 md:col-span-2">
-              <Label>Nome</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Aluguel" />
+      <div className="grid gap-4 md:gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="border border-rule bg-paper" aria-labelledby="bills-title">
+          <div className="flex flex-wrap items-end gap-3 border-b border-rule px-4 py-3">
+            <h2 id="bills-title" className="mr-auto font-tag text-lg font-bold uppercase tracking-[0.04em]">
+              Contas do mês
+            </h2>
+            <div className="space-y-1">
+              <Label htmlFor="bills-month" className="text-xs">Mês</Label>
+              <Input id="bills-month" type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 w-[160px]" />
             </div>
-            <div className="space-y-2">
-              <Label>Valor</Label>
-              <Input value={amount} onChange={(e) => setAmount(e.target.value)} type="number" step="0.01" />
-            </div>
-            <div className="space-y-2">
-              <Label>Tipo</Label>
+            <div className="space-y-1">
+              <Label htmlFor="bills-status" className="text-xs">Situação</Label>
               <select
-                className="w-full p-2 border rounded-md"
+                id="bills-status"
+                className="h-10 w-full border border-input bg-paper px-3 text-sm text-ink focus-visible:border-denim focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-denim h-9 w-[140px]"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as typeof status)}
+              >
+                <option value="pending">Pendentes</option>
+                <option value="paid">Pagas</option>
+                <option value="all">Todas</option>
+              </select>
+            </div>
+            <Button variant="outline" size="sm" onClick={fetchBills}>
+              Atualizar
+            </Button>
+          </div>
+          {loading ? (
+            <div className="space-y-2 p-4" aria-hidden="true">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-sub" />)}</div>
+          ) : bills.length === 0 ? (
+            <p className="px-5 py-12 text-center text-sm text-ink-3">Nenhuma conta neste mês com esse filtro.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="pl-4">Vencimento</TableHead>
+                  <TableHead>Conta</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead className="text-right">Valor</TableHead>
+                  <TableHead className="text-right">Status</TableHead>
+                  <TableHead className="pr-4 text-right"><span className="sr-only">Ações</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bills.map((b) => {
+                  const d = tsToDate(b.dueDate);
+                  const typeLabel =
+                    b.kind === "FIXED" ? "Fixa" : b.kind === "ONE_TIME" ? "Avulsa" : b.installmentNumber && b.installmentsCount
+                      ? `Parcela ${b.installmentNumber}/${b.installmentsCount}`
+                      : "Parcelada";
+
+                  return (
+                    <TableRow key={b.id}>
+                      <TableCell className="pl-4 tabular-nums">{formatDateBR(d)}</TableCell>
+                      <TableCell className="font-medium">{b.name}</TableCell>
+                      <TableCell>{typeLabel}</TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(b.amount)}</TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant={b.status === "PAID" ? "positive" : "destructive"}>
+                          {b.status === "PAID" ? "Pago" : "Pendente"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          {b.status === "PENDING" && (
+                            <Button size="icon" variant="ghost" className="text-verde hover:bg-verde-tint" onClick={() => handleMarkPaid(b.id)} title="Marcar como pago" aria-label={`Marcar ${b.name} como paga`}>
+                              <Check className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button size="icon" variant="ghost" className="hover:bg-vermelho-tint hover:text-vermelho" onClick={() => handleDelete(b.id)} title="Excluir" aria-label={`Excluir ${b.name}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </section>
+
+        <section className="h-fit border border-rule bg-paper" aria-labelledby="new-bill-title">
+          <h2 id="new-bill-title" className="border-b border-rule px-4 py-3 font-tag text-lg font-bold uppercase tracking-[0.04em]">
+            Nova conta
+          </h2>
+          <div className="space-y-4 p-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="bill-name">Nome</Label>
+              <Input id="bill-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: aluguel" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bill-amount">Valor (R$)</Label>
+              <Input id="bill-amount" value={amount} onChange={(e) => setAmount(e.target.value)} type="number" inputMode="decimal" step="0.01" className="tabular-nums" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bill-kind">Tipo</Label>
+              <select
+                id="bill-kind"
+                className="h-10 w-full border border-input bg-paper px-3 text-sm text-ink focus-visible:border-denim focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-denim"
                 value={kind}
                 onChange={(e) => setKind(e.target.value as typeof kind)}
               >
@@ -299,7 +334,7 @@ export default function BillsPage() {
           )}
 
           {kind === "FIXED" && (
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Dia do vencimento</Label>
                 <Input type="number" min="1" max="31" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} />
@@ -316,7 +351,7 @@ export default function BillsPage() {
           )}
 
           {kind === "INSTALLMENTS" && (
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>1º vencimento</Label>
                 <Input type="date" value={firstDueDate} onChange={(e) => setFirstDueDate(e.target.value)} />
@@ -328,72 +363,14 @@ export default function BillsPage() {
             </div>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end border-t border-rule pt-4">
             <Button onClick={handleCreate} disabled={creating}>
-              {creating ? "Salvando..." : "Adicionar"}
+              {creating ? "Salvando…" : "Adicionar conta"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Contas do Mês</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-center py-4">Carregando...</p>
-          ) : bills.length === 0 ? (
-            <p className="text-center py-4 text-gray-500">Nenhuma conta encontrada</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Vencimento</TableHead>
-                  <TableHead>Conta</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                  <TableHead className="text-right">Status</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {bills.map((b) => {
-                  const d = tsToDate(b.dueDate);
-                  const typeLabel =
-                    b.kind === "FIXED" ? "Fixa" : b.kind === "ONE_TIME" ? "Avulsa" : b.installmentNumber && b.installmentsCount
-                      ? `Parcela ${b.installmentNumber}/${b.installmentsCount}`
-                      : "Parcelada";
-
-                  return (
-                    <TableRow key={b.id}>
-                      <TableCell>{formatDateBR(d)}</TableCell>
-                      <TableCell className="font-medium">{b.name}</TableCell>
-                      <TableCell>{typeLabel}</TableCell>
-                      <TableCell className="text-right font-bold">{formatCurrency(b.amount)}</TableCell>
-                      <TableCell className={`text-right font-bold ${b.status === "PAID" ? "text-green-600" : "text-red-600"}`}>
-                        {b.status === "PAID" ? "Pago" : "Pendente"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {b.status === "PENDING" && (
-                            <Button size="icon" variant="ghost" onClick={() => handleMarkPaid(b.id)} title="Marcar como pago">
-                              <Check className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button size="icon" variant="ghost" className="text-red-500" onClick={() => handleDelete(b.id)} title="Excluir">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

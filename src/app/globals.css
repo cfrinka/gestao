@@ -2,51 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Benê Brasil — Etiqueta.
+ * Card-grey ground, white card-stock surfaces, grafite ink and printed rules.
+ * Logo colours carry jobs: denim acts, verde settles, vermelho owes.
+ */
 @layer base {
   :root {
-    --background: 0 0% 98%;
-    --foreground: 204 46% 20%;
-    --card: 0 0% 100%;
-    --card-foreground: 204 46% 20%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 204 46% 20%;
-    --primary: 204 46% 31%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 151 24% 27%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 204 20% 94%;
-    --muted-foreground: 204 20% 40%;
-    --accent: 355 80% 42%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 355 80% 42%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 204 20% 88%;
-    --input: 204 20% 88%;
-    --ring: 204 46% 31%;
-    --radius: 0.5rem;
-    --forest: 151 24% 27%;
-  }
+    --ground: 80 8% 92%;          /* #ECEDEA */
+    --paper: 0 0% 100%;
+    --sub: 80 14% 96%;            /* #F5F6F3 */
+    --ink: 0 0% 16%;              /* #282828 grafite */
+    --ink-2: 210 4% 36%;          /* #575B5F */
+    --ink-3: 210 3% 41%;          /* #63676B */
+    --rule: 84 6% 82%;            /* #D3D5D0 hairline */
+    --rule-strong: 100 2% 56%;    /* #8C8F8B control border */
+    --denim: 205 47% 31%;         /* #2A5473 */
+    --denim-hover: 205 48% 25%;
+    --denim-tint: 208 30% 92%;
+    --verde: 149 23% 27%;         /* #355444 */
+    --verde-tint: 140 18% 90%;
+    --vermelho: 356 79% 42%;      /* #BE1622 */
+    --vermelho-hover: 356 81% 34%;
+    --vermelho-tint: 357 56% 93%;
 
-  .dark {
-    --background: 204 46% 8%;
-    --foreground: 204 20% 95%;
-    --card: 204 46% 12%;
-    --card-foreground: 204 20% 95%;
-    --popover: 204 46% 12%;
-    --popover-foreground: 204 20% 95%;
-    --primary: 204 46% 50%;
+    /* shadcn aliases */
+    --background: var(--ground);
+    --foreground: var(--ink);
+    --card: var(--paper);
+    --card-foreground: var(--ink);
+    --popover: var(--paper);
+    --popover-foreground: var(--ink);
+    --primary: var(--denim);
     --primary-foreground: 0 0% 100%;
-    --secondary: 151 24% 35%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 204 30% 18%;
-    --muted-foreground: 204 20% 65%;
-    --accent: 355 80% 50%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 355 80% 50%;
+    --secondary: var(--sub);
+    --secondary-foreground: var(--ink);
+    --muted: var(--sub);
+    --muted-foreground: var(--ink-3);
+    --accent: var(--sub);
+    --accent-foreground: var(--ink);
+    --destructive: var(--vermelho);
     --destructive-foreground: 0 0% 100%;
-    --border: 204 30% 20%;
-    --input: 204 30% 20%;
-    --ring: 204 46% 50%;
+    --border: var(--rule);
+    --input: var(--rule-strong);
+    --ring: var(--denim);
+    --radius: 0.125rem;
   }
 }
 
@@ -54,7 +54,86 @@
   * {
     @apply border-border;
   }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-ground text-ink font-sans antialiased;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  ::selection {
+    background: hsl(var(--denim));
+    color: #fff;
+  }
+  input,
+  textarea {
+    caret-color: hsl(var(--denim));
+  }
+  :focus-visible {
+    outline: 2px solid hsl(var(--denim));
+    outline-offset: 2px;
+  }
+  a {
+    text-underline-offset: 3px;
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: hsl(var(--rule-strong)) transparent;
+    }
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--rule-strong));
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-button {
+    display: none;
+  }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    opacity: 0.4;
+  }
+}
+
+@layer components {
+  /* Tag print: the condensed voice of sizes, prices, titles and totals. */
+  .tag-print {
+    @apply font-tag uppercase tracking-[0.04em];
+  }
+  /* Rows that scroll sideways by touch or trackpad, without a bar. */
+  .scroll-row {
+    scrollbar-width: none;
+  }
+  .scroll-row::-webkit-scrollbar {
+    display: none;
+  }
+  /* The stub's tear line. */
+  .tear {
+    border-style: dashed;
+    border-color: hsl(var(--rule-strong));
+  }
+  /* A product tag: notched left end with the eyelet punched through. */
+  .tag-shape {
+    clip-path: polygon(14px 0, 100% 0, 100% 100%, 14px 100%, 0 50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

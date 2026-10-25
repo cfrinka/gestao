@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { apiGet, apiPatch, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { Save, Search, Tags, RefreshCw, ImageIcon, ImageOff, Printer, Upload, Loader2 } from "lucide-react";
+import { Save, Search, RefreshCw, ImageIcon, ImageOff, Printer, Upload, Loader2 } from "lucide-react";
 import { useProductCategories, withCurrentCategory } from "@/lib/use-product-categories";
+import { PageHeader } from "@/components/layout/page-header";
 
 interface Product {
   id: string;
@@ -187,92 +188,89 @@ export default function BulkCategoryPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Categorizar Produtos</h1>
-          <p className="text-gray-500 text-sm">Atribua categorias em massa</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={handlePrint} disabled={filteredProducts.length === 0}>
-            <Printer className="h-4 w-4 mr-1" />
-            Imprimir ({filteredProducts.length})
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleSyncImageSource} disabled={syncing}>
-            <RefreshCw className={`h-4 w-4 mr-1 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Sincronizando..." : "Sync Imagens"}
-          </Button>
-          <Button size="sm" onClick={handleSave} disabled={saving || changedProducts.length === 0}>
-            <Save className="h-4 w-4 mr-1" />
-            {saving ? "Salvando..." : `Salvar (${changedProducts.length})`}
-          </Button>
-        </div>
-      </div>
+    <div>
+      <PageHeader
+        title="Categorias"
+        meta={<span>Atribua categorias a vários produtos de uma vez</span>}
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={handlePrint} disabled={filteredProducts.length === 0}>
+              <Printer className="h-4 w-4" aria-hidden="true" />
+              Imprimir lista · {filteredProducts.length}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleSyncImageSource} disabled={syncing}>
+              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} aria-hidden="true" />
+              {syncing ? "Sincronizando…" : "Sincronizar fotos"}
+            </Button>
+            <Button size="sm" onClick={handleSave} disabled={saving || changedProducts.length === 0}>
+              <Save className="h-4 w-4" aria-hidden="true" />
+              {saving ? "Salvando…" : changedProducts.length > 0 ? `Salvar ${changedProducts.length} ${changedProducts.length === 1 ? "alteração" : "alterações"}` : "Salvar"}
+            </Button>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader>
-          <div className="space-y-3">
-            <CardTitle className="flex items-center gap-2">
-              <Tags className="h-5 w-5" />
-              Produtos ({filteredProducts.length})
-            </CardTitle>
-            <div className="flex gap-2 w-full">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar por nome ou SKU..."
-                  className="pl-10"
-                />
-              </div>
-              <Button
-                variant={filterNoPhoto ? "default" : "outline"}
-                size="sm"
-                onClick={() => setFilterNoPhoto(!filterNoPhoto)}
-                className="whitespace-nowrap"
-              >
-                <ImageOff className="h-4 w-4 mr-1" />
-                Sem foto
-              </Button>
+          <div className="flex w-full flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-2" aria-hidden="true" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por nome ou código"
+                aria-label="Buscar produto"
+                className="pl-9"
+              />
             </div>
+            <Button
+              variant={filterNoPhoto ? "default" : "outline"}
+              aria-pressed={filterNoPhoto}
+              onClick={() => setFilterNoPhoto(!filterNoPhoto)}
+              className="whitespace-nowrap"
+            >
+              <ImageOff className="h-4 w-4" aria-hidden="true" />
+              Só sem foto
+            </Button>
           </div>
-          <div className="flex flex-wrap gap-2 mt-3">
-            <span className="text-sm text-gray-500 mr-1 self-center">Aplicar a todos visíveis:</span>
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-sm text-ink-2">
+              Aplicar aos {filteredProducts.length} visíveis:
+            </span>
             {productCategories.map((cat) => (
-              <Button
+              <button
                 key={cat}
-                variant="outline"
-                size="sm"
+                type="button"
                 onClick={() => setBulkCategory(cat)}
+                className="inline-flex h-8 items-center border border-rule-strong bg-paper px-2.5 text-sm font-semibold text-ink transition-colors hover:border-ink"
               >
                 {cat}
-              </Button>
+              </button>
             ))}
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setBulkCategory("")}
-              className="text-red-500"
+              className="text-vermelho hover:bg-vermelho-tint"
             >
-              Limpar
+              Tirar categoria
             </Button>
           </div>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-center py-4">Carregando...</p>
+            <div className="space-y-1" aria-hidden="true">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-11 animate-pulse bg-sub" />)}</div>
           ) : filteredProducts.length === 0 ? (
-            <p className="text-center py-4 text-gray-500">Nenhum produto encontrado</p>
+            <p className="py-10 text-center text-sm text-ink-3">Nenhum produto encontrado</p>
           ) : (
-            <div className="max-h-[60vh] overflow-y-auto space-y-1">
+            <div className="max-h-[60vh] divide-y divide-rule overflow-y-auto border-y border-rule">
               {filteredProducts.map((product) => {
                 const changed = categories[product.id] !== originalCategories[product.id];
                 return (
                   <div
                     key={product.id}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-md ${
-                      changed ? "bg-yellow-50" : "hover:bg-gray-50"
+                    className={`flex items-center gap-2 px-2 py-1.5 ${
+                      changed ? "bg-denim-tint" : "hover:bg-sub"
                     }`}
                   >
                     <div className="flex-shrink-0" title={
@@ -281,22 +279,23 @@ export default function BulkCategoryPage() {
                       "Sem imagem"
                     }>
                       {product.imageSource === "uploaded" ? (
-                        <ImageIcon className="h-4 w-4 text-green-600" />
+                        <ImageIcon className="h-4 w-4 text-verde" aria-label="Foto enviada" />
                       ) : product.imageSource === "random" ? (
-                        <ImageIcon className="h-4 w-4 text-orange-500" />
+                        <ImageIcon className="h-4 w-4 text-ink-3" aria-label="Imagem aleatória" />
                       ) : (
-                        <ImageOff className="h-4 w-4 text-gray-300" />
+                        <ImageOff className="h-4 w-4 text-ink-3/60" aria-label="Sem imagem" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{product.name}</p>
+                      <p className="truncate text-sm font-semibold">{product.name}{changed ? <span className="ml-2 text-xs font-semibold text-denim">alterado</span> : null}</p>
                     </div>
                     <select
                       value={categories[product.id] || ""}
                       onChange={(e) =>
                         setCategories({ ...categories, [product.id]: e.target.value })
                       }
-                      className="flex-shrink-0 h-9 w-28 sm:w-40 rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={`Categoria de ${product.name}`}
+                      className="h-10 w-full border border-input bg-paper px-3 text-sm text-ink focus-visible:border-denim focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-denim h-9 w-32 flex-shrink-0 px-2 sm:w-44"
                     >
                       <option value="">Sem categoria</option>
                       {withCurrentCategory(productCategories, categories[product.id]).map((cat) => (
@@ -321,10 +320,11 @@ export default function BulkCategoryPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8"
+                        className="h-9 w-9"
                         disabled={uploadingProductId === product.id}
                         onClick={() => document.getElementById(`upload-${product.id}`)?.click()}
                         title="Enviar foto"
+                        aria-label={`Enviar foto de ${product.name}`}
                       >
                         {uploadingProductId === product.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />

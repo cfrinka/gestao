@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,9 +16,11 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import { apiGet } from "@/lib/api-client";
-import { Calendar, FileText, Loader2 } from "lucide-react";
+import { FileText } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { PageHeader } from "@/components/layout/page-header";
+import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 
 interface SalesMonthData {
   period: {
@@ -161,138 +163,101 @@ export default function SalesMonthPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Vendas Mensais</h1>
-          <p className="text-gray-500">Relatório detalhado de vendas organizado por dia</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={exportPDF} disabled={loading || !data}>
-            <FileText className="h-4 w-4 mr-2" />
-            PDF
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Vendas mensais"
+        meta={<span>Vendas do período, dia a dia</span>}
+        actions={
+          <Button variant="outline" size="sm" onClick={exportPDF} disabled={loading || !data}>
+            <FileText className="h-4 w-4" aria-hidden="true" />
+            Exportar PDF
           </Button>
-        </div>
-      </div>
+        }
+        className="mb-0 md:mb-0"
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Período
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="startDate">Data Inicial</Label>
-              <Input
-                id="startDate"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="endDate">Data Final</Label>
-              <Input
-                id="endDate"
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="startDate" className="text-xs">De</Label>
+            <Input
+              id="startDate"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="h-9 w-[160px]"
+            />
           </div>
-        </CardContent>
-      </Card>
+          <div className="space-y-1">
+            <Label htmlFor="endDate" className="text-xs">Até</Label>
+            <Input
+              id="endDate"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="h-9 w-[160px]"
+            />
+          </div>
+        </div>
 
       {loading ? (
-        <Card>
-          <CardContent className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin" />
-          </CardContent>
-        </Card>
+        <div className="space-y-2" aria-hidden="true">
+          <div className="h-16 animate-pulse border border-rule bg-paper" />
+          <div className="h-64 animate-pulse border border-rule bg-paper" />
+        </div>
       ) : data ? (
         <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Resumo do Mês</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-600">Período</p>
-                  <p className="text-lg font-semibold">{data.period.start} até {data.period.end}</p>
-                </div>
-                <div className="p-4 bg-green-50 rounded-lg">
-                  <p className="text-sm text-green-600">Total de Vendas</p>
-                  <p className="text-2xl font-bold text-green-700">{formatCurrency(data.monthTotal)}</p>
-                </div>
-                <div className="p-4 bg-purple-50 rounded-lg">
-                  <p className="text-sm text-purple-600">Dias com Vendas</p>
-                  <p className="text-2xl font-bold text-purple-700">{data.days.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <TotalsStrip
+            items={[
+              { label: "Período", value: <span className="text-lg">{data.period.start} a {data.period.end}</span> },
+              { label: "Total vendido", value: formatCurrency(data.monthTotal), tone: "positive" },
+              { label: "Dias com venda", value: data.days.length },
+            ]}
+          />
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Vendas por Dia</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                {data.days.map((day) => (
-                  <div key={day.date} className="border rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-semibold text-lg">{day.date}</h3>
-                      <span className="text-lg font-bold text-green-600">
-                        {formatCurrency(day.total)}
-                      </span>
-                    </div>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Hora</TableHead>
-                          <TableHead>Cliente</TableHead>
-                          <TableHead>Valor</TableHead>
-                          <TableHead>Método</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {day.orders.map((order) => (
-                          <TableRow key={order.id}>
-                            <TableCell>{order.time}</TableCell>
-                            <TableCell>
-                              <div>
-                                {order.clientName}
-                                {order.isFiadoPayment && (
-                                  <span className="text-xs text-gray-500 block ml-2">
-                                    Pagamento de Fiado
-                                  </span>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="font-medium">
-                              {formatCurrency(order.total)}
-                            </TableCell>
-                            <TableCell>{getPaymentMethodName(order.paymentMethod)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+          {data.days.length === 0 ? (
+            <p className="border border-rule bg-paper px-5 py-12 text-center text-sm text-ink-3">Nenhuma venda no período.</p>
+          ) : (
+            <div className="space-y-4">
+              {data.days.map((day) => (
+                <section key={day.date} className="border border-rule bg-paper" aria-label={`Vendas de ${day.date}`}>
+                  <div className="flex items-baseline justify-between gap-3 border-b-2 border-ink px-4 py-2.5">
+                    <h3 className="font-tag text-lg font-bold uppercase tracking-[0.04em]">{day.date}</h3>
+                    <span className="font-tag text-xl font-extrabold tabular-nums text-verde">{formatCurrency(day.total)}</span>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[80px] pl-4">Hora</TableHead>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead>Forma</TableHead>
+                        <TableHead className="pr-4 text-right">Valor</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {day.orders.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell className="pl-4 tabular-nums text-ink-2">{order.time}</TableCell>
+                          <TableCell>
+                            {order.clientName}
+                            {order.isFiadoPayment && (
+                              <span className="ml-2 inline-block align-[1px]"><Badge variant="secondary">Pagamento de fiado</Badge></span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-ink-2">{getPaymentMethodName(order.paymentMethod)}</TableCell>
+                          <TableCell className="pr-4 text-right font-semibold tabular-nums">
+                            {formatCurrency(order.total)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </section>
+              ))}
+            </div>
+          )}
         </>
       ) : (
-        <Card>
-          <CardContent className="flex items-center justify-center py-12">
-            <p className="text-gray-500">Nenhum dado encontrado</p>
-          </CardContent>
-        </Card>
+        <p className="border border-rule bg-paper px-5 py-12 text-center text-sm text-ink-3">Nenhum dado encontrado para o período.</p>
       )}
     </div>
   );

@@ -7,15 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -24,8 +15,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { formatCurrency } from "@/lib/utils";
-import { Plus, Pencil, Trash2, Users, CreditCard, Eye, Printer, X } from "lucide-react";
+import { cn, formatCurrency } from "@/lib/utils";
+import { Plus, Pencil, Trash2, CreditCard, Eye, Printer, X, Search, AlertTriangle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { PageHeader, StateTag } from "@/components/layout/page-header";
+import { PriceTag } from "@/components/etiqueta/price-tag";
 
 interface FiadoPaymentEntry {
   id: string;
@@ -83,6 +77,8 @@ export default function ClientsPage() {
   const { toast } = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [onlyOwing, setOnlyOwing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -285,10 +281,10 @@ export default function ClientsPage() {
       toast({ title: "Cliente excluído!" });
       fetchClients();
     } catch (error) {
-      toast({ 
-        title: "Erro ao excluir cliente", 
+      toast({
+        title: "Erro ao excluir cliente",
         description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive" 
+        variant: "destructive"
       });
     }
   };
@@ -356,15 +352,15 @@ export default function ClientsPage() {
         adminPassword: adminPassword.trim(),
       });
       setSelectedClient({ ...updated, pendingOrders: updated.pendingOrders || [] });
-      
+
       const isReduction = parsedAmount < 0;
-      toast({ 
+      toast({
         title: `Correção aplicada com sucesso!`,
-        description: isReduction 
-          ? `Débito reduzido em ${formatCurrency(Math.abs(parsedAmount))}` 
+        description: isReduction
+          ? `Débito reduzido em ${formatCurrency(Math.abs(parsedAmount))}`
           : `Saldo ajustado em ${formatCurrency(parsedAmount)}`
       });
-      
+
       setDebtCorrectionDialogOpen(false);
       fetchClients();
     } catch (error) {
@@ -395,17 +391,17 @@ export default function ClientsPage() {
       });
       setSelectedClient({ ...updated, pendingOrders: updated.pendingOrders || [] });
       setLastPaymentResult(updated.paymentResult);
-      
+
       const result = updated.paymentResult as FiadoPaymentResult;
       let message = `Pagamento de ${formatCurrency(result.totalApplied)} registrado!`;
-      
+
       if (result.allocations.length > 1) {
         message += ` Distribuído em ${result.allocations.length} pedidos.`;
       } else if (result.allocations.length === 1) {
         const allocation = result.allocations[0];
         message += allocation.isFullyPaid ? " Pedido quitado." : " Pagamento parcial.";
       }
-      
+
       toast({ title: message });
       setPaymentDialogOpen(false);
       fetchClients();
@@ -432,32 +428,56 @@ export default function ClientsPage() {
 
   const isAdmin = userData?.role === "ADMIN";
   const totalPending = clients.reduce((sum, c) => sum + c.balance, 0);
+  const owingCount = clients.filter((c) => c.balance > 0.009).length;
+  const normalizedSearch = search.trim().toLowerCase();
+  const visibleClients = clients.filter((c) => {
+    if (onlyOwing && !(c.balance > 0.009)) return false;
+    if (!normalizedSearch) return true;
+    return (
+      c.name.toLowerCase().includes(normalizedSearch) ||
+      (c.phone || "").toLowerCase().includes(normalizedSearch) ||
+      (c.email || "").toLowerCase().includes(normalizedSearch)
+    );
+  });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Clientes</h1>
-          <p className="text-gray-500">Gerencie clientes e pagamentos pendentes</p>
-        </div>
-        {isAdmin && (
-        <div className="flex items-center gap-2">
+    <div>
+      <PageHeader
+        title="Clientes e fiado"
+        meta={
+          !loading ? (
+            <>
+              <span>
+                <b className="font-semibold text-ink">{clients.length}</b> clientes
+              </span>
+              {totalPending > 0.009 ? (
+                <StateTag tone="debt">
+                  {formatCurrency(totalPending)} a receber · {owingCount} {owingCount === 1 ? "conta" : "contas"}
+                </StateTag>
+              ) : (
+                <StateTag tone="open">Nenhum fiado em aberto</StateTag>
+              )}
+            </>
+          ) : null
+        }
+        actions={
+          isAdmin ? (
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={openNewDialog}>
-                <Plus className="h-4 w-4 mr-2" />
-                Novo Cliente
+              <Button size="sm" onClick={openNewDialog}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Novo cliente
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>
-                  {editingClient ? "Editar Cliente" : "Novo Cliente"}
+                  {editingClient ? "Editar cliente" : "Novo cliente"}
                 </DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Nome *</Label>
+                  <Label htmlFor="name">Nome</Label>
                   <Input
                     id="name"
                     value={formData.name}
@@ -465,17 +485,19 @@ export default function ClientsPage() {
                     required
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="phone">Telefone</Label>
                     <Input
                       id="phone"
+                      type="tel"
+                      inputMode="tel"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="email">E-mail</Label>
                     <Input
                       id="email"
                       type="email"
@@ -493,175 +515,185 @@ export default function ClientsPage() {
                     rows={3}
                   />
                 </div>
-                <div className="flex gap-2 pt-4">
+                <div className="flex gap-2 border-t border-rule pt-4">
                   <Button type="button" variant="outline" className="flex-1" onClick={() => setDialogOpen(false)}>
                     Cancelar
                   </Button>
                   <Button type="submit" className="flex-1">
-                    {editingClient ? "Salvar" : "Criar"}
+                    {editingClient ? "Salvar alterações" : "Cadastrar cliente"}
                   </Button>
                 </div>
               </form>
             </DialogContent>
           </Dialog>
+          ) : null
+        }
+      />
+
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-2" aria-hidden="true" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome, telefone ou e-mail"
+            aria-label="Buscar cliente"
+            className="pl-9"
+          />
         </div>
-        )}
+        <div className="inline-flex self-start border-[1.5px] border-ink" role="group" aria-label="Filtrar clientes">
+          <button
+            type="button"
+            aria-pressed={!onlyOwing}
+            onClick={() => setOnlyOwing(false)}
+            className={cn("h-9 px-3 text-sm font-semibold transition-colors", !onlyOwing ? "bg-ink text-white" : "bg-paper hover:bg-sub")}
+          >
+            Todos
+          </button>
+          <button
+            type="button"
+            aria-pressed={onlyOwing}
+            onClick={() => setOnlyOwing(true)}
+            className={cn("h-9 border-l-[1.5px] border-ink px-3 text-sm font-semibold transition-colors", onlyOwing ? "bg-ink text-white" : "bg-paper hover:bg-sub")}
+          >
+            Com fiado · {owingCount}
+          </button>
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total de Clientes</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{clients.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Pendente</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${totalPending > 0 ? "text-red-600" : "text-green-600"}`}>
-              {formatCurrency(totalPending)}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista de Clientes</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-center py-4">Carregando...</p>
-          ) : clients.length === 0 ? (
-            <p className="text-center py-4 text-gray-500">Nenhum cliente cadastrado</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Telefone</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead className="text-right">Saldo Pendente</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {clients.map((client) => (
-                  <TableRow key={client.id}>
-                    <TableCell className="font-medium">{client.name}</TableCell>
-                    <TableCell>{client.phone || "-"}</TableCell>
-                    <TableCell>{client.email || "-"}</TableCell>
-                    <TableCell className={`text-right font-bold ${client.balance > 0 ? "text-red-600" : "text-green-600"}`}>
-                      {formatCurrency(client.balance)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleViewDetails(client)}
-                          title="Ver detalhes"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        {isAdmin && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEdit(client)}
-                          title="Editar"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        )}
-                        {isAdmin && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(client.id)}
-                          className="text-red-500"
-                          title="Excluir"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      {loading ? (
+        <div className="space-y-2" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-14 animate-pulse border border-rule bg-paper" />
+          ))}
+        </div>
+      ) : visibleClients.length === 0 ? (
+        <div className="border border-rule bg-paper px-6 py-14 text-center">
+          <p className="font-semibold text-ink">
+            {clients.length === 0
+              ? "Nenhum cliente cadastrado"
+              : onlyOwing && !normalizedSearch
+              ? "Ninguém está devendo agora"
+              : `Nenhum cliente com “${search.trim()}”`}
+          </p>
+          {clients.length === 0 ? (
+            <p className="mt-1 text-sm text-ink-3">Clientes cadastrados podem comprar fiado no PDV.</p>
+          ) : null}
+        </div>
+      ) : (
+        <ul className="divide-y divide-rule border border-rule bg-paper">
+          {visibleClients.map((client) => {
+            const owes = client.balance > 0.009;
+            return (
+              <li key={client.id} className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
+                <button
+                  type="button"
+                  onClick={() => handleViewDetails(client)}
+                  className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 text-left md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_150px]"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold text-ink">{client.name}</span>
+                    <span className="block truncate text-sm text-ink-3 md:hidden">{client.phone || client.email || "Sem contato"}</span>
+                  </span>
+                  <span className="hidden truncate text-sm text-ink-2 md:block">{client.phone || "—"}</span>
+                  <span className="hidden truncate text-sm text-ink-2 md:block">{client.email || "—"}</span>
+                  <span className="text-right">
+                    {owes ? (
+                      <span className="text-vermelho">
+                        <PriceTag value={client.balance} className="text-xl" />
+                        <span className="block text-xs font-semibold">deve</span>
+                      </span>
+                    ) : (
+                      <span className="text-sm font-semibold text-verde">Em dia</span>
+                    )}
+                  </span>
+                </button>
+                <div className="flex flex-shrink-0 gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleViewDetails(client)}
+                    aria-label={`Ver conta de ${client.name}`}
+                    title="Ver conta"
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleEdit(client)}
+                      aria-label={`Editar ${client.name}`}
+                      title="Editar"
+                      className="hidden sm:inline-flex"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleDelete(client.id)}
+                      className="hidden hover:bg-vermelho-tint hover:text-vermelho sm:inline-flex"
+                      aria-label={`Excluir ${client.name}`}
+                      title="Excluir"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {/* Client Details Dialog */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detalhes do Cliente</DialogTitle>
+            <DialogTitle>Conta do cliente</DialogTitle>
           </DialogHeader>
           {selectedClient && (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500">Nome</p>
-                  <p className="font-medium">{selectedClient.name}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Saldo Pendente</p>
-                  <p className={`font-bold ${selectedClient.balance > 0 ? "text-red-600" : "text-green-600"}`}>
-                    {formatCurrency(selectedClient.balance)}
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b-[1.5px] border-dashed border-rule-strong pb-4">
+                <div className="min-w-0">
+                  <p className="text-lg font-bold leading-snug">{selectedClient.name}</p>
+                  <p className="text-sm text-ink-3">
+                    {[selectedClient.phone, selectedClient.email].filter(Boolean).join(" · ") || "Sem contato cadastrado"}
                   </p>
+                  {selectedClient.notes && (
+                    <p className="mt-2 max-w-prose text-sm text-ink-2">{selectedClient.notes}</p>
+                  )}
                 </div>
-                {selectedClient.phone && (
-                  <div>
-                    <p className="text-sm text-gray-500">Telefone</p>
-                    <p className="font-medium">{selectedClient.phone}</p>
+                <div className="text-right">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-ink-3">Saldo devedor</p>
+                  <div className={selectedClient.balance > 0 ? "text-vermelho" : "text-verde"}>
+                    <PriceTag value={selectedClient.balance} className="text-[36px]" />
                   </div>
-                )}
-                {selectedClient.email && (
-                  <div>
-                    <p className="text-sm text-gray-500">Email</p>
-                    <p className="font-medium">{selectedClient.email}</p>
-                  </div>
-                )}
+                </div>
               </div>
 
-              {selectedClient.notes && (
-                <div>
-                  <p className="text-sm text-gray-500">Observações</p>
-                  <p className="font-medium">{selectedClient.notes}</p>
-                </div>
-              )}
-
               <div>
-                <p className="text-sm font-medium text-gray-700 mb-2">Pedidos Pendentes</p>
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="mb-4 flex flex-wrap gap-2">
                   {selectedClient.balance > 0 && (
                     <Button
                       variant="default"
                       size="sm"
                       onClick={openPaymentDialog}
                     >
-                      <CreditCard className="h-4 w-4 mr-2" />
-                      Receber Pagamento
+                      <CreditCard className="h-4 w-4" aria-hidden="true" />
+                      Receber pagamento
                     </Button>
                   )}
                   {isAdmin && (
                   <Button
-                    variant="destructive"
+                    variant="danger"
                     size="sm"
                     onClick={openDebtCorrectionDialog}
                   >
-                    Corrigir Débito
+                    Corrigir débito
                   </Button>
                   )}
                   <Button
@@ -669,10 +701,26 @@ export default function ClientsPage() {
                     size="sm"
                     onClick={() => printClientDebtDetails(selectedClient)}
                   >
-                    <Printer className="h-4 w-4 mr-2" />
-                    Imprimir 80mm
+                    <Printer className="h-4 w-4" aria-hidden="true" />
+                    Imprimir 80 mm
                   </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setDetailsOpen(false);
+                        handleEdit(selectedClient);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" aria-hidden="true" />
+                      Editar
+                    </Button>
+                  )}
                 </div>
+                <h3 className="mb-2 font-tag text-base font-bold uppercase tracking-[0.06em] text-ink-2">
+                  Compras no fiado
+                </h3>
                 {selectedClient.pendingOrders && selectedClient.pendingOrders.length > 0 ? (
                   <div className="space-y-2">
                     {selectedClient.pendingOrders.map((order) => {
@@ -681,37 +729,37 @@ export default function ClientsPage() {
                       const isFullyPaid = remaining <= 0;
                       const hasPartialPayment = paid > 0 && !isFullyPaid;
                       return (
-                      <div key={order.id} className={`flex items-center justify-between p-3 rounded-lg ${isFullyPaid ? 'bg-green-50 border border-green-200' : hasPartialPayment ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-50'}`}>
+                      <div key={order.id} className="flex items-start justify-between gap-3 border border-rule bg-paper p-3">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium">Pedido #{order.id.slice(-6).toUpperCase()}</p>
+                            <p className="text-sm font-semibold">Pedido #{order.id.slice(-6).toUpperCase()}</p>
                             {isFullyPaid ? (
-                              <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Pago</span>
+                              <Badge variant="positive">Pago</Badge>
                             ) : hasPartialPayment ? (
-                              <span className="text-xs font-semibold text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">Parcial</span>
+                              <Badge variant="outline">Parcial</Badge>
                             ) : (
-                              <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">Pendente</span>
+                              <Badge variant="destructive">Pendente</Badge>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-ink-3">
                             {new Date(order.createdAt).toLocaleDateString("pt-BR")}
                           </p>
-                          <p className="text-xs text-gray-600">
-                            Pago: {formatCurrency(paid)} {isFullyPaid ? '' : `| Restante: ${formatCurrency(remaining)}`}
+                          <p className="text-xs text-ink-2">
+                            Pago {formatCurrency(paid)}{isFullyPaid ? '' : ` · falta ${formatCurrency(remaining)}`}
                           </p>
                           {order.paymentHistory && order.paymentHistory.length > 0 && (
                             <div className="pt-1">
-                              <p className="text-xs font-medium text-gray-700">Pagamentos:</p>
-                              <ul className="text-xs text-gray-600 space-y-0.5">
+                              <p className="text-xs font-medium text-ink-2">Pagamentos:</p>
+                              <ul className="text-xs text-ink-2 space-y-0.5">
                                 {order.paymentHistory.map((entry) => (
                                   <li key={entry.id} className="flex items-center gap-2">
-                                    <span className="text-green-600 font-medium">{formatCurrency(entry.amount)}</span>
-                                    <span className="text-gray-400">•</span>
+                                    <span className="text-verde font-medium">{formatCurrency(entry.amount)}</span>
+                                    <span className="text-ink-3">•</span>
                                     <span>{new Date(entry.createdAt).toLocaleDateString("pt-BR")} {new Date(entry.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
                                     {entry.receivedByUserName && (
                                       <>
-                                        <span className="text-gray-400">•</span>
-                                        <span className="text-gray-500">recebido por {entry.receivedByUserName}</span>
+                                        <span className="text-ink-3">•</span>
+                                        <span className="text-ink-3">recebido por {entry.receivedByUserName}</span>
                                       </>
                                     )}
                                   </li>
@@ -721,8 +769,8 @@ export default function ClientsPage() {
                           )}
                           {order.items && order.items.length > 0 && (
                             <div className="pt-1">
-                              <p className="text-xs font-medium text-gray-700">Itens comprados:</p>
-                              <ul className="text-xs text-gray-600 space-y-1">
+                              <p className="text-xs font-medium text-ink-2">Itens comprados:</p>
+                              <ul className="text-xs text-ink-2 space-y-1">
                                 {order.items.map((item) => (
                                   <li key={item.id} className="flex items-center justify-between gap-2">
                                     <span>
@@ -734,7 +782,7 @@ export default function ClientsPage() {
                                       type="button"
                                       variant="ghost"
                                       size="icon"
-                                      className="h-6 w-6 text-red-500"
+                                      className="h-6 w-6 text-vermelho"
                                       title="Remover item"
                                       disabled={removingOrderItemId === item.id || isFullyPaid}
                                       onClick={() => handleRemoveOrderItem(order.id, item.id)}
@@ -749,7 +797,7 @@ export default function ClientsPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className={`font-bold ${isFullyPaid ? 'text-green-600' : 'text-red-600'}`}>
+                          <span className={`font-tag text-xl font-extrabold tabular-nums ${isFullyPaid ? 'text-verde' : 'text-vermelho'}`}>
                             {isFullyPaid ? formatCurrency(paid) : formatCurrency(remaining)}
                           </span>
                         </div>
@@ -758,7 +806,7 @@ export default function ClientsPage() {
                     })}
                   </div>
                 ) : (
-                  <p className="text-gray-500 text-sm">Nenhum pedido pendente</p>
+                  <p className="border border-rule bg-sub p-4 text-sm text-ink-3">Nenhuma compra no fiado em aberto.</p>
                 )}
               </div>
             </div>
@@ -769,13 +817,13 @@ export default function ClientsPage() {
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Receber Pagamento</DialogTitle>
+            <DialogTitle>Receber pagamento</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {selectedClient && (
-              <div className="p-3 bg-gray-100 rounded-lg flex items-center justify-between">
-                <span className="text-sm text-gray-600">Débito total</span>
-                <span className="text-lg font-bold text-red-600">{formatCurrency(selectedClient.balance)}</span>
+              <div className="flex items-end justify-between border-b-[1.5px] border-dashed border-rule-strong pb-3">
+                <span className="pb-1 text-sm text-ink-2">{selectedClient.name} deve</span>
+                <span className="text-vermelho"><PriceTag value={selectedClient.balance} className="text-[32px]" /></span>
               </div>
             )}
             <div className="space-y-2">
@@ -783,29 +831,32 @@ export default function ClientsPage() {
               <Input
                 id="payAmount"
                 type="number"
+                inputMode="decimal"
                 step="0.01"
                 min="0"
                 max={selectedClient?.balance || undefined}
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(e.target.value)}
-                placeholder="Informe o valor recebido"
+                placeholder="0,00"
+                className="h-12 text-right text-lg font-semibold tabular-nums"
               />
               {selectedClient && selectedClient.balance > 0 && (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="link"
                   size="sm"
-                  className="text-xs text-blue-600"
+                  className="h-auto px-0"
                   onClick={() => setPaymentAmount(selectedClient.balance.toFixed(2))}
                 >
-                  Preencher valor total ({formatCurrency(selectedClient.balance)})
+                  Receber tudo ({formatCurrency(selectedClient.balance)})
                 </Button>
               )}
             </div>
             <div className="space-y-2">
-              <Label>Forma de pagamento</Label>
+              <Label htmlFor="payMethod">Forma de pagamento</Label>
               <select
-                className="w-full p-2 border rounded-md"
+                id="payMethod"
+                className="h-10 w-full border border-input bg-paper px-3 text-sm text-ink focus-visible:border-denim focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-denim"
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
               >
@@ -820,7 +871,7 @@ export default function ClientsPage() {
                 Cancelar
               </Button>
               <Button onClick={handleConfirmPayment}>
-                Confirmar Pagamento
+                Confirmar recebimento
               </Button>
             </div>
           </div>
@@ -831,53 +882,49 @@ export default function ClientsPage() {
         <Dialog open={!!lastPaymentResult} onOpenChange={() => setLastPaymentResult(null)}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>Detalhes do Pagamento</DialogTitle>
+              <DialogTitle>Pagamento recebido</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="bg-green-50 p-4 rounded-lg">
-                <p className="text-green-800 font-medium">
+              <div className="border border-verde/30 bg-verde-tint p-4">
+                <p className="font-semibold text-verde">
                   Total aplicado: {formatCurrency(lastPaymentResult.totalApplied)}
                 </p>
                 {lastPaymentResult.overpayment > 0 && (
-                  <p className="text-yellow-600 text-sm mt-1">
+                  <p className="mt-1 text-sm font-semibold text-ink">
                     Sobra a ser devolvida: {formatCurrency(lastPaymentResult.overpayment)}
                   </p>
                 )}
               </div>
-              
+
               <div className="space-y-2">
-                <h4 className="font-medium text-gray-700">Distribuição do Pagamento:</h4>
+                <h4 className="text-sm font-semibold text-ink-2">Como o valor foi distribuído</h4>
                 {lastPaymentResult.allocations.map((allocation) => (
-                  <div key={allocation.orderId} className="border rounded-lg p-3 bg-gray-50">
+                  <div key={allocation.orderId} className="border border-rule bg-paper p-3">
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-medium text-sm">
                           Pedido #{allocation.orderId.slice(-6).toUpperCase()}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-ink-3">
                           {allocation.orderDate} • {formatCurrency(allocation.orderTotalAmount)}
                         </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Restava: {formatCurrency(allocation.remainingBefore)} → 
-                          Aplicado: {formatCurrency(allocation.appliedAmount)} → 
-                          {allocation.isFullyPaid ? 
-                            <span className="text-green-600 font-medium"> Quitado</span> : 
+                        <p className="text-xs text-ink-2 mt-1">
+                          Restava: {formatCurrency(allocation.remainingBefore)} →
+                          Aplicado: {formatCurrency(allocation.appliedAmount)} →
+                          {allocation.isFullyPaid ?
+                            <span className="text-verde font-medium"> Quitado</span> :
                             <span> Resta: {formatCurrency(allocation.remainingAfter)}</span>
                           }
                         </p>
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        allocation.isFullyPaid 
-                          ? 'bg-green-100 text-green-700' 
-                          : 'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {allocation.isFullyPaid ? 'Pago' : 'Parcial'}
-                      </span>
+                      <Badge variant={allocation.isFullyPaid ? "positive" : "outline"}>
+                        {allocation.isFullyPaid ? "Pago" : "Parcial"}
+                      </Badge>
                     </div>
                   </div>
                 ))}
               </div>
-              
+
               <div className="flex justify-end">
                 <Button onClick={() => setLastPaymentResult(null)}>
                   Entendido
@@ -891,53 +938,51 @@ export default function ClientsPage() {
       <Dialog open={debtCorrectionDialogOpen} onOpenChange={setDebtCorrectionDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Correção de Débito</DialogTitle>
-            <p className="text-sm text-gray-500">
+            <DialogTitle>Corrigir débito</DialogTitle>
+            <p className="text-sm text-ink-3">
               Use esta função para corrigir erros de lançamento. Esta operação não afeta o caixa ou relatórios financeiros.
             </p>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="bg-red-50 border border-red-200 p-3 rounded-md">
-              <p className="text-sm text-red-800">
-                <strong>⚠️ Atenção:</strong> Esta é uma função administrativa para correção de erros. 
-                Ela não registra movimentos financeiros nem afeta o caixa.
-              </p>
-            </div>
-            
+            <p className="flex gap-2 border border-vermelho/30 bg-vermelho-tint p-3 text-sm text-vermelho">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
+              <span>Só para corrigir lançamentos errados. Não registra dinheiro no caixa e fica gravada em Correções de débito.</span>
+            </p>
+
             <div className="space-y-2">
-              <Label htmlFor="correctionAmount">Valor da Correção</Label>
+              <Label htmlFor="correctionAmount">Valor da correção (R$)</Label>
               <Input
                 id="correctionAmount"
                 type="number"
                 step="0.01"
                 value={correctionAmount}
                 onChange={(e) => setCorrectionAmount(e.target.value)}
-                placeholder="Use valor negativo para reduzir débito"
+                placeholder="Ex.: −50,00"
               />
-              <p className="text-xs text-gray-500">
-                Valores negativos reduzem o débito, positivos aumentam o saldo
+              <p className="text-xs text-ink-3">
+                Negativo reduz o que o cliente deve; positivo aumenta.
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="correctionReason">Motivo da Correção</Label>
+              <Label htmlFor="correctionReason">Motivo</Label>
               <Textarea
                 id="correctionReason"
                 value={correctionReason}
                 onChange={(e) => setCorrectionReason(e.target.value)}
-                placeholder="Descreva o motivo da correção..."
+                placeholder="O que estava errado e por quê"
                 rows={3}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="adminPassword">Senha de Administrador</Label>
+              <Label htmlFor="adminPassword">Senha do administrador</Label>
               <Input
                 id="adminPassword"
                 type="password"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Senha admin para confirmar"
+                autoComplete="off"
               />
             </div>
 
@@ -945,12 +990,12 @@ export default function ClientsPage() {
               <Button variant="outline" onClick={() => setDebtCorrectionDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 onClick={handleConfirmDebtCorrection}
                 disabled={!correctionAmount || !correctionReason.trim() || !adminPassword.trim()}
               >
-                Aplicar Correção
+                Aplicar correção
               </Button>
             </div>
           </div>

@@ -23,7 +23,7 @@ export function formatDate(date: Date): string {
 }
 
 export function formatPercentage(value: number): string {
-  return `${(value * 100).toFixed(1)}%`;
+  return `${(value * 100).toFixed(1).replace(".", ",")}%`;
 }
 
 export function generateSku(): string {

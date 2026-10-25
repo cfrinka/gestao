@@ -5,7 +5,7 @@ import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -30,7 +30,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { useAuth } from "@/contexts/auth-context";
-import { Eye, EyeOff, Plus, Settings, UserCog } from "lucide-react";
+import { Eye, EyeOff, Plus, UserCog } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
 
 interface User {
   id: string;
@@ -191,32 +192,32 @@ export default function UsersPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Usuários</h1>
-          <p className="text-gray-500">Gerencie os usuários do sistema</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div>
+      <PageHeader
+        title="Usuários"
+        meta={!loading ? <span><b className="font-semibold text-ink">{users.length}</b> com acesso ao sistema</span> : null}
+        actions={
+        <>
         <Button
           variant="outline"
+          size="sm"
           onClick={handleProvisionDemo}
           disabled={provisioningDemo}
           title="Cria ou redefine a conta teste@teste.com (Teste@123) como usuário demonstrativo"
         >
-          <UserCog className="h-4 w-4 mr-2" />
-          {provisioningDemo ? "Provisionando..." : "Provisionar Demo"}
+          <UserCog className="h-4 w-4" aria-hidden="true" />
+          {provisioningDemo ? "Preparando…" : "Preparar conta demo"}
         </Button>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Novo Usuário
+            <Button size="sm">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Novo usuário
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Novo Usuário</DialogTitle>
+              <DialogTitle>Novo usuário</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -231,7 +232,7 @@ export default function UsersPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">E-mail</Label>
                 <Input
                   id="email"
                   type="email"
@@ -257,7 +258,7 @@ export default function UsersPage() {
                   />
                   <button
                     type="button"
-                    className="absolute inset-y-0 right-0 px-3 text-gray-500 hover:text-gray-700"
+                    className="absolute inset-y-0 right-0 px-3 text-ink-2 hover:text-ink"
                     onClick={() => setShowPassword((current) => !current)}
                     aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
                   >
@@ -282,7 +283,7 @@ export default function UsersPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end gap-2 border-t border-rule pt-4">
                 <Button
                   type="button"
                   variant="outline"
@@ -293,50 +294,44 @@ export default function UsersPage() {
                 >
                   Cancelar
                 </Button>
-                <Button type="submit">Criar</Button>
+                <Button type="submit">Criar usuário</Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>
-        </div>
-      </div>
+        </>
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            Lista de Usuários
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="border border-rule bg-paper">
           {loading ? (
-            <p className="text-center py-4">Carregando...</p>
+            <div className="space-y-2 p-4" aria-hidden="true">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-10 animate-pulse bg-sub" />)}</div>
           ) : users.length === 0 ? (
-            <p className="text-center py-4 text-gray-500">
+            <p className="px-5 py-12 text-center text-sm text-ink-3">
               Nenhum usuário cadastrado
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Email</TableHead>
+                  <TableHead className="pl-4">Nome</TableHead>
+                  <TableHead>E-mail</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Função</TableHead>
                   <TableHead>Cadastrado em</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead className="pr-4 text-right"><span className="sr-only">Ações</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.map((user) => (
                   <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.name}</TableCell>
-                    <TableCell>{user.email}</TableCell>
+                    <TableCell className="pl-4 font-semibold">{user.name}</TableCell>
+                    <TableCell className="text-ink-2">{user.email}</TableCell>
                     <TableCell>
                       {user.isActive === false ? (
-                        <span className="text-xs font-medium text-red-600">Inativo</span>
+                        <Badge variant="destructive">Inativo</Badge>
                       ) : (
-                        <span className="text-xs font-medium text-green-600">Ativo</span>
+                        <Badge variant="positive">Ativo</Badge>
                       )}
                     </TableCell>
                     <TableCell>
@@ -359,7 +354,7 @@ export default function UsersPage() {
                     <TableCell>
                       {new Date(user.createdAt).toLocaleDateString("pt-BR")}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="whitespace-nowrap pr-4 text-right">
                       <Button
                         size="sm"
                         variant="outline"
@@ -372,12 +367,12 @@ export default function UsersPage() {
                         }
                         onClick={() => handleUpdateRole(user)}
                       >
-                        {updatingUserId === user.id ? "Salvando..." : "Salvar função"}
+                        {updatingUserId === user.id ? "Salvando…" : "Salvar função"}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="ml-2 border-red-300 text-red-700 hover:bg-red-50"
+                        className="ml-2 border-vermelho text-vermelho hover:bg-vermelho-tint"
                         disabled={
                           deletingUserId === user.id ||
                           updatingUserId === user.id ||
@@ -386,7 +381,7 @@ export default function UsersPage() {
                         }
                         onClick={() => handleDeactivateUser(user)}
                       >
-                        {deletingUserId === user.id ? "Desativando..." : "Desativar"}
+                        {deletingUserId === user.id ? "Desativando…" : "Desativar"}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -394,8 +389,7 @@ export default function UsersPage() {
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

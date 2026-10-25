@@ -9,7 +9,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Percent, TrendingUp, Users, Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
+import { PageHeader } from "@/components/layout/page-header";
+import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 
 interface CommissionMonth {
   month: string;
@@ -113,64 +115,46 @@ export default function CommissionPage() {
 
   if (loading) {
     return (
-      <div className="flex h-96 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+      <div>
+        <PageHeader title="Comissão" />
+        <div className="space-y-2" aria-hidden="true">
+          <div className="h-16 animate-pulse border border-rule bg-paper" />
+          <div className="h-64 animate-pulse border border-rule bg-paper" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Comissão</h1>
-          <p className="text-gray-500">Cálculo de comissão sobre vendas (3%)</p>
-        </div>
-        {commissionData?.isAdmin && (
-          <Button onClick={handleSync} disabled={syncing} variant="outline" className="gap-2">
-            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Sincronizar dados antigos
-          </Button>
-        )}
-      </div>
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Comissão"
+        meta={<span>3% sobre o valor vendido, por mês</span>}
+        actions={
+          commissionData?.isAdmin ? (
+            <Button onClick={handleSync} disabled={syncing} variant="outline" size="sm">
+              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Sincronizar dados antigos
+            </Button>
+          ) : null
+        }
+        className="mb-0 md:mb-0"
+      />
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total de Vendas</CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{formatCurrency(grandTotalSales)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total de Comissões</CardTitle>
-            <Percent className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{formatCurrency(grandTotalCommission)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Vendedores</CardTitle>
-            <Users className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-900">{commissionData?.data.length || 0}</div>
-          </CardContent>
-        </Card>
-      </div>
+      <TotalsStrip
+        items={[
+          { label: "Total vendido", value: formatCurrency(grandTotalSales) },
+          { label: "Comissões", value: formatCurrency(grandTotalCommission), tone: "positive" },
+          { label: "Vendedores", value: commissionData?.data.length || 0 },
+        ]}
+      />
 
       {/* Admin: tabs per user. Non-admin: single view */}
       {commissionData?.isAdmin ? (
         <Tabs value={selectedUserId} onValueChange={setSelectedUserId}>
-          <TabsList className="flex flex-wrap gap-1 h-auto">
+          <TabsList className="flex h-auto flex-wrap">
             {commissionData.data.map((user) => (
-              <TabsTrigger key={user.userId} value={user.userId} className="text-xs">
+              <TabsTrigger key={user.userId} value={user.userId} className="h-10">
                 {user.userName}
               </TabsTrigger>
             ))}
@@ -187,11 +171,9 @@ export default function CommissionPage() {
           {selectedUser ? (
             <UserCommissionTable user={selectedUser} />
           ) : (
-            <Card>
-              <CardContent className="py-8 text-center text-gray-500">
-                Nenhuma venda registrada para calcular comissão.
-              </CardContent>
-            </Card>
+            <p className="border border-rule bg-paper px-5 py-12 text-center text-sm text-ink-3">
+              Nenhuma venda registrada para calcular comissão.
+            </p>
           )}
         </div>
       )}
@@ -200,15 +182,15 @@ export default function CommissionPage() {
       {commissionData?.isAdmin && allMonths.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Visão Geral por Mês</CardTitle>
+            <CardTitle>Todos os vendedores, por mês</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Mês</TableHead>
-                  <TableHead className="text-right">Total Vendas</TableHead>
-                  <TableHead className="text-right">Total Comissão (3%)</TableHead>
+                  <TableHead className="text-right">Vendido</TableHead>
+                  <TableHead className="text-right">Comissão (3%)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -222,16 +204,16 @@ export default function CommissionPage() {
                     <TableRow key={month}>
                       <TableCell className="font-medium">{formatMonthLabel(month)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(monthTotalSales)}</TableCell>
-                      <TableCell className="text-right text-green-600 font-medium">
+                      <TableCell className="text-right text-verde font-medium">
                         {formatCurrency(monthTotalCommission)}
                       </TableCell>
                     </TableRow>
                   );
                 })}
-                <TableRow className="bg-gray-50 font-bold">
-                  <TableCell>Total Geral</TableCell>
+                <TableRow className="border-t-2 border-ink bg-sub font-bold hover:bg-sub">
+                  <TableCell>Total</TableCell>
                   <TableCell className="text-right">{formatCurrency(grandTotalSales)}</TableCell>
-                  <TableCell className="text-right text-green-700">
+                  <TableCell className="text-right text-verde">
                     {formatCurrency(grandTotalCommission)}
                   </TableCell>
                 </TableRow>
@@ -251,8 +233,8 @@ function UserCommissionTable({ user }: { user: UserCommission }) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>{user.userName}</CardTitle>
-            <p className="text-sm text-gray-500 mt-1">
-              Total vendido: {formatCurrency(user.totalSalesOverall)} | Comissão: {formatCurrency(user.totalCommission)}
+            <p className="text-sm text-ink-3 mt-1">
+              Vendeu {formatCurrency(user.totalSalesOverall)} · comissão {formatCurrency(user.totalCommission)}
             </p>
           </div>
           <Badge variant={user.role === "ADMIN" ? "default" : "secondary"}>
@@ -262,13 +244,13 @@ function UserCommissionTable({ user }: { user: UserCommission }) {
       </CardHeader>
       <CardContent>
         {user.months.length === 0 ? (
-          <p className="text-center text-gray-500 py-4">Nenhuma venda registrada.</p>
+          <p className="py-8 text-center text-sm text-ink-3">Nenhuma venda registrada.</p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Mês</TableHead>
-                <TableHead className="text-right">Vendas Brutas</TableHead>
+                <TableHead className="text-right">Vendido</TableHead>
                 <TableHead className="text-right">Comissão (3%)</TableHead>
               </TableRow>
             </TableHeader>
@@ -277,15 +259,15 @@ function UserCommissionTable({ user }: { user: UserCommission }) {
                 <TableRow key={month.month}>
                   <TableCell className="font-medium">{formatMonthLabel(month.month)}</TableCell>
                   <TableCell className="text-right">{formatCurrency(month.totalSales)}</TableCell>
-                  <TableCell className="text-right text-green-600 font-medium">
+                  <TableCell className="text-right text-verde font-medium">
                     {formatCurrency(month.commission)}
                   </TableCell>
                 </TableRow>
               ))}
-              <TableRow className="bg-gray-50 font-bold">
+              <TableRow className="border-t-2 border-ink bg-sub font-bold hover:bg-sub">
                 <TableCell>Total</TableCell>
                 <TableCell className="text-right">{formatCurrency(user.totalSalesOverall)}</TableCell>
-                <TableCell className="text-right text-green-700">
+                <TableCell className="text-right text-verde">
                   {formatCurrency(user.totalCommission)}
                 </TableCell>
               </TableRow>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,9 +16,11 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatPercentage } from "@/lib/utils";
 import { apiGet } from "@/lib/api-client";
-import { BarChart3, Download, FileText, Loader2 } from "lucide-react";
+import { AlertTriangle, Download, FileText, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { PageHeader } from "@/components/layout/page-header";
+import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 
 interface StoreReport {
   grossRevenue: number;
@@ -382,145 +384,364 @@ export default function ReportsPage() {
     doc.save(`relatorio-${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
+  const setPreset = (preset: "today" | "this_week" | "this_month" | "last_30" | "last_90" | "all") => {
+    const today = new Date();
+    const iso = (d: Date) => d.toISOString().split("T")[0];
+    if (preset === "all") {
+      setStartDate("");
+      setEndDate("");
+      return;
+    }
+    const start = new Date(today);
+    if (preset === "this_week") {
+      const dayOfWeek = today.getDay();
+      start.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+    } else if (preset === "this_month") {
+      start.setTime(new Date(today.getFullYear(), today.getMonth(), 1).getTime());
+    } else if (preset === "last_30") {
+      start.setDate(today.getDate() - 30);
+    } else if (preset === "last_90") {
+      start.setDate(today.getDate() - 90);
+    }
+    setStartDate(iso(start));
+    setEndDate(iso(today));
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Relatórios</h1>
-          <p className="text-gray-500">Análise financeira</p>
+    <div className="space-y-4 md:space-y-6">
+      <PageHeader
+        title="Relatórios"
+        meta={<span>Resultado, caixa, fiado e estoque do período</span>}
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={exportCSV}>
+              <Download className="h-4 w-4" aria-hidden="true" />
+              CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportPDF}>
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              PDF
+            </Button>
+          </>
+        }
+        className="mb-0 md:mb-0"
+      />
+
+      <div className="space-y-3">
+        <div className="-mx-3 flex gap-1.5 scroll-row overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" role="group" aria-label="Períodos rápidos">
+          {([
+            ["today", "Hoje"],
+            ["this_week", "Esta semana"],
+            ["this_month", "Este mês"],
+            ["last_30", "Últimos 30 dias"],
+            ["last_90", "Últimos 90 dias"],
+            ["all", "Todo o período"],
+          ] as const).map(([preset, label]) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => setPreset(preset)}
+              className="inline-flex h-9 flex-shrink-0 items-center border border-rule-strong bg-paper px-3 text-sm font-semibold text-ink transition-colors hover:border-ink"
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={exportCSV}>
-            <Download className="h-4 w-4 mr-2" />
-            CSV
-          </Button>
-          <Button variant="outline" onClick={exportPDF}>
-            <FileText className="h-4 w-4 mr-2" />
-            PDF
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label htmlFor="rep-start" className="text-xs">De</Label>
+            <Input id="rep-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-9 w-[160px]" />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="rep-end" className="text-xs">Até</Label>
+            <Input id="rep-end" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-9 w-[160px]" />
+          </div>
+          <Button size="sm" onClick={handleFilter} disabled={loading}>
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Aplicando…
+              </>
+            ) : (
+              "Aplicar período"
+            )}
           </Button>
         </div>
       </div>
 
+      <TotalsStrip
+        items={[
+          { label: "Receita", value: formatCurrency(totals.revenue) },
+          { label: "Lucro", value: formatCurrency(totals.profit), tone: "positive" },
+          { label: "Margem média", value: formatPercentage(totals.revenue > 0 ? totals.profit / totals.revenue : 0) },
+          { label: "Compras", value: formatCurrency(totals.stockPurchasesCost) },
+          { label: "Receita bruta", value: formatCurrency(totals.grossRevenue) },
+          { label: "Descontos", value: formatCurrency(totals.discounts), tone: "debt" },
+          { label: "Pedidos", value: report?.ordersCount || 0 },
+          { label: "Ticket médio", value: formatCurrency(report?.averageTicket || 0) },
+        ]}
+      />
+
       <Card>
         <CardHeader>
-          <CardTitle>Filtrar por Período</CardTitle>
+          <CardTitle>Resumo em tabela</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const today = new Date().toISOString().split("T")[0];
-                setStartDate(today);
-                setEndDate(today);
-              }}
-            >
-              Hoje
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const today = new Date();
-                const dayOfWeek = today.getDay();
-                const monday = new Date(today);
-                monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-                setStartDate(monday.toISOString().split("T")[0]);
-                setEndDate(today.toISOString().split("T")[0]);
-              }}
-            >
-              Esta Semana
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const today = new Date();
-                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-                setStartDate(firstDay.toISOString().split("T")[0]);
-                setEndDate(today.toISOString().split("T")[0]);
-              }}
-            >
-              Este Mês
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const today = new Date();
-                const last30 = new Date(today);
-                last30.setDate(today.getDate() - 30);
-                setStartDate(last30.toISOString().split("T")[0]);
-                setEndDate(today.toISOString().split("T")[0]);
-              }}
-            >
-              Últimos 30 dias
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const today = new Date();
-                const last90 = new Date(today);
-                last90.setDate(today.getDate() - 90);
-                setStartDate(last90.toISOString().split("T")[0]);
-                setEndDate(today.toISOString().split("T")[0]);
-              }}
-            >
-              Últimos 90 dias
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setStartDate("");
-                setEndDate("");
-              }}
-            >
-              Todo Período
-            </Button>
-          </div>
-          <div className="flex gap-4 items-end">
-            <div className="space-y-2">
-              <Label>Data Inicial</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Data Final</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
-            <Button onClick={handleFilter} disabled={loading}>
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Aplicando...
-                </>
-              ) : (
-                "Filtrar"
-              )}
-            </Button>
-          </div>
+        <CardContent>
           {loading ? (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Buscando dados com o filtro selecionado...
-            </div>
-          ) : null}
+            <div className="h-16 animate-pulse bg-sub" aria-hidden="true" />
+          ) : !report ? (
+            <p className="text-center py-4 text-ink-3">
+              Nenhum dado encontrado
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-right">Receita Bruta</TableHead>
+                  <TableHead className="text-right">Descontos</TableHead>
+                  <TableHead className="text-right">Receita</TableHead>
+                  <TableHead className="text-right">Custo</TableHead>
+                  <TableHead className="text-right">Lucro</TableHead>
+                  <TableHead className="text-right">Margem</TableHead>
+                  <TableHead className="text-right">Pedidos</TableHead>
+                  <TableHead className="text-right">Itens</TableHead>
+                  <TableHead className="text-right">Estoque (unidades)</TableHead>
+                  <TableHead className="text-right">Valor Estoque</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="text-right">{formatCurrency(report.grossRevenue)}</TableCell>
+                  <TableCell className="text-right text-vermelho">{formatCurrency(report.discounts)}</TableCell>
+                  <TableCell className="text-right">
+                    {formatCurrency(report.revenue)}
+                  </TableCell>
+                  <TableCell className="text-right text-vermelho">
+                    {formatCurrency(report.cost)}
+                  </TableCell>
+                  <TableCell className="text-right text-verde font-bold">
+                    {formatCurrency(report.profit)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {formatPercentage(report.profitMargin)}
+                  </TableCell>
+                  <TableCell className="text-right">{report.ordersCount}</TableCell>
+                  <TableCell className="text-right">{report.itemsSold}</TableCell>
+                  <TableCell className="text-right">{report.totalStock}</TableCell>
+                  <TableCell className="text-right">
+                    {formatCurrency(report.inventoryValue)}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Depuração das Fontes de Dados</CardTitle>
+          <CardTitle>Formas de pagamento</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!report ? (
+            <p className="text-ink-3 text-sm">Nenhum dado</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-right">Dinheiro</TableHead>
+                  <TableHead className="text-right">Diferença Troca</TableHead>
+                  <TableHead className="text-right">Débito</TableHead>
+                  <TableHead className="text-right">Crédito</TableHead>
+                  <TableHead className="text-right">PIX</TableHead>
+                  <TableHead className="text-right">Fiado</TableHead>
+                  <TableHead className="text-right">Fiado (Recebido)</TableHead>
+                  <TableHead className="text-right">Fiado (Em aberto)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="text-right">{formatCurrency(report.payments.cash)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.exchangeDifferenceIn || 0)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.debit)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.credit)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.pix)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.payLater)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.payLaterReceived || 0)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(report.payments.payLaterOutstanding || 0)}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Resultado do período</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Table>
+            <TableBody>
+              <TableRow><TableCell>Receita bruta</TableCell><TableCell className="text-right">{formatCurrency(report?.dre?.grossRevenue ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Descontos</TableCell><TableCell className="text-right text-vermelho">{formatCurrency(report?.dre?.discounts ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Receita líquida</TableCell><TableCell className="text-right">{formatCurrency(report?.dre?.netRevenue ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Custo das mercadorias vendidas</TableCell><TableCell className="text-right text-vermelho">{formatCurrency(report?.dre?.cogs ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Lucro bruto</TableCell><TableCell className="text-right font-semibold text-verde">{formatCurrency(report?.dre?.grossProfit ?? 0)}</TableCell></TableRow>
+              <TableRow><TableCell>Despesas operacionais</TableCell><TableCell className="text-right text-vermelho">{formatCurrency(report?.dre?.operatingExpenses ?? 0)}</TableCell></TableRow>
+              <TableRow className="border-t-2 border-ink font-bold hover:bg-transparent"><TableCell>Lucro líquido</TableCell><TableCell className="text-right font-bold">{formatCurrency(report?.dre?.netProfit ?? 0)}</TableCell></TableRow>
+            </TableBody>
+          </Table>
+          <p className="text-sm text-ink-2">{report?.insights?.dre}</p>
+          {(report?.alerts?.dre?.length || 0) > 0 && <p className="text-sm text-vermelho mt-2 flex items-start gap-1.5"><AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />{report?.alerts?.dre.join(" | ")}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Fluxo de caixa · real e projetado</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-x-8 md:grid-cols-2">
+          <div className="text-sm">
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Entradas (real)</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.cashFlow?.inflowsActual ?? 0)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Entradas por diferença de troca</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.payments?.exchangeDifferenceIn ?? 0)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Saídas (real)</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.cashFlow?.outflowsActual ?? 0)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Fluxo líquido (real)</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.cashFlow?.netCashFlowActual ?? 0)}</span></div>
+          </div>
+          <div className="text-sm">
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Entradas projetadas (30 dias)</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.cashFlow?.projectedInflows30 ?? 0)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Saídas projetadas (30 dias)</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.cashFlow?.projectedOutflows30 ?? 0)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Fluxo líquido projetado (30 dias)</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.cashFlow?.projectedNetCashFlow30 ?? 0)}</span></div>
+          </div>
+          <p className="text-sm text-ink-2 md:col-span-2">{report?.insights?.cashFlow}</p>
+          {(report?.alerts?.cashFlow?.length || 0) > 0 && <p className="text-sm text-vermelho md:col-span-2 mt-2 flex items-start gap-1.5"><AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />{report?.alerts?.cashFlow.join(" | ")}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Fiado em aberto por idade</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-x-8 text-sm md:grid-cols-2">
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Em aberto total</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.fiadoAging?.totalOutstanding ?? 0)}</span></div>
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Até 30 dias</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.fiadoAging?.buckets.current30 ?? 0)}</span></div>
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">31 a 60 dias</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.fiadoAging?.buckets.days31to60 ?? 0)}</span></div>
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">61 a 90 dias</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.fiadoAging?.buckets.days61to90 ?? 0)}</span></div>
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">90+ dias</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.fiadoAging?.buckets.days90plus ?? 0)}</span></div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle>Estoque e giro</CardTitle></CardHeader>
+          <CardContent className="text-sm">
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Cobertura de estoque (dias)</span><span className="text-right font-semibold tabular-nums">{(report?.inventory?.stockCoverageDays ?? 0).toFixed(1)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Giro</span><span className="text-right font-semibold tabular-nums">{(report?.inventory?.turnover ?? 0).toFixed(2)}x</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Produtos sem estoque</span><span className="text-right font-semibold tabular-nums">{report?.inventory?.outOfStockCount ?? 0}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Produtos com baixo estoque</span><span className="text-right font-semibold tabular-nums">{report?.inventory?.lowStockCount ?? 0}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Produtos sem giro</span><span className="text-right font-semibold tabular-nums">{report?.inventory?.deadStockCount ?? 0}</span></div>
+            <p className="mt-2 text-ink-2">{report?.insights?.inventory}</p>
+            {(report?.alerts?.inventory?.length || 0) > 0 && <p className="text-vermelho mt-2 flex items-start gap-1.5"><AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />{report?.alerts?.inventory.join(" | ")}</p>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Metas</CardTitle></CardHeader>
+          <CardContent className="text-sm">
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Meta Receita</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.goals?.targetRevenue ?? 0)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Atingimento Receita</span><span className="text-right font-semibold tabular-nums">{formatPercentage(report?.goals?.achievementRevenue ?? 0)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Meta Ticket Médio</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.goals?.targetAverageTicket ?? 0)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Atingimento Ticket</span><span className="text-right font-semibold tabular-nums">{formatPercentage(report?.goals?.achievementAverageTicket ?? 0)}</span></div>
+            <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Atingimento Margem</span><span className="text-right font-semibold tabular-nums">{formatPercentage(report?.goals?.achievementMargin ?? 0)}</span></div>
+            <p className="mt-2 text-ink-2">{report?.insights?.goals}</p>
+            {(report?.alerts?.goals?.length || 0) > 0 && <p className="text-vermelho mt-2 flex items-start gap-1.5"><AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />{report?.alerts?.goals.join(" | ")}</p>}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle>Produtos que mais lucram · top 10</CardTitle></CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produto</TableHead>
+                <TableHead>Código do produto</TableHead>
+                <TableHead className="text-right">Quantidade</TableHead>
+                <TableHead className="text-right">Receita</TableHead>
+                <TableHead className="text-right">Lucro</TableHead>
+                <TableHead className="text-right">Margem</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(report?.profitability?.topProfitProducts || []).map((p) => (
+                <TableRow key={p.productId}>
+                  <TableCell>{p.productName}</TableCell>
+                  <TableCell>{p.sku}</TableCell>
+                  <TableCell className="text-right">{p.qtySold}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(p.revenue)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(p.profit)}</TableCell>
+                  <TableCell className="text-right">{formatPercentage(p.margin)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <p className="text-sm text-ink-2 mt-3">{report?.insights?.profitability}</p>
+          {(report?.alerts?.profitability?.length || 0) > 0 && <p className="text-sm text-vermelho mt-2 flex items-start gap-1.5"><AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />{report?.alerts?.profitability.join(" | ")}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Promoções e descontos</CardTitle></CardHeader>
+        <CardContent className="text-sm">
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Descontos totais</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.promotions?.totalDiscounts ?? 0)}</span></div>
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Taxa de desconto</span><span className="text-right font-semibold tabular-nums">{formatPercentage(report?.promotions?.discountRate ?? 0)}</span></div>
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Pedidos com desconto</span><span className="text-right font-semibold tabular-nums">{report?.promotions?.ordersWithDiscount ?? 0}</span></div>
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">% pedidos com desconto</span><span className="text-right font-semibold tabular-nums">{formatPercentage(report?.promotions?.discountedOrdersRate ?? 0)}</span></div>
+          <div className="flex justify-between gap-4 border-b border-rule py-1.5 last:border-b-0"><span className="text-ink-2">Desconto médio por pedido com desconto</span><span className="text-right font-semibold tabular-nums">{formatCurrency(report?.promotions?.avgDiscountPerDiscountedOrder ?? 0)}</span></div>
+          <p className="mt-2 text-ink-2">{report?.insights?.promotions}</p>
+          {(report?.alerts?.promotions?.length || 0) > 0 && <p className="text-vermelho mt-2 flex items-start gap-1.5"><AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />{report?.alerts?.promotions.join(" | ")}</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Resultado mês a mês · fechado e aberto</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Mês</TableHead>
+                <TableHead>Fonte</TableHead>
+                <TableHead className="text-right">Receita</TableHead>
+                <TableHead className="text-right">CMV</TableHead>
+                <TableHead className="text-right">Lucro Bruto</TableHead>
+                <TableHead className="text-right">Despesas</TableHead>
+                <TableHead className="text-right">Resultado Líquido</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(report?.monthlyDre || []).map((row) => (
+                <TableRow key={row.month}>
+                  <TableCell>{row.month}</TableCell>
+                  <TableCell>{row.source === "closure" ? "Fechado" : "Aberto"}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(row.revenue)}</TableCell>
+                  <TableCell className="text-right text-vermelho">{formatCurrency(row.cogs)}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(row.grossProfit)}</TableCell>
+                  <TableCell className="text-right text-vermelho">{formatCurrency(row.expenses)}</TableCell>
+                  <TableCell className="text-right font-semibold">{formatCurrency(row.netResult)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Conferência das fontes de dados</CardTitle>
+          <CardDescription>Para conferir de onde vem cada número do mês.</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -558,340 +779,6 @@ export default function ReportsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>DRE Mensal (Fechamento vs Aberto)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Mês</TableHead>
-                <TableHead>Fonte</TableHead>
-                <TableHead className="text-right">Receita</TableHead>
-                <TableHead className="text-right">CMV</TableHead>
-                <TableHead className="text-right">Lucro Bruto</TableHead>
-                <TableHead className="text-right">Despesas</TableHead>
-                <TableHead className="text-right">Resultado Líquido</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(report?.monthlyDre || []).map((row) => (
-                <TableRow key={row.month}>
-                  <TableCell>{row.month}</TableCell>
-                  <TableCell>{row.source === "closure" ? "Fechado" : "Aberto"}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.revenue)}</TableCell>
-                  <TableCell className="text-right text-red-600">{formatCurrency(row.cogs)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.grossProfit)}</TableCell>
-                  <TableCell className="text-right text-red-600">{formatCurrency(row.expenses)}</TableCell>
-                  <TableCell className="text-right font-semibold">{formatCurrency(row.netResult)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Receita</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totals.revenue)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Compras p/ Estoque</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              {formatCurrency(totals.stockPurchasesCost)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Lucro Total</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {formatCurrency(totals.profit)}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Margem Média</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatPercentage(totals.revenue > 0 ? totals.profit / totals.revenue : 0)}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Receita Bruta</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totals.grossRevenue)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Descontos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{formatCurrency(totals.discounts)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Pedidos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{report?.ordersCount || 0}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Ticket Médio</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(report?.averageTicket || 0)}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
-            Relatório
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-center py-4">Carregando...</p>
-          ) : !report ? (
-            <p className="text-center py-4 text-gray-500">
-              Nenhum dado encontrado
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">Receita Bruta</TableHead>
-                  <TableHead className="text-right">Descontos</TableHead>
-                  <TableHead className="text-right">Receita</TableHead>
-                  <TableHead className="text-right">Custo</TableHead>
-                  <TableHead className="text-right">Lucro</TableHead>
-                  <TableHead className="text-right">Margem</TableHead>
-                  <TableHead className="text-right">Pedidos</TableHead>
-                  <TableHead className="text-right">Itens</TableHead>
-                  <TableHead className="text-right">Estoque (unidades)</TableHead>
-                  <TableHead className="text-right">Valor Estoque</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell className="text-right">{formatCurrency(report.grossRevenue)}</TableCell>
-                  <TableCell className="text-right text-red-600">{formatCurrency(report.discounts)}</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(report.revenue)}
-                  </TableCell>
-                  <TableCell className="text-right text-red-600">
-                    {formatCurrency(report.cost)}
-                  </TableCell>
-                  <TableCell className="text-right text-green-600 font-bold">
-                    {formatCurrency(report.profit)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatPercentage(report.profitMargin)}
-                  </TableCell>
-                  <TableCell className="text-right">{report.ordersCount}</TableCell>
-                  <TableCell className="text-right">{report.itemsSold}</TableCell>
-                  <TableCell className="text-right">{report.totalStock}</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(report.inventoryValue)}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Pagamentos</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!report ? (
-            <p className="text-gray-500 text-sm">Nenhum dado</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">Dinheiro</TableHead>
-                  <TableHead className="text-right">Diferença Troca</TableHead>
-                  <TableHead className="text-right">Débito</TableHead>
-                  <TableHead className="text-right">Crédito</TableHead>
-                  <TableHead className="text-right">Pix</TableHead>
-                  <TableHead className="text-right">Fiado</TableHead>
-                  <TableHead className="text-right">Fiado (Recebido)</TableHead>
-                  <TableHead className="text-right">Fiado (Em aberto)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell className="text-right">{formatCurrency(report.payments.cash)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(report.payments.exchangeDifferenceIn || 0)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(report.payments.debit)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(report.payments.credit)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(report.payments.pix)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(report.payments.payLater)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(report.payments.payLaterReceived || 0)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(report.payments.payLaterOutstanding || 0)}</TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Demonstrativo de Resultado Gerencial</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Table>
-            <TableBody>
-              <TableRow><TableCell>Receita Bruta</TableCell><TableCell className="text-right">{formatCurrency(report?.dre?.grossRevenue ?? 0)}</TableCell></TableRow>
-              <TableRow><TableCell>Descontos</TableCell><TableCell className="text-right text-red-600">{formatCurrency(report?.dre?.discounts ?? 0)}</TableCell></TableRow>
-              <TableRow><TableCell>Receita Líquida</TableCell><TableCell className="text-right">{formatCurrency(report?.dre?.netRevenue ?? 0)}</TableCell></TableRow>
-              <TableRow><TableCell>Custo das mercadorias vendidas</TableCell><TableCell className="text-right text-red-600">{formatCurrency(report?.dre?.cogs ?? 0)}</TableCell></TableRow>
-              <TableRow><TableCell>Lucro Bruto</TableCell><TableCell className="text-right font-semibold text-green-600">{formatCurrency(report?.dre?.grossProfit ?? 0)}</TableCell></TableRow>
-              <TableRow><TableCell>Despesas Operacionais</TableCell><TableCell className="text-right text-red-600">{formatCurrency(report?.dre?.operatingExpenses ?? 0)}</TableCell></TableRow>
-              <TableRow><TableCell>Lucro Líquido</TableCell><TableCell className="text-right font-bold">{formatCurrency(report?.dre?.netProfit ?? 0)}</TableCell></TableRow>
-            </TableBody>
-          </Table>
-          <p className="text-sm text-gray-600">{report?.insights?.dre}</p>
-          {(report?.alerts?.dre?.length || 0) > 0 && <p className="text-sm text-red-600">⚠ {report?.alerts?.dre.join(" | ")}</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Fluxo de Caixa (Real e Projetado)</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-1 text-sm">
-            <p><span className="font-medium">Entradas (real):</span> {formatCurrency(report?.cashFlow?.inflowsActual ?? 0)}</p>
-            <p><span className="font-medium">Entradas por diferença de troca:</span> {formatCurrency(report?.payments?.exchangeDifferenceIn ?? 0)}</p>
-            <p><span className="font-medium">Saídas (real):</span> {formatCurrency(report?.cashFlow?.outflowsActual ?? 0)}</p>
-            <p><span className="font-medium">Fluxo líquido (real):</span> {formatCurrency(report?.cashFlow?.netCashFlowActual ?? 0)}</p>
-          </div>
-          <div className="space-y-1 text-sm">
-            <p><span className="font-medium">Entradas projetadas (30 dias):</span> {formatCurrency(report?.cashFlow?.projectedInflows30 ?? 0)}</p>
-            <p><span className="font-medium">Saídas projetadas (30 dias):</span> {formatCurrency(report?.cashFlow?.projectedOutflows30 ?? 0)}</p>
-            <p><span className="font-medium">Fluxo líquido projetado (30 dias):</span> {formatCurrency(report?.cashFlow?.projectedNetCashFlow30 ?? 0)}</p>
-          </div>
-          <p className="text-sm text-gray-600 md:col-span-2">{report?.insights?.cashFlow}</p>
-          {(report?.alerts?.cashFlow?.length || 0) > 0 && <p className="text-sm text-red-600 md:col-span-2">⚠ {report?.alerts?.cashFlow.join(" | ")}</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Envelhecimento do Fiado</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-2 md:grid-cols-2 text-sm">
-          <p><span className="font-medium">Em aberto total:</span> {formatCurrency(report?.fiadoAging?.totalOutstanding ?? 0)}</p>
-          <p><span className="font-medium">Até 30 dias:</span> {formatCurrency(report?.fiadoAging?.buckets.current30 ?? 0)}</p>
-          <p><span className="font-medium">31 a 60 dias:</span> {formatCurrency(report?.fiadoAging?.buckets.days31to60 ?? 0)}</p>
-          <p><span className="font-medium">61 a 90 dias:</span> {formatCurrency(report?.fiadoAging?.buckets.days61to90 ?? 0)}</p>
-          <p><span className="font-medium">90+ dias:</span> {formatCurrency(report?.fiadoAging?.buckets.days90plus ?? 0)}</p>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader><CardTitle>Estoque e Giro</CardTitle></CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            <p><span className="font-medium">Cobertura de estoque (dias):</span> {(report?.inventory?.stockCoverageDays ?? 0).toFixed(1)}</p>
-            <p><span className="font-medium">Giro:</span> {(report?.inventory?.turnover ?? 0).toFixed(2)}x</p>
-            <p><span className="font-medium">Produtos sem estoque:</span> {report?.inventory?.outOfStockCount ?? 0}</p>
-            <p><span className="font-medium">Produtos com baixo estoque:</span> {report?.inventory?.lowStockCount ?? 0}</p>
-            <p><span className="font-medium">Produtos sem giro:</span> {report?.inventory?.deadStockCount ?? 0}</p>
-            <p className="text-gray-600">{report?.insights?.inventory}</p>
-            {(report?.alerts?.inventory?.length || 0) > 0 && <p className="text-red-600">⚠ {report?.alerts?.inventory.join(" | ")}</p>}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader><CardTitle>Metas e Performance</CardTitle></CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            <p><span className="font-medium">Meta Receita:</span> {formatCurrency(report?.goals?.targetRevenue ?? 0)}</p>
-            <p><span className="font-medium">Atingimento Receita:</span> {formatPercentage(report?.goals?.achievementRevenue ?? 0)}</p>
-            <p><span className="font-medium">Meta Ticket Médio:</span> {formatCurrency(report?.goals?.targetAverageTicket ?? 0)}</p>
-            <p><span className="font-medium">Atingimento Ticket:</span> {formatPercentage(report?.goals?.achievementAverageTicket ?? 0)}</p>
-            <p><span className="font-medium">Atingimento Margem:</span> {formatPercentage(report?.goals?.achievementMargin ?? 0)}</p>
-            <p className="text-gray-600">{report?.insights?.goals}</p>
-            {(report?.alerts?.goals?.length || 0) > 0 && <p className="text-red-600">⚠ {report?.alerts?.goals.join(" | ")}</p>}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader><CardTitle>Rentabilidade por Produto (Top 10)</CardTitle></CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Produto</TableHead>
-                <TableHead>Código do produto</TableHead>
-                <TableHead className="text-right">Quantidade</TableHead>
-                <TableHead className="text-right">Receita</TableHead>
-                <TableHead className="text-right">Lucro</TableHead>
-                <TableHead className="text-right">Margem</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(report?.profitability?.topProfitProducts || []).map((p) => (
-                <TableRow key={p.productId}>
-                  <TableCell>{p.productName}</TableCell>
-                  <TableCell>{p.sku}</TableCell>
-                  <TableCell className="text-right">{p.qtySold}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(p.revenue)}</TableCell>
-                  <TableCell className="text-right">{formatCurrency(p.profit)}</TableCell>
-                  <TableCell className="text-right">{formatPercentage(p.margin)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          <p className="text-sm text-gray-600 mt-3">{report?.insights?.profitability}</p>
-          {(report?.alerts?.profitability?.length || 0) > 0 && <p className="text-sm text-red-600">⚠ {report?.alerts?.profitability.join(" | ")}</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Promoções e Descontos</CardTitle></CardHeader>
-        <CardContent className="space-y-1 text-sm">
-          <p><span className="font-medium">Descontos totais:</span> {formatCurrency(report?.promotions?.totalDiscounts ?? 0)}</p>
-          <p><span className="font-medium">Taxa de desconto:</span> {formatPercentage(report?.promotions?.discountRate ?? 0)}</p>
-          <p><span className="font-medium">Pedidos com desconto:</span> {report?.promotions?.ordersWithDiscount ?? 0}</p>
-          <p><span className="font-medium">% pedidos com desconto:</span> {formatPercentage(report?.promotions?.discountedOrdersRate ?? 0)}</p>
-          <p><span className="font-medium">Desconto médio por pedido com desconto:</span> {formatCurrency(report?.promotions?.avgDiscountPerDiscountedOrder ?? 0)}</p>
-          <p className="text-gray-600">{report?.insights?.promotions}</p>
-          {(report?.alerts?.promotions?.length || 0) > 0 && <p className="text-red-600">⚠ {report?.alerts?.promotions.join(" | ")}</p>}
-        </CardContent>
-      </Card>
     </div>
   );
 }
