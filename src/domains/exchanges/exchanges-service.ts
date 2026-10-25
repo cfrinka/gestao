@@ -47,6 +47,7 @@ export class ExchangesService {
     const estimatedGrossDifference = Math.max(0, estimatedOut - estimatedIn);
 
     const requestedDiscountAmount = roundMoney(Number(command.discountAmount || 0));
+    const refundMode = command.refundMode === "cash" || command.refundMode === "none" ? command.refundMode : undefined;
 
     // Hash what was asked for: a grant consumed by the first attempt must not make a retry of
     // the same exchange look like a different request.
@@ -55,6 +56,7 @@ export class ExchangesService {
       notes: command.notes || "",
       paymentMethod: command.paymentMethod || "",
       discountAmount: requestedDiscountAmount,
+      refundMode: refundMode || "",
       items: command.items,
       userId: command.userId,
     });
@@ -99,6 +101,7 @@ export class ExchangesService {
         notes: command.notes,
         paymentMethod: command.paymentMethod,
         discountAmount: allowedDiscountAmount,
+        refundMode,
         items: command.items,
         cashRegisterId: openRegisterId,
         createdById: command.userId,

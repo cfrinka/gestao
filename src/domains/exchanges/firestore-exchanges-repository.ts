@@ -5,7 +5,7 @@ import { createExchange, getExchanges } from "@/domains/exchanges/exchanges-db";
 import { consumeDiscountAuthorization } from "@/lib/discount-authorization";
 import { markIdempotencyCompleted, markIdempotencyFailed, reserveIdempotency } from "@/domains/shared/idempotency";
 import type { ExchangesRepository } from "@/domains/exchanges/repository";
-import type { ExchangeItemCommand, ExchangePaymentMethod, IdempotencyReservation } from "@/domains/exchanges/types";
+import type { ExchangeItemCommand, ExchangePaymentMethod, ExchangeRefundMode, IdempotencyReservation } from "@/domains/exchanges/types";
 
 const SCOPE = "exchange";
 
@@ -65,6 +65,7 @@ export class FirestoreExchangesRepository implements ExchangesRepository {
     notes?: string;
     paymentMethod?: ExchangePaymentMethod;
     discountAmount?: number;
+    refundMode?: ExchangeRefundMode;
     items: ExchangeItemCommand[];
     cashRegisterId?: string;
     createdById: string;
@@ -77,6 +78,7 @@ export class FirestoreExchangesRepository implements ExchangesRepository {
       notes: input.notes,
       paymentMethod: input.paymentMethod,
       discountAmount: input.discountAmount,
+      refundMode: input.refundMode,
       items: input.items,
       cashRegisterId: input.cashRegisterId,
       createdById: input.createdById,

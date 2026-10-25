@@ -1,5 +1,5 @@
 import type { ExchangeRecord } from "@/lib/db-types";
-import type { ExchangeItemCommand, ExchangePaymentMethod, IdempotencyReservation } from "@/domains/exchanges/types";
+import type { ExchangeItemCommand, ExchangePaymentMethod, ExchangeRefundMode, IdempotencyReservation } from "@/domains/exchanges/types";
 
 export interface ExchangesRepository {
   listExchanges(input: { limit: number; startDate?: Date; endDate?: Date }): Promise<ExchangeRecord[]>;
@@ -28,6 +28,7 @@ export interface ExchangesRepository {
     notes?: string;
     paymentMethod?: ExchangePaymentMethod;
     discountAmount?: number;
+    refundMode?: ExchangeRefundMode;
     items: ExchangeItemCommand[];
     cashRegisterId?: string;
     createdById: string;

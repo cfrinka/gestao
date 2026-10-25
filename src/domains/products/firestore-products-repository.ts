@@ -9,7 +9,12 @@ import {
 } from "@/domains/products/products-db";
 import { markIdempotencyCompleted, markIdempotencyFailed, reserveIdempotency } from "@/domains/shared/idempotency";
 import type { ProductsRepository } from "@/domains/products/repository";
-import type { IdempotencyReservation, ProductCreateInput, ProductUpdateInput } from "@/domains/products/types";
+import type {
+  IdempotencyReservation,
+  ProductCreateInput,
+  ProductStockEditOptions,
+  ProductUpdateInput,
+} from "@/domains/products/types";
 import type { Product, StockPurchaseEntry } from "@/lib/db-types";
 
 const SCOPE = "products-stock-purchase";
@@ -31,8 +36,8 @@ export class FirestoreProductsRepository implements ProductsRepository {
     return createProduct(data);
   }
 
-  async updateProduct(id: string, data: ProductUpdateInput): Promise<Product> {
-    return updateProduct(id, data);
+  async updateProduct(id: string, data: ProductUpdateInput, stockEdit?: ProductStockEditOptions): Promise<Product> {
+    return updateProduct(id, data, stockEdit);
   }
 
   async deleteProduct(id: string): Promise<void> {

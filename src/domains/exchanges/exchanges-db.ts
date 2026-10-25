@@ -18,6 +18,7 @@ export async function createExchange(input: {
   notes?: string;
   paymentMethod?: FinancialMovementPaymentMethod;
   discountAmount?: number;
+  refundMode?: "cash" | "none";
   items: ExchangeItemInput[];
   cashRegisterId?: string;
   createdById: string;
@@ -178,6 +179,34 @@ export async function createExchange(input: {
       throw new HttpError(400, "Selecione a forma de pagamento da diferença da troca");
     }
 
+    // Money in the customer's favour either leaves the drawer (and must be counted out of it, or
+    // the closing shows it as missing) or stays with the store. The cashier has to say which.
+    const refundAmount = roundMoney(Math.max(0, -difference));
+    const refundMode = refundAmount > 0 ? input.refundMode : undefined;
+    if (refundAmount > 0 && refundMode !== "cash" && refundMode !== "none") {
+      throw new HttpError(400, "Informe se a diferença a favor do cliente foi devolvida em dinheiro.");
+    }
+    if (refundMode === "cash") {
+      if (!registerRef || !registerSnap) {
+        throw new HttpError(409, "Abra o caixa para devolver dinheiro na troca.");
+      }
+      const register = registerSnap.data() as {
+        openingBalance?: number;
+        totalCash?: number;
+        totalCashSupply?: number;
+        totalCashWithdrawal?: number;
+      };
+      const availableCash = roundMoney(
+        Number(register.openingBalance || 0) +
+          Number(register.totalCash || 0) +
+          Number(register.totalCashSupply || 0) -
+          Number(register.totalCashWithdrawal || 0)
+      );
+      if (refundAmount > availableCash) {
+        throw new HttpError(400, "Não há dinheiro suficiente no caixa para essa devolução.");
+      }
+    }
+
     tx.set(exchangeRef, {
       documentNumber,
       customerName: (input.customerName || "").trim(),
@@ -189,10 +218,29 @@ export async function createExchange(input: {
       discountAmount,
       difference,
       cashInAmount,
+      ...(refundMode ? { refundMode, refundAmount } : {}),
       createdById: input.createdById,
       createdByName: input.createdByName,
       createdAt: nowTs,
     });
+
+    if (refundMode === "cash" && registerRef) {
+      tx.update(registerRef, {
+        totalCash: FieldValue.increment(-refundAmount),
+        totalExchangeRefundOut: FieldValue.increment(refundAmount),
+      });
+
+      tx.set(adminDb.collection("financialMovements").doc(), {
+        type: "EXCHANGE_REFUND",
+        direction: "OUT",
+        amount: refundAmount,
+        paymentMethod: "cash",
+        relatedEntity: { kind: "exchange", id: exchangeRef.id },
+        occurredAt: nowTs,
+        competencyMonth,
+        createdBy: input.createdById,
+      });
+    }
 
     if (registerRef && cashInAmount > 0) {
       const registerUpdates: Record<string, FirebaseFirestore.FieldValue> = {
@@ -234,6 +282,7 @@ export async function createExchange(input: {
       discountAmount,
       difference,
       cashInAmount,
+      ...(refundMode ? { refundMode, refundAmount } : {}),
       createdById: input.createdById,
       createdByName: input.createdByName,
       createdAt: now,

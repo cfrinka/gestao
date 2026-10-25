@@ -78,6 +78,7 @@ export default function ExchangesPage() {
   const [differencePaymentMethod, setDifferencePaymentMethod] = useState<ExchangePaymentMethod | "">("")
   const [addingToRegister, setAddingToRegister] = useState<string | null>(null);
   const [adminPassword, setAdminPassword] = useState("");
+  const [refundMode, setRefundMode] = useState<"" | "cash" | "none">("");
   // Same retry rule as the POS: an unchanged exchange resent after a dropped response reuses its key.
   const exchangeAttempt = useRef<{ key: string; signature: string } | null>(null);
 
@@ -236,6 +237,15 @@ export default function ExchangesPage() {
       return;
     }
 
+    if (totalDifference < 0 && !refundMode) {
+      toast({
+        title: "Diferença a favor do cliente",
+        description: "Informe se o valor foi devolvido em dinheiro ou não.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (needsAdminForDiscount && !adminPassword.trim()) {
       toast({
         title: "Senha do administrador",
@@ -256,6 +266,7 @@ export default function ExchangesPage() {
         notes,
         discountAmount: appliedDiscountAmount,
         paymentMethod: totalDifference > 0 ? differencePaymentMethod : undefined,
+        refundMode: totalDifference < 0 ? refundMode : undefined,
         items: cart.map((item) => ({
           productId: item.product.id,
           size: item.size,
@@ -271,6 +282,7 @@ export default function ExchangesPage() {
       await apiPost("/api/exchanges", { ...exchangePayload, idempotencyKey: exchangeAttempt.current.key });
       exchangeAttempt.current = null;
       setAdminPassword("");
+      setRefundMode("");
 
       toast({ title: "Troca registrada com sucesso" });
       setCustomerName("");
@@ -587,6 +599,34 @@ export default function ExchangesPage() {
                     </span>
                     <PriceTag value={Math.abs(totalDifference)} className="text-[44px]" />
                   </div>
+
+                  {totalDifference < 0 && (
+                    <fieldset className="mt-2 space-y-1.5">
+                      <legend className="text-sm font-medium text-ink">O valor a favor do cliente foi…</legend>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          ["cash", "Devolvido em dinheiro"],
+                          ["none", "Não devolvido"],
+                        ] as const).map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            aria-pressed={refundMode === value}
+                            onClick={() => setRefundMode(value)}
+                            className={cn(
+                              "h-10 border-[1.5px] px-3 text-sm font-semibold transition-colors",
+                              refundMode === value ? "border-ink bg-ink text-white" : "border-rule-strong bg-paper text-ink hover:border-ink"
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {refundMode === "cash" ? (
+                        <p className="text-xs text-ink-3">Sai do dinheiro do caixa e entra no fechamento.</p>
+                      ) : null}
+                    </fieldset>
+                  )}
 
                   {totalDifference > 0 && (
                     <div className="mt-2 space-y-1.5">

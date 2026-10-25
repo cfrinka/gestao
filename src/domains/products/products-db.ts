@@ -1,7 +1,8 @@
 import { Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
 import type { Product, StockPurchaseEntry } from "@/lib/db-types";
-import type { ProductCreateInput, ProductUpdateInput } from "@/domains/products/types";
+import type { ProductCreateInput, ProductStockEditOptions, ProductUpdateInput } from "@/domains/products/types";
+import { applyStockEdit } from "@/domains/products/stock-edit";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 import { toCompetencyMonth } from "@/lib/dates";
@@ -76,7 +77,11 @@ export async function createProduct(data: ProductCreateInput): Promise<Product> 
   return { id: productRef.id, ...data, createdAt: now, updatedAt: now };
 }
 
-export async function updateProduct(id: string, data: ProductUpdateInput): Promise<Product> {
+export async function updateProduct(
+  id: string,
+  data: ProductUpdateInput,
+  stockEdit?: ProductStockEditOptions
+): Promise<Product> {
   const productRef = adminDb.collection("products").doc(id);
   const now = new Date();
   const nowTs = Timestamp.fromDate(now);
@@ -106,7 +111,41 @@ export async function updateProduct(id: string, data: ProductUpdateInput): Promi
       }
     }
 
-    tx.update(productRef, { ...sanitizedData, updatedAt: nowTs });
+    if (stockEdit) {
+      // The form's stock is applied as a difference over the stock as it is right now, inside
+      // this transaction — a sale made while the form was open stays sold.
+      const current = snap.data() as { name?: string; sku?: string; stock?: number; sizes?: Array<{ size: string; stock: number }> };
+      const applied = applyStockEdit(
+        { stock: Number(current.stock || 0), sizes: Array.isArray(current.sizes) ? current.sizes : [] },
+        stockEdit.edit
+      );
+      const { stock: _ignoredStock, sizes: _ignoredSizes, ...rest } = sanitizedData;
+      tx.update(productRef, {
+        ...rest,
+        stock: applied.stock,
+        ...(applied.sizes ? { sizes: applied.sizes } : {}),
+        updatedAt: nowTs,
+      });
+
+      const previousStock = Number(current.stock || 0);
+      if (stockEdit.recordCorrection && applied.stock !== previousStock) {
+        tx.set(adminDb.collection("stockAdjustments").doc(), {
+          productId: id,
+          productName: String(data.name || current.name || ""),
+          sku: String(data.sku || current.sku || ""),
+          previousStock,
+          nextStock: applied.stock,
+          delta: applied.stock - previousStock,
+          sizeAdjustments: applied.changes.filter((change) => change.size),
+          reason: "Correção no cadastro do produto",
+          createdById: stockEdit.actorId,
+          createdByName: stockEdit.actorName,
+          createdAt: nowTs,
+        });
+      }
+    } else {
+      tx.update(productRef, { ...sanitizedData, updatedAt: nowTs });
+    }
 
     if (nextSkuRef) {
       tx.create(nextSkuRef, { productId: id, sku: data.sku });

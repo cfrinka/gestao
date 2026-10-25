@@ -166,6 +166,9 @@ export interface ExchangeRecord {
   discountAmount: number;
   difference: number;
   cashInAmount?: number;
+  /** Money in the customer's favour: "cash" when it was handed back from the register. */
+  refundMode?: "cash" | "none";
+  refundAmount?: number;
   addedToCashRegisterSales?: boolean;
   addedToCashRegisterSalesAt?: Date;
   createdById: string;
@@ -227,6 +230,8 @@ export interface CashRegister {
   totalCashWithdrawal: number;
   salesCount: number;
   totalExchangeDifferenceIn: number;
+  /** Cash handed back to customers on exchanges (already taken out of totalCash). */
+  totalExchangeRefundOut?: number;
   exchangeDifferenceCount: number;
 }
 

@@ -499,29 +499,68 @@ export async function removeFiadoOrderItem(
       throw new HttpError(400, "Este item não pertence a esta venda");
     }
 
+    if (order.isCancelled === true) {
+      throw new HttpError(409, "Esta venda já foi cancelada");
+    }
+
     const productRef = adminDb.collection("products").doc(orderItem.productId);
     const productSnap = await tx.get(productRef);
 
-    const removedRevenue = Number(orderItem.totalRevenue || orderItem.unitPrice * orderItem.quantity || 0);
-    const removedCost = Number(orderItem.totalCost || orderItem.unitCost * orderItem.quantity || 0);
+    // Removing an item changes the sale's revenue and cost, so a closed month stays closed here too.
+    const orderCreatedAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
+    const orderMonth = toCompetencyMonth(orderCreatedAt);
+    const closureSnap = await tx.get(adminDb.collection("financialClosures").doc(orderMonth));
+    if (closureSnap.exists) {
+      throw closedMonthError(orderMonth);
+    }
 
-    const currentPaid = typeof order.amountPaid === "number" ? order.amountPaid : order.paidAt ? order.totalAmount : 0;
-    const currentRemaining =
-      typeof order.remainingAmount === "number" ? order.remainingAmount : order.paidAt ? 0 : order.totalAmount;
-    const currentSubtotal =
-      typeof order.subtotal === "number" ? order.subtotal : order.totalAmount + Number(order.discount || 0);
-    const currentCogs = Number(order.cogsTotal || 0);
+    const [saleMovementSnap, cogsMovementSnap] = await Promise.all([
+      tx.get(
+        adminDb
+          .collection("financialMovements")
+          .where("type", "==", "SALE_REVENUE")
+          .where("relatedEntity.id", "==", orderId)
+          .limit(1)
+      ),
+      tx.get(
+        adminDb
+          .collection("financialMovements")
+          .where("type", "==", "COGS")
+          .where("relatedEntity.id", "==", orderId)
+          .limit(1)
+      ),
+    ]);
 
-    const nextSubtotal = Math.max(0, currentSubtotal - removedRevenue);
-    const nextTotal = Math.max(0, Number(order.totalAmount || 0) - removedRevenue);
-    const nextCogs = Math.max(0, currentCogs - removedCost);
-    const nextPaid = Math.min(currentPaid, nextTotal);
-    const nextRemaining = Math.max(0, nextTotal - nextPaid);
-    const clientBalanceDelta = nextRemaining - currentRemaining;
+    const removedRevenue = roundMoney(Number(orderItem.totalRevenue || orderItem.unitPrice * orderItem.quantity || 0));
+    const removedCost = roundMoney(Number(orderItem.totalCost || orderItem.unitCost * orderItem.quantity || 0));
+
+    const currentTotal = roundMoney(Number(order.totalAmount || 0));
+    const currentPaid = roundMoney(typeof order.amountPaid === "number" ? order.amountPaid : order.paidAt ? currentTotal : 0);
+    const currentSubtotal = roundMoney(
+      typeof order.subtotal === "number" ? order.subtotal : currentTotal + Number(order.discount || 0)
+    );
+    const currentCogs = roundMoney(Number(order.cogsTotal || 0));
+
+    // The item leaves at the price it was actually sold for: the sale's discount (e.g. the
+    // progressive 3-for discount) is shared across its items, so removing one takes back only
+    // its share of the total, not its full shelf price.
+    const netShare = currentSubtotal > 0 ? currentTotal / currentSubtotal : 1;
+    const removedNet = roundMoney(Math.min(currentTotal, removedRevenue * netShare));
+
+    const nextSubtotal = roundMoney(Math.max(0, currentSubtotal - removedRevenue));
+    const nextTotal = roundMoney(Math.max(0, currentTotal - removedNet));
+    const nextDiscount = roundMoney(Math.max(0, nextSubtotal - nextTotal));
+    const nextCogs = roundMoney(Math.max(0, currentCogs - removedCost));
+    const nextPaid = roundMoney(Math.min(currentPaid, nextTotal));
+    const nextRemaining = roundMoney(Math.max(0, nextTotal - nextPaid));
+    // The client now owes `removedNet` less in total: off what was still open, and anything
+    // already paid beyond the new total becomes credit (a negative balance).
+    const clientBalanceDelta = -removedNet;
     const nowTs = Timestamp.fromDate(new Date());
 
     tx.update(orderRef, {
       subtotal: nextSubtotal,
+      discount: nextDiscount,
       totalAmount: nextTotal,
       cogsTotal: nextCogs,
       amountPaid: nextPaid,
@@ -533,6 +572,20 @@ export async function removeFiadoOrderItem(
       balance: FieldValue.increment(clientBalanceDelta),
       updatedAt: nowTs,
     });
+
+    const saleMovement = saleMovementSnap.docs[0];
+    if (saleMovement && removedNet > 0) {
+      tx.update(saleMovement.ref, {
+        amount: FieldValue.increment(-removedNet),
+        "metadata.subtotal": nextSubtotal,
+        "metadata.discount": nextDiscount,
+        "metadata.removedItemsAmount": FieldValue.increment(removedNet),
+      });
+    }
+    const cogsMovement = cogsMovementSnap.docs[0];
+    if (cogsMovement && removedCost > 0) {
+      tx.update(cogsMovement.ref, { amount: FieldValue.increment(-removedCost) });
+    }
 
     if (productSnap.exists) {
       const productData = productSnap.data() as {

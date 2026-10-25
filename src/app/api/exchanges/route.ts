@@ -20,6 +20,7 @@ interface CreateExchangeBody {
   notes?: string;
   paymentMethod?: "cash" | "pix" | "credit" | "debit";
   discountAmount?: number;
+  refundMode?: "cash" | "none";
   items: ExchangeItemBody[];
   idempotencyKey?: string;
 }
@@ -90,6 +91,7 @@ export async function POST(request: NextRequest) {
         notes: body.notes,
         paymentMethod: body.paymentMethod,
         discountAmount: body.discountAmount,
+        refundMode: body.refundMode,
         items: body.items,
         idempotencyKey: body.idempotencyKey || "",
       });

@@ -186,6 +186,7 @@ describe("ExchangesService", () => {
       notes: "",
       paymentMethod: command.paymentMethod,
       discountAmount: 0,
+      refundMode: "",
       items: command.items,
       userId: command.userId,
     });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -151,11 +151,19 @@ export default function ProductsPage() {
     fetchProducts();
   }, [fetchProducts]);
 
+  // The stock the edit form opened with. Saving sends it along so the server applies only what
+  // was changed here — a sale made while the form was open is not put back into stock.
+  const editBaseStock = useRef<{ baseStock: number; baseSizes: { size: string; stock: number }[] } | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
-      const payload = { ...formData, idempotencyKey: crypto.randomUUID() };
+      const payload = {
+        ...formData,
+        ...(editingProduct && editBaseStock.current ? editBaseStock.current : {}),
+        idempotencyKey: crypto.randomUUID(),
+      };
       if (editingProduct) {
         await apiPut(`/api/products/${editingProduct.id}`, payload);
       } else {
@@ -191,6 +199,10 @@ export default function ProductsPage() {
 
   const handleEdit = (product: Product) => {
     const sizeType: ProductSizeType = product.sizeType === "numeric" ? "numeric" : "letter";
+    const formSizes = product.sizes?.length > 0
+      ? normalizeProductSizes(product.sizes)
+      : getSizeGrid(sizeType, product.plusSized === true).map(size => ({ size, stock: 0 }));
+    editBaseStock.current = { baseStock: Number(product.stock || 0), baseSizes: formSizes.map(s => ({ ...s })) };
     setEditingProduct(product);
     setFormData({
       name: product.name,
@@ -201,9 +213,7 @@ export default function ProductsPage() {
       costPrice: product.costPrice.toString(),
       salePrice: product.salePrice.toString(),
       stock: product.stock.toString(),
-      sizes: product.sizes?.length > 0
-        ? normalizeProductSizes(product.sizes)
-        : getSizeGrid(sizeType, product.plusSized === true).map(size => ({ size, stock: 0 })),
+      sizes: formSizes,
       image: product.image || "",
       imageSource: product.imageSource || "none",
     });
@@ -211,6 +221,7 @@ export default function ProductsPage() {
   };
 
   const resetForm = () => {
+    editBaseStock.current = null;
     setEditingProduct(null);
     setFormData({
       name: "",

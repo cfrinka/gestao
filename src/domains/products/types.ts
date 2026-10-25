@@ -26,6 +26,9 @@ export interface UpdateProductCommand {
   salePrice: unknown;
   stock: unknown;
   sizes: unknown;
+  /** Stock the form loaded; when present the save applies only the difference. */
+  baseStock?: unknown;
+  baseSizes?: unknown;
   plusSized: unknown;
   sizeType: unknown;
   category: unknown;
@@ -38,3 +41,11 @@ export interface UpdateProductCommand {
 
 export type ProductCreateInput = Omit<Product, "id" | "createdAt" | "updatedAt">;
 export type ProductUpdateInput = Partial<ProductCreateInput>;
+
+export interface ProductStockEditOptions {
+  edit: import("@/domains/products/stock-edit").StockEdit;
+  actorId: string;
+  actorName: string;
+  /** Log the change as a stock adjustment (a correction rather than a replenishment). */
+  recordCorrection: boolean;
+}

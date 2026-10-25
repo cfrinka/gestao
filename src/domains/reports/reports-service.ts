@@ -317,6 +317,11 @@ function buildAggregateFromMovements(month: string, movements: FinancialMovement
       if (bucket) aggregate.paymentMix[bucket] += amount;
     }
 
+    if (movement.type === "EXCHANGE_REFUND") {
+      aggregate.revenue -= amount;
+      aggregate.paymentMix.cash -= amount;
+    }
+
     if (movement.type === "FIADO_PAYMENT") {
       aggregate.payLaterReceived += amount;
       const bucket = getPaymentBucketMethod(movement.paymentMethod);

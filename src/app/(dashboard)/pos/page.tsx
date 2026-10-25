@@ -74,6 +74,7 @@ interface CashRegister {
   totalCashWithdrawal?: number;
   salesCount: number;
   totalExchangeDifferenceIn?: number;
+  totalExchangeRefundOut?: number;
   exchangeDifferenceCount?: number;
 }
 
@@ -527,6 +528,7 @@ export default function POSPage() {
         ["Saldo Inicial", formatCurrency(register.openingBalance)],
         ["Total em Vendas", formatCurrency(register.totalSales)],
         ["Diferença de Troca (Entrada)", formatCurrency(register.totalExchangeDifferenceIn || 0)],
+        ["Devolvido em Trocas (Dinheiro)", formatCurrency(register.totalExchangeRefundOut || 0)],
         ["Dinheiro", formatCurrency(register.totalCash)],
         ["Débito", formatCurrency(register.totalDebit)],
         ["Crédito", formatCurrency(register.totalCredit)],
@@ -569,9 +571,13 @@ export default function POSPage() {
     return matchesSearch && matchesCategory;
   });
 
+  // A product with a size grid sells only what that size has: an empty size must not fall back
+  // to the product's total (which `||` did, letting a sold-out size into the cart).
+  const availableStock = (product: Product, size: string) =>
+    product.sizes?.length > 0 ? product.sizes.find((s) => s.size === size)?.stock ?? 0 : product.stock;
+
   const addToCart = (product: Product, size: string) => {
-    // Check size-specific stock
-    const sizeStock = product.sizes?.find(s => s.size === size)?.stock || product.stock;
+    const sizeStock = availableStock(product, size);
     const existing = cart.find((item) => item.product.id === product.id && item.size === size);
 
     if (existing) {
@@ -616,7 +622,7 @@ export default function POSPage() {
       cart
         .map((item) => {
           if (item.product.id === productId && item.size === size) {
-            const sizeStock = item.product.sizes?.find(s => s.size === size)?.stock || item.product.stock;
+            const sizeStock = availableStock(item.product, size);
             const newQty = item.quantity + delta;
             if (newQty > sizeStock) {
               toast({
@@ -2035,6 +2041,12 @@ export default function POSPage() {
                   <span className="text-ink-2">Diferença de troca (entrada)</span>
                   <span className="font-medium">{formatCurrency(cashRegister.totalExchangeDifferenceIn || 0)}</span>
                 </div>
+                {(cashRegister.totalExchangeRefundOut || 0) > 0 ? (
+                  <div className="flex justify-between">
+                    <span className="text-ink-2">Devolvido em trocas (dinheiro)</span>
+                    <span className="font-medium">−{formatCurrency(cashRegister.totalExchangeRefundOut || 0)}</span>
+                  </div>
+                ) : null}
                 <div className="flex justify-between">
                   <span className="text-ink-2">Dinheiro recebido</span>
                   <span className="font-medium">{formatCurrency(cashRegister.totalCash)}</span>
@@ -2147,6 +2159,12 @@ export default function POSPage() {
                   <dt className="text-ink-3">Diferença de troca</dt>
                   <dd><PriceTag value={closingReportData.register.totalExchangeDifferenceIn || 0} className="text-2xl" /></dd>
                 </div>
+                {(closingReportData.register.totalExchangeRefundOut || 0) > 0 ? (
+                  <div>
+                    <dt className="text-ink-3">Devolvido em trocas</dt>
+                    <dd className="font-semibold tabular-nums">−{formatCurrency(closingReportData.register.totalExchangeRefundOut || 0)}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt className="text-ink-3">Saldo inicial</dt>
                   <dd className="font-semibold tabular-nums">{formatCurrency(closingReportData.register.openingBalance)}</dd>

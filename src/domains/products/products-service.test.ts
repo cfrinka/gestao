@@ -55,7 +55,14 @@ class FakeProductsRepository implements ProductsRepository {
     return product;
   }
 
-  async updateProduct(id: string, data: Parameters<ProductsRepository["updateProduct"]>[1]): Promise<Product> {
+  lastStockEdit: Parameters<ProductsRepository["updateProduct"]>[2] | undefined;
+
+  async updateProduct(
+    id: string,
+    data: Parameters<ProductsRepository["updateProduct"]>[1],
+    stockEdit?: Parameters<ProductsRepository["updateProduct"]>[2]
+  ): Promise<Product> {
+    this.lastStockEdit = stockEdit;
     const existing = this.products.get(id);
     if (!existing) throw new HttpError(404, "Product not found");
     if (data.sku && data.sku !== existing.sku && this.skuIndex.has(data.sku)) {
@@ -208,6 +215,49 @@ describe("ProductsService.update", () => {
     await expect(
       service.update("product-2", baseCreateCommand({ sku: "SKU-1" }))
     ).rejects.toThrow(HttpError);
+  });
+
+  it("hands a form's stock change over as a difference, and buys only the pieces it added", async () => {
+    const repo = new FakeProductsRepository();
+    repo.seed(makeProduct({ id: "product-1", sku: "SKU-1", stock: 3, sizes: [{ size: "M", stock: 3 }] }));
+    const service = new ProductsService(repo);
+
+    await service.update(
+      "product-1",
+      baseCreateCommand({
+        sku: "SKU-1",
+        stock: 5,
+        sizes: [{ size: "M", stock: 5 }],
+        baseStock: 3,
+        baseSizes: [{ size: "M", stock: 3 }],
+        idempotencyKey: "key-3",
+      })
+    );
+
+    expect(repo.lastStockEdit).toMatchObject({ recordCorrection: false, edit: { baseStock: 3, stock: 5 } });
+    expect(repo.stockPurchaseCalls).toHaveLength(1);
+    expect(repo.stockPurchaseCalls[0]).toMatchObject({ quantity: 2, source: "STOCK_REPLENISHMENT" });
+  });
+
+  it("logs a reduction made in the form as a correction, with no purchase and no key needed", async () => {
+    const repo = new FakeProductsRepository();
+    repo.seed(makeProduct({ id: "product-1", sku: "SKU-1", stock: 3, sizes: [{ size: "M", stock: 3 }] }));
+    const service = new ProductsService(repo);
+
+    await service.update(
+      "product-1",
+      baseCreateCommand({
+        sku: "SKU-1",
+        stock: 1,
+        sizes: [{ size: "M", stock: 1 }],
+        baseStock: 3,
+        baseSizes: [{ size: "M", stock: 3 }],
+        idempotencyKey: "",
+      })
+    );
+
+    expect(repo.lastStockEdit).toMatchObject({ recordCorrection: true });
+    expect(repo.stockPurchaseCalls).toHaveLength(0);
   });
 
   it("does not create a stock purchase entry when stock does not increase", async () => {

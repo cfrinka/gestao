@@ -2,6 +2,7 @@ import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAG
 import type { ProductsRepository } from "@/domains/products/repository";
 import type { CreateProductCommand, UpdateProductCommand } from "@/domains/products/types";
 import type { Product, ProductImageSource, ProductSizeType } from "@/lib/db-types";
+import { parseStockEdit, requestedStockDelta } from "@/domains/products/stock-edit";
 
 function toPublicErrorMessage(error: unknown): string {
   if (error instanceof HttpError) return error.message;
@@ -98,7 +99,14 @@ export class ProductsService {
     const nextStock = command.stock !== undefined ? parseInt(String(command.stock)) : existing.stock;
     const nextName = command.name ? String(command.name) : existing.name;
 
-    const stockIncrease = Math.max(0, (nextStock || 0) - (existing.stock || 0));
+    // A form that says what stock it loaded gets its change applied as a difference over the
+    // current stock (see stock-edit.ts); the purchase entry is the pieces it added. Without
+    // that information (an older open tab) the form's numbers replace the stock as before.
+    const stockEdit = parseStockEdit(command);
+    const requestedDelta = stockEdit ? requestedStockDelta(stockEdit) : 0;
+    const stockIncrease = stockEdit
+      ? Math.max(0, requestedDelta)
+      : Math.max(0, (nextStock || 0) - (existing.stock || 0));
 
     // Validated before any write, for the same reason as in create(): the product must
     // never be updated and then have the request fail on a missing idempotency key,
@@ -123,7 +131,14 @@ export class ProductsService {
       sizes: command.sizes !== undefined ? (command.sizes as Product["sizes"]) : existing.sizes,
       image: command.image !== undefined ? (command.image as string) : existing.image,
       imageSource: command.imageSource !== undefined ? (command.imageSource as ProductImageSource) : existing.imageSource,
-    });
+    }, stockEdit
+      ? {
+          edit: stockEdit,
+          actorId: command.createdById,
+          actorName: command.createdByName,
+          recordCorrection: requestedDelta <= 0,
+        }
+      : undefined);
 
     if (stockIncrease > 0) {
       await this.reserveAndCreateStockPurchase({

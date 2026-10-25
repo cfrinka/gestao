@@ -1,12 +1,17 @@
 import type { Product, StockPurchaseEntry } from "@/lib/db-types";
-import type { IdempotencyReservation, ProductCreateInput, ProductUpdateInput } from "@/domains/products/types";
+import type {
+  IdempotencyReservation,
+  ProductCreateInput,
+  ProductStockEditOptions,
+  ProductUpdateInput,
+} from "@/domains/products/types";
 
 export interface ProductsRepository {
   getAll(): Promise<Product[]>;
   getById(id: string): Promise<Product | null>;
   getBySku(sku: string): Promise<Product | null>;
   createProduct(data: ProductCreateInput): Promise<Product>;
-  updateProduct(id: string, data: ProductUpdateInput): Promise<Product>;
+  updateProduct(id: string, data: ProductUpdateInput, stockEdit?: ProductStockEditOptions): Promise<Product>;
   deleteProduct(id: string): Promise<void>;
 
   createStockPurchaseEntry(input: {
