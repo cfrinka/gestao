@@ -35,6 +35,21 @@ describe("applyStockEdit", () => {
     expect(result.changes).toEqual([{ size: "M", delta: -2, before: 2, after: 0 }]);
   });
 
+  it("matches a stored \"PP\" (and repeated labels) to the form's \"TU\" instead of dropping it", () => {
+    const result = applyStockEdit(
+      { stock: 5, sizes: [{ size: "PP", stock: 3 }, { size: " TU ", stock: 1 }, { size: "M", stock: 1 }] },
+      {
+        baseStock: 5,
+        baseSizes: [{ size: "TU", stock: 4 }, { size: "M", stock: 1 }],
+        stock: 5,
+        sizes: [{ size: "TU", stock: 4 }, { size: "M", stock: 1 }],
+      }
+    );
+    expect(result.sizes).toEqual([{ size: "TU", stock: 4 }, { size: "M", stock: 1 }]);
+    expect(result.stock).toBe(5);
+    expect(result.changes).toEqual([]);
+  });
+
   it("never goes below zero", () => {
     const result = applyStockEdit(
       { stock: 0, sizes: [{ size: "M", stock: 0 }] },

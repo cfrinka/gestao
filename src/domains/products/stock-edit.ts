@@ -27,14 +27,26 @@ function toCount(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/** Same label rule as the product form: trimmed, and the old "PP" is now "TU". */
+function normalizeSizeLabel(value: unknown): string {
+  const label = String(value || "").trim();
+  return label.toUpperCase() === "PP" ? "TU" : label;
+}
+
+/**
+ * Sizes keyed the way the form shows them (labels normalized, repeated labels merged), so a size
+ * stored as "PP" is matched to the form's "TU" instead of looking like a size dropped from the grid.
+ */
 function toSizes(value: unknown): SizeStock[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => {
-      const item = (entry || {}) as Record<string, unknown>;
-      return { size: String(item.size || "").trim(), stock: toCount(item.stock) };
-    })
-    .filter((item) => item.size);
+  const bySize = new Map<string, number>();
+  for (const entry of value) {
+    const item = (entry || {}) as Record<string, unknown>;
+    const size = normalizeSizeLabel(item.size);
+    if (!size) continue;
+    bySize.set(size, (bySize.get(size) || 0) + toCount(item.stock));
+  }
+  return Array.from(bySize.entries()).map(([size, stock]) => ({ size, stock }));
 }
 
 const total = (sizes: SizeStock[]) => sizes.reduce((sum, s) => sum + s.stock, 0);

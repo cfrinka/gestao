@@ -90,9 +90,10 @@ export default function ClientsPage() {
   const [paymentMethod, setPaymentMethod] = useState<"DINHEIRO" | "DEBITO" | "CREDITO" | "PIX">("DINHEIRO");
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [submittingPayment, setSubmittingPayment] = useState(false);
-  // One key per receipt dialog: a double tap, or Confirmar pressed again after a dropped
-  // response, reaches the server with the same key and is recorded once.
-  const paymentAttemptKey = useRef<string>("");
+  // One key per attempted receipt: a double tap, or Confirmar pressed again after a dropped
+  // response, reaches the server with the same key and is recorded once. Changing the amount or
+  // the method makes it a different receipt, with a new key.
+  const paymentAttempt = useRef<{ key: string; signature: string } | null>(null);
   const [lastPaymentResult, setLastPaymentResult] = useState<FiadoPaymentResult | null>(null);
   const [debtCorrectionDialogOpen, setDebtCorrectionDialogOpen] = useState(false);
   const [correctionAmount, setCorrectionAmount] = useState<string>("");
@@ -325,7 +326,7 @@ export default function ClientsPage() {
     if (!selectedClient) return;
     setPaymentAmount("");
     setPaymentMethod("DINHEIRO");
-    paymentAttemptKey.current = crypto.randomUUID();
+    paymentAttempt.current = null;
     setPaymentDialogOpen(true);
   };
 
@@ -397,12 +398,16 @@ export default function ClientsPage() {
 
     if (submittingPayment) return;
     setSubmittingPayment(true);
+    const signature = `${selectedClient.id}|${parsed}|${paymentMethod}`;
+    if (paymentAttempt.current?.signature !== signature) {
+      paymentAttempt.current = { key: crypto.randomUUID(), signature };
+    }
     try {
       const updated = await apiPatch(`/api/clients/${selectedClient.id}`, {
         action: "pay_cascading",
         amount: parsed,
         method: paymentMethod,
-        idempotencyKey: paymentAttemptKey.current,
+        idempotencyKey: paymentAttempt.current.key,
       });
       setSelectedClient({ ...updated, pendingOrders: updated.pendingOrders || [] });
       setLastPaymentResult(updated.paymentResult);
