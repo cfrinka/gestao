@@ -1,5 +1,8 @@
 import { adminDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
+import { cached } from "@/lib/server-cache";
+import { cashEffect } from "@/domains/financial/cash-effect";
+import { getProductsCached } from "@/domains/products/products-db";
 import {
   addDaysISO,
   endOfStoreDay,
@@ -7,7 +10,6 @@ import {
   parseDateParam,
   startOfStoreDay,
   storeMonthRange,
-  toCompetencyMonth,
   toStoreISODate,
   todayISO,
 } from "@/lib/dates";
@@ -51,13 +53,9 @@ type LegacyStockPurchaseDoc = {
 
 type LegacyExchangeDoc = {
   totalDifference?: number;
+  cashInAmount?: number;
+  difference?: number;
   paymentMethod?: "cash" | "debit" | "credit" | "pix";
-};
-
-type ReportCacheDoc = {
-  generatedAt?: Timestamp;
-  ttlMs?: number;
-  payload?: Record<string, unknown>;
 };
 
 type LegacyDiagnostics = {
@@ -124,16 +122,6 @@ function listMonthsBetween(start: Date, end: Date): string[] {
 
 function sum(values: number[]): number {
   return values.reduce((acc, value) => acc + value, 0);
-}
-
-function buildReportCacheKey(role: string, start: Date, end: Date, debugMode: boolean): string {
-  // "v2": payloads cached before reports were computed per day must not be served again.
-  return `v2:${role}:${toStoreISODate(start)}:${toStoreISODate(end)}:${debugMode ? "debug" : "standard"}`;
-}
-
-function periodIncludesMonth(start: Date, end: Date, month: string): boolean {
-  const range = getMonthDateRange(month);
-  return range.end.getTime() >= start.getTime() && range.start.getTime() <= end.getTime();
 }
 
 function emptyMonthAggregate(month: string): MonthAggregate {
@@ -209,12 +197,12 @@ async function buildAggregateFromLegacyCollections(
     if (discount > 0) aggregate.discounts += discount;
     if (totalAmount > 0) {
       aggregate.revenue += totalAmount;
-      aggregate.cashIn += totalAmount;
+      // A fiado sale is money only when it is paid (see cash-effect.ts).
+      if (!order.isPaidLater) aggregate.cashIn += totalAmount;
       aggregate.ordersCount += 1;
     }
     if (cogsTotal > 0) {
       aggregate.cogs += cogsTotal;
-      aggregate.cashOut += cogsTotal;
     }
 
     if (order.isPaidLater) {
@@ -251,9 +239,11 @@ async function buildAggregateFromLegacyCollections(
 
   for (const doc of exchangesSnap.docs) {
     const exchange = doc.data() as LegacyExchangeDoc;
-    const totalDifference = Number(exchange.totalDifference || 0);
+    const totalDifference = Number(exchange.cashInAmount ?? exchange.difference ?? exchange.totalDifference ?? 0);
     if (!Number.isFinite(totalDifference) || totalDifference <= 0) continue;
     aggregate.exchangeDifferenceIn += totalDifference;
+    aggregate.revenue += totalDifference;
+    aggregate.grossRevenue += totalDifference;
     aggregate.cashIn += totalDifference;
     const bucket = getPaymentBucketMethod(exchange.paymentMethod);
     if (bucket) aggregate.paymentMix[bucket] += totalDifference;
@@ -278,8 +268,11 @@ function buildAggregateFromMovements(month: string, movements: FinancialMovement
     const amount = Number(movement.amount || 0);
     if (!Number.isFinite(amount) || amount <= 0) continue;
 
-    if (movement.direction === "IN") aggregate.cashIn += amount;
-    if (movement.direction === "OUT") aggregate.cashOut += amount;
+    // Cash flow counts only money that really came in or went out (cash-effect.ts): a fiado sale
+    // waits for its payment, and goods count when bought, not again as the cost of each sale.
+    const cash = cashEffect(movement);
+    aggregate.cashIn += cash.cashIn;
+    aggregate.cashOut += cash.cashOut;
 
     if (movement.type === "SALE_REVENUE") {
       aggregate.revenue += amount;
@@ -312,6 +305,10 @@ function buildAggregateFromMovements(month: string, movements: FinancialMovement
     if (movement.type === "STOCK_PURCHASE") aggregate.stockPurchasesCost += amount;
 
     if (movement.type === "EXCHANGE_DIFFERENCE") {
+      // What the customer paid on top of an exchange is a sale, just as a cash refund (below) is
+      // revenue given back.
+      aggregate.revenue += amount;
+      aggregate.grossRevenue += amount;
       aggregate.exchangeDifferenceIn += amount;
       const bucket = getPaymentBucketMethod(movement.paymentMethod);
       if (bucket) aggregate.paymentMix[bucket] += amount;
@@ -334,7 +331,12 @@ function buildAggregateFromMovements(month: string, movements: FinancialMovement
 }
 
 async function buildMonthAggregateWithDebug(month: string): Promise<{ aggregate: MonthAggregate; debug: MonthDebugRow }> {
-  const closureSnap = await adminDb.collection("financialClosures").doc(month).get();
+  // Both reads at once: the movements are only needed when the month is not closed, but asking
+  // for them in parallel saves a full round trip in the usual (open month) case.
+  const [closureSnap, movementsSnapshot] = await Promise.all([
+    adminDb.collection("financialClosures").doc(month).get(),
+    adminDb.collection("financialMovements").where("competencyMonth", "==", month).get(),
+  ]);
   if (closureSnap.exists) {
     const closure = closureSnap.data() as {
       revenue?: number;
@@ -377,7 +379,6 @@ async function buildMonthAggregateWithDebug(month: string): Promise<{ aggregate:
     };
   }
 
-  const movementsSnapshot = await adminDb.collection("financialMovements").where("competencyMonth", "==", month).get();
   const movements = movementsSnapshot.docs.map((doc) => doc.data() as FinancialMovementDoc);
   if (movements.length === 0) {
     const legacy = await buildAggregateFromLegacyCollections(month);
@@ -418,20 +419,11 @@ async function buildMonthAggregateWithDebug(month: string): Promise<{ aggregate:
   };
 }
 
-function occurredWithin(movement: FinancialMovementDoc, start: Date, end: Date): boolean {
-  const occurredAt = movement.occurredAt?.toDate ? movement.occurredAt.toDate() : null;
-  if (!occurredAt) return false;
-  const time = occurredAt.getTime();
-  return time >= start.getTime() && time <= end.getTime();
-}
-
 /**
- * One month's share of the selected period. A month the period covers entirely uses the month
- * aggregate (closure snapshot, live movements or legacy collections, as before). A month the
- * period only partly covers is summed from that month's movements inside the period, so "20 to
- * 25/10" reports those six days instead of all of October.
+ * Each month's share is kept in the server cache (dropped by any write): the month shared by the
+ * period and its comparison period is read once, and choosing another period reuses whole months.
  */
-async function buildPeriodMonthAggregate(
+function buildPeriodMonthAggregate(
   month: string,
   periodStart: Date,
   periodEnd: Date
@@ -440,16 +432,36 @@ async function buildPeriodMonthAggregate(
   const coversWholeMonth =
     periodStart.getTime() <= monthRange.start.getTime() && periodEnd.getTime() >= monthRange.end.getTime();
   if (coversWholeMonth) {
-    return buildMonthAggregateWithDebug(month);
+    return cached(`report-month:${month}`, () => buildMonthAggregateWithDebug(month));
   }
 
   const from = new Date(Math.max(periodStart.getTime(), monthRange.start.getTime()));
   const to = new Date(Math.min(periodEnd.getTime(), monthRange.end.getTime()));
+  return cached(`report-month:${month}:${from.getTime()}:${to.getTime()}`, () =>
+    buildPartialMonthAggregate(month, from, to)
+  );
+}
 
-  const movementsSnapshot = await adminDb.collection("financialMovements").where("competencyMonth", "==", month).get();
+async function buildPartialMonthAggregate(
+  month: string,
+  from: Date,
+  to: Date
+): Promise<{ aggregate: MonthAggregate; debug: MonthDebugRow }> {
+  // Only the selected days are read, not the whole month.
+  const movementsSnapshot = await adminDb
+    .collection("financialMovements")
+    .where("occurredAt", ">=", Timestamp.fromDate(from))
+    .where("occurredAt", "<=", Timestamp.fromDate(to))
+    .get();
   const monthMovements = movementsSnapshot.docs.map((doc) => doc.data() as FinancialMovementDoc);
 
-  if (monthMovements.length === 0) {
+  // No movements in these days: either a quiet stretch, or a month from before the movement log
+  // existed — only the latter is read from the old collections.
+  const monthHasMovements =
+    monthMovements.length > 0 ||
+    !(await adminDb.collection("financialMovements").where("competencyMonth", "==", month).limit(1).get()).empty;
+
+  if (!monthHasMovements) {
     const legacy = await buildAggregateFromLegacyCollections(month, { start: from, end: to });
     return {
       aggregate: legacy.aggregate,
@@ -469,7 +481,7 @@ async function buildPeriodMonthAggregate(
     };
   }
 
-  const movements = monthMovements.filter((movement) => occurredWithin(movement, from, to));
+  const movements = monthMovements;
   const aggregate = buildAggregateFromMovements(month, movements);
   return {
     aggregate,
@@ -592,8 +604,8 @@ async function buildFiadoAging(endDate: Date) {
 }
 
 async function buildProductMarginRanking(start: Date, end: Date) {
-  const [productsSnapshot, itemsSnapshot, ordersSnapshot] = await Promise.all([
-    adminDb.collection("products").get(),
+  const [products, itemsSnapshot, ordersSnapshot] = await Promise.all([
+    getProductsCached(),
     adminDb.collection("orderItems").where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<=", Timestamp.fromDate(end)).get(),
     adminDb.collection("orders").where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<=", Timestamp.fromDate(end)).get(),
   ]);
@@ -607,10 +619,17 @@ async function buildProductMarginRanking(start: Date, end: Date) {
       .map((doc) => doc.id)
   );
 
-  const productsById = new Map(
-    productsSnapshot.docs.map((doc) => {
-      const data = doc.data() as { name?: string; sku?: string; stock?: number; costPrice?: number; salePrice?: number };
-      return [doc.id, { id: doc.id, ...data }];
+  const productsById = new Map(products.map((product) => [product.id, product]));
+
+  // Items carry their shelf price; what the store actually got is the sale's total, after its
+  // discounts (progressive, PIX, manual). Each item gets its share of that total, so a piece sold
+  // in a 40%-off trio shows the margin it really made.
+  const netShareByOrderId = new Map(
+    ordersSnapshot.docs.map((doc) => {
+      const data = doc.data() as { subtotal?: number; totalAmount?: number };
+      const subtotal = Number(data.subtotal || 0);
+      const total = Number(data.totalAmount || 0);
+      return [doc.id, subtotal > 0 ? Math.min(1, Math.max(0, total / subtotal)) : 1];
     })
   );
 
@@ -622,7 +641,7 @@ async function buildProductMarginRanking(start: Date, end: Date) {
 
     const productId = item.productId || "unknown";
     const qty = Number(item.quantity || 0);
-    const revenue = Number(item.totalRevenue || 0);
+    const revenue = Number(item.totalRevenue || 0) * (item.orderId ? netShareByOrderId.get(item.orderId) ?? 1 : 1);
     const cost = Number(item.totalCost || 0);
     const current = perfMap.get(productId) || { qty: 0, revenue: 0, cost: 0, profit: 0 };
     current.qty += qty;
@@ -684,26 +703,6 @@ export async function generateReports(input: {
 }) {
   const { start, end } = getDateRange(input.startDateRaw, input.endDateRaw);
   const periodDays = Math.max(1, Math.round((end.getTime() + 1 - start.getTime()) / DAY_MS));
-  const openMonth = toCompetencyMonth(new Date());
-  const includesOpenMonth = periodIncludesMonth(start, end, openMonth);
-
-  const cacheKey = buildReportCacheKey(input.role, start, end, input.debugMode);
-  const cacheRef = adminDb.collection("reportCache").doc(cacheKey);
-  const cacheSnapshot = await cacheRef.get();
-
-  if (!input.forceRefresh && cacheSnapshot.exists) {
-    const cacheData = cacheSnapshot.data() as ReportCacheDoc;
-    const generatedAt = cacheData.generatedAt?.toDate ? cacheData.generatedAt.toDate() : null;
-    const ttlMs = Number(cacheData.ttlMs || 0);
-    const payload = cacheData.payload as Record<string, unknown> | undefined;
-
-    if (generatedAt && ttlMs > 0 && payload) {
-      const isFresh = Date.now() - generatedAt.getTime() <= ttlMs;
-      if (isFresh) {
-        return { payload: { ...payload, cache: { hit: true, generatedAt: generatedAt.toISOString(), ttlMs } } };
-      }
-    }
-  }
 
   // The comparison period is the same number of store days right before this one.
   const prevEnd = new Date(start.getTime() - 1);
@@ -715,8 +714,8 @@ export async function generateReports(input: {
   const [monthResults, previousMonthResults, productData, fiadoAging] = await Promise.all([
     Promise.all(months.map((month) => buildPeriodMonthAggregate(month, start, end))),
     Promise.all(previousMonths.map((month) => buildPeriodMonthAggregate(month, prevStart, prevEnd))),
-    buildProductMarginRanking(start, end),
-    buildFiadoAging(end),
+    cached(`report-products:${start.getTime()}:${end.getTime()}`, () => buildProductMarginRanking(start, end)),
+    cached(`report-fiado:${end.getTime()}`, () => buildFiadoAging(end)),
   ]);
 
   const monthAggregates = monthResults.map((result) => result.aggregate);
@@ -922,23 +921,5 @@ export async function generateReports(input: {
       : {}),
   };
 
-  const ttlMs = includesOpenMonth ? 2 * 60 * 1000 : 30 * 60 * 1000;
-  await cacheRef.set({
-    role: input.role,
-    startDate: start.toISOString(),
-    endDate: end.toISOString(),
-    generatedAt: Timestamp.now(),
-    ttlMs,
-    payload: responsePayload,
-  });
-
-  return {
-    payload: {
-      ...responsePayload,
-      cache: {
-        hit: false,
-        ttlMs,
-      },
-    },
-  };
+  return { payload: responsePayload };
 }

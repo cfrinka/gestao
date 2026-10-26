@@ -11,6 +11,7 @@ import type {
   RunHealthCheckCommand,
 } from "@/domains/financial/types";
 import { closedMonthError } from "@/lib/api/http-errors";
+import { cashEffect } from "@/domains/financial/cash-effect";
 import { addMonthsISO, currentMonthISO, storeMonthRange, toCompetencyMonth } from "@/lib/dates";
 
 export { toCompetencyMonth };
@@ -133,8 +134,10 @@ export async function closeFinancialMonth(input: CloseMonthCommand): Promise<Fin
       if (movement.type === "COGS") cogs += amount;
       if (movement.type === "OPERATING_EXPENSE") expenses += amount;
 
-      if (movement.direction === "IN") cashIn += amount;
-      if (movement.direction === "OUT") cashOut += amount;
+      // Money that really came in or went out (cash-effect.ts), not every movement by direction.
+      const cash = cashEffect(movement);
+      cashIn += cash.cashIn;
+      cashOut += cash.cashOut;
     }
 
     const grossProfit = revenue - cogs;
@@ -228,8 +231,9 @@ function aggregateMonth(month: string, movements: MovementDoc[]): MonthAggregati
     const amount = Number(movement.amount || 0);
     if (!Number.isFinite(amount) || amount <= 0) continue;
 
-    if (movement.direction === "IN") cashIn += amount;
-    if (movement.direction === "OUT") cashOut += amount;
+    const cash = cashEffect(movement);
+    cashIn += cash.cashIn;
+    cashOut += cash.cashOut;
 
     if (movement.type === "SALE_REVENUE") revenue += amount;
     if (movement.type === "COGS") cogs += amount;
