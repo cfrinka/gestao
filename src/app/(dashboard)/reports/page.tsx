@@ -21,6 +21,10 @@ import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 import { toStoreISODate, todayISO } from "@/lib/dates";
 import { loadPdf } from "@/lib/pdf";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RestockReport } from "@/components/reports/restock-report";
+import { StagnantStockReport } from "@/components/reports/stagnant-stock-report";
+import { FiadoCollectionReport } from "@/components/reports/fiado-collection-report";
 import type { jsPDF as JsPdfDoc } from "jspdf";
 
 interface StoreReport {
@@ -191,6 +195,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [tab, setTab] = useState<"resultado" | "reposicao" | "parado" | "cobranca">("resultado");
 
   const fetchReports = async (forceRefresh: boolean = false) => {
     setLoading(true);
@@ -221,8 +226,10 @@ export default function ReportsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Any sale or change already refreshes the server's copy, so applying a period never needs to
+  // force a recalculation (that only made the button slow).
   const handleFilter = () => {
-    fetchReports(true);
+    fetchReports();
   };
 
   const totals = {
@@ -413,9 +420,9 @@ export default function ReportsPage() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Relatórios"
-        meta={<span>Resultado, caixa, fiado e estoque do período</span>}
+        meta={<span>Resultado, reposição, estoque parado e cobrança</span>}
         actions={
-          <>
+          tab !== "resultado" ? null : <>
             <Button variant="outline" size="sm" onClick={exportCSV}>
               <Download className="h-4 w-4" aria-hidden="true" />
               CSV
@@ -429,6 +436,19 @@ export default function ReportsPage() {
         className="mb-0 md:mb-0"
       />
 
+      <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+      <TabsList className="-mx-3 flex w-[calc(100%+1.5rem)] scroll-row overflow-x-auto px-3 sm:mx-0 sm:w-full sm:px-0">
+        <TabsTrigger value="resultado">Resultado</TabsTrigger>
+        <TabsTrigger value="reposicao">Reposição</TabsTrigger>
+        <TabsTrigger value="parado">Estoque parado</TabsTrigger>
+        <TabsTrigger value="cobranca">Cobrança de fiado</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="reposicao"><RestockReport /></TabsContent>
+      <TabsContent value="parado"><StagnantStockReport /></TabsContent>
+      <TabsContent value="cobranca"><FiadoCollectionReport /></TabsContent>
+
+      <TabsContent value="resultado" className="space-y-4 md:space-y-6">
       <div className="space-y-3">
         <div className="-mx-3 flex gap-1.5 scroll-row overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" role="group" aria-label="Períodos rápidos">
           {([
@@ -780,6 +800,8 @@ export default function ReportsPage() {
           </Table>
         </CardContent>
       </Card>
+      </TabsContent>
+      </Tabs>
 
     </div>
   );
