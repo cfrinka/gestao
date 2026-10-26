@@ -143,9 +143,24 @@ describe("ClientsService.update", () => {
   it("updates an existing client", async () => {
     const repo = new FakeClientsRepository();
     const service = new ClientsService(repo);
-    const updated = await service.update({ clientId: "client-1", name: "Renamed", phone: "123", email: "a@b.com", notes: "note" });
-    expect(repo.updateClientMock).toHaveBeenCalledWith("client-1", { name: "Renamed", phone: "123", email: "a@b.com", notes: "note" });
+    const updated = await service.update({ clientId: "client-1", name: "Renamed", phone: "11987654321", email: "a@b.com", notes: "note" });
+    expect(repo.updateClientMock).toHaveBeenCalledWith("client-1", {
+      name: "Renamed",
+      phone: "(11) 98765-4321",
+      email: "a@b.com",
+      notes: "note",
+    });
     expect(updated.id).toBe("client-1");
+  });
+
+  it("refuses to replace the phone with one that cannot be dialled, and leaves it alone when not sent", async () => {
+    const repo = new FakeClientsRepository();
+    const service = new ClientsService(repo);
+    await expect(service.update({ clientId: "client-1", phone: "123" })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.update({ clientId: "client-1", phone: "" })).rejects.toMatchObject({ statusCode: 400 });
+
+    await service.update({ clientId: "client-1", notes: "só a observação" });
+    expect(repo.updateClientMock).toHaveBeenCalledWith("client-1", expect.objectContaining({ phone: undefined }));
   });
 
   it("rejects when the client disappears between the update and the re-fetch", async () => {
@@ -164,12 +179,23 @@ describe("ClientsService.create", () => {
     await expect(service.create({ name: "" })).rejects.toThrow(HttpError);
   });
 
-  it("creates a client with a valid name", async () => {
+  it("requires a phone with area code", async () => {
+    const service = new ClientsService(new FakeClientsRepository());
+    await expect(service.create({ name: "New Client" })).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.create({ name: "New Client", phone: "98765-4321" })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("creates a client with a name and phone, the phone in the stored format", async () => {
     const repo = new FakeClientsRepository();
     const service = new ClientsService(repo);
-    const client = await service.create({ name: "New Client" });
+    const client = await service.create({ name: "New Client", phone: "+55 11 98765 4321" });
     expect(client.id).toBe("new-client");
-    expect(repo.createClientMock).toHaveBeenCalledWith({ name: "New Client", phone: undefined, email: undefined, notes: undefined });
+    expect(repo.createClientMock).toHaveBeenCalledWith({
+      name: "New Client",
+      phone: "(11) 98765-4321",
+      email: undefined,
+      notes: undefined,
+    });
   });
 });
 

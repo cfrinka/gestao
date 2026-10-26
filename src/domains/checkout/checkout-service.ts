@@ -1,8 +1,10 @@
-import { HttpError, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
+import { FIADO_BLOCKED, HttpError, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
 import { roundMoney } from "@/lib/money";
-import type { CheckoutRepository } from "@/domains/checkout/repository";
+import { formatPhone, isValidPhone } from "@/lib/phone";
+import type { CheckoutIdempotency, CheckoutOrder, CheckoutRepository } from "@/domains/checkout/repository";
 import type { CheckoutCommand, CheckoutExecutionResult } from "@/domains/checkout/types";
 import { normalizeCartItems, normalizePayments, settlePayments } from "@/domains/checkout/cart-validation";
+import { assessFiadoSale } from "@/domains/clients/fiado-credit";
 
 export const CASHIER_DISCOUNT_CAP = 0.1;
 
@@ -60,6 +62,13 @@ export class CheckoutService {
     const promoDiscount = roundMoney(Number(command.promoDiscount || 0));
     let allowedManualDiscount = roundMoney(requestedDiscount);
 
+    // Fiado rules come before the discount check: a refused fiado sale must not use up the
+    // cashier's discount authorization.
+    const fiado = payLater
+      ? await this.checkFiado(command, idempotency, roundMoney(Math.max(0, subtotal - promoDiscount - allowedManualDiscount)))
+      : null;
+    if (fiado?.replay) return { status: 200, body: fiado.replay };
+
     if (command.userRole === "CASHIER") {
       // Cashiers can apply up to 10% discount, unless a server-verified admin
       // authorization grant is on file for this user (see /api/admin/verify-password).
@@ -94,6 +103,7 @@ export class CheckoutService {
       discount,
       expectedTotal,
       clientId: payLater ? command.clientId : undefined,
+      ...(fiado?.clientPhone ? { clientPhone: fiado.clientPhone } : {}),
       payLater,
       createdById: command.userId,
       createdByName: command.userName,
@@ -102,5 +112,52 @@ export class CheckoutService {
     });
 
     return { status: result.replayed ? 200 : 201, body: result.order };
+  }
+
+  /**
+   * A fiado sale needs a reachable client (a valid phone, typed now if the record has none) and,
+   * past the store's limit or deadline, an administrator: an admin confirms, a cashier needs a
+   * grant from the admin password.
+   */
+  private async checkFiado(
+    command: CheckoutCommand,
+    idempotency: CheckoutIdempotency,
+    saleTotal: number
+  ): Promise<{ clientPhone?: string; replay?: CheckoutOrder }> {
+    const standing = await this.repository.getFiadoStanding(String(command.clientId));
+    if (!standing) throw new HttpError(404, "Cliente não encontrado");
+
+    let clientPhone: string | undefined;
+    if (!isValidPhone(standing.phone)) {
+      if (!isValidPhone(command.clientPhone)) {
+        throw new HttpError(400, `Informe o celular de ${standing.name} com DDD para vender fiado.`);
+      }
+      clientPhone = formatPhone(command.clientPhone);
+    }
+
+    const blocks = command.fiadoPolicy
+      ? assessFiadoSale({
+          balance: standing.balance,
+          oldestOpenAt: standing.oldestOpenAt,
+          saleTotal,
+          policy: command.fiadoPolicy,
+          now: command.now ?? new Date(),
+        })
+      : [];
+    if (blocks.length === 0) return { clientPhone };
+
+    const isAdmin = command.userRole === "ADMIN";
+    const authorized = isAdmin
+      ? command.fiadoOverride === true
+      : await this.repository.consumeFiadoAuthorization(command.userId);
+    if (authorized) return { clientPhone };
+
+    // The sale may already have gone through on an attempt whose response was lost: its own
+    // amount is what now puts the client past the limit.
+    const replay = await this.repository.findCompletedCheckout(idempotency);
+    if (replay) return { replay };
+
+    const next = isAdmin ? "Confirme para vender mesmo assim." : "Para vender fiado, peça a senha do administrador.";
+    throw new HttpError(403, `${standing.name}: ${blocks.map((block) => block.message).join(" ")} ${next}`, true, FIADO_BLOCKED);
   }
 }

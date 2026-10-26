@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { apiGet, apiPost, apiPut, apiDelete, apiPatch } from "@/lib/api-client";
+import { formatPhone, isValidPhone } from "@/lib/phone";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -265,6 +266,15 @@ export default function ClientsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!isValidPhone(formData.phone)) {
+      toast({
+        title: "Informe o celular com DDD",
+        description: "Ele é usado para lembrar o cliente do fiado pelo WhatsApp.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       if (editingClient) {
         await apiPut(`/api/clients/${editingClient.id}`, formData);
@@ -510,14 +520,25 @@ export default function ClientsPage() {
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="phone">Telefone</Label>
+                    <Label htmlFor="phone">Celular com DDD</Label>
                     <Input
                       id="phone"
                       type="tel"
                       inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="(11) 98765-4321"
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      onBlur={() => setFormData((current) => ({ ...current, phone: formatPhone(current.phone) }))}
+                      aria-invalid={formData.phone.trim() !== "" && !isValidPhone(formData.phone)}
+                      aria-describedby="phone-hint"
+                      required
                     />
+                    <p id="phone-hint" className={formData.phone.trim() !== "" && !isValidPhone(formData.phone) ? "text-xs text-vermelho" : "text-xs text-ink-3"}>
+                      {formData.phone.trim() !== "" && !isValidPhone(formData.phone)
+                        ? "Número incompleto: confira o DDD e os dígitos."
+                        : "Obrigatório: é por ele que o lembrete do fiado chega no WhatsApp."}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">E-mail</Label>
@@ -616,9 +637,13 @@ export default function ClientsPage() {
                 >
                   <span className="min-w-0">
                     <span className="block truncate font-semibold text-ink">{client.name}</span>
-                    <span className="block truncate text-sm text-ink-3 md:hidden">{client.phone || client.email || "Sem contato"}</span>
+                    <span className="block truncate text-sm text-ink-3 md:hidden">
+                      {isValidPhone(client.phone) ? client.phone : <span className="text-vermelho">Sem celular válido</span>}
+                    </span>
                   </span>
-                  <span className="hidden truncate text-sm text-ink-2 md:block">{client.phone || "—"}</span>
+                  <span className="hidden truncate text-sm text-ink-2 md:block">
+                    {isValidPhone(client.phone) ? client.phone : <span className="text-vermelho">Sem celular válido</span>}
+                  </span>
                   <span className="hidden truncate text-sm text-ink-2 md:block">{client.email || "—"}</span>
                   <span className="text-right">
                     {owes ? (

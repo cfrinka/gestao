@@ -3,6 +3,14 @@ import { auth } from "./firebase";
 import { storedIdToken } from "./stored-session";
 import { toast } from "@/components/ui/use-toast";
 
+/** A refusal from the server: its message is written for the person at the counter. */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 let lastDemoToastAt = 0;
 
 function maybeNotifyDemo(payload: unknown) {
@@ -17,6 +25,7 @@ function maybeNotifyDemo(payload: unknown) {
   toast({
     title: "Modo demonstrativo",
     description: data.message || "Suas alterações não foram salvas no banco de dados.",
+    variant: "neutral",
   });
 }
 
@@ -62,8 +71,10 @@ async function request(url: string, init: RequestInit = {}, notifyDemo = true) {
 
   if (!res.ok) {
     const error = await res.json().catch(() => null);
-    throw new Error(
-      (error && typeof error.error === "string" && error.error) || "Falha ao falar com o servidor. Tente de novo."
+    throw new ApiError(
+      (error && typeof error.error === "string" && error.error) || "Falha ao falar com o servidor. Tente de novo.",
+      res.status,
+      error && typeof error.code === "string" ? error.code : undefined
     );
   }
 

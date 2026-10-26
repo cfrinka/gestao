@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { CashRegisterService } from "@/domains/cash-register/cash-register-service";
 import { FirestoreCashRegisterRepository } from "@/domains/cash-register/firestore-cash-register-repository";
+import { getStoreSettingsCached } from "@/domains/settings/settings-db";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
-      const { action, openingBalance, closingBalance, amount, note, idempotencyKey } = body;
+      const { action, openingBalance, closingBalance, amount, note, differenceNote, idempotencyKey } = body;
 
       const service = new CashRegisterService(new FirestoreCashRegisterRepository());
 
@@ -32,7 +33,11 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "close") {
-        const result = await service.close(user.uid, Number(closingBalance || 0));
+        const settings = await getStoreSettingsCached();
+        const result = await service.close(user.uid, Number(closingBalance || 0), {
+          note: differenceNote,
+          tolerance: Number(settings.registerDifferenceLimit ?? 10),
+        });
         return NextResponse.json(result);
       }
 

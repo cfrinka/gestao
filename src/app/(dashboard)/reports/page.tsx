@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RestockReport } from "@/components/reports/restock-report";
 import { StagnantStockReport } from "@/components/reports/stagnant-stock-report";
 import { FiadoCollectionReport } from "@/components/reports/fiado-collection-report";
+import { RegisterDifferencesReport } from "@/components/reports/register-differences-report";
 import type { jsPDF as JsPdfDoc } from "jspdf";
 
 interface StoreReport {
@@ -195,7 +196,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [tab, setTab] = useState<"resultado" | "reposicao" | "parado" | "cobranca">("resultado");
+  const [tab, setTab] = useState<"resultado" | "reposicao" | "parado" | "cobranca" | "caixa">("resultado");
 
   const fetchReports = async (forceRefresh: boolean = false) => {
     setLoading(true);
@@ -442,11 +443,13 @@ export default function ReportsPage() {
         <TabsTrigger value="reposicao">Reposição</TabsTrigger>
         <TabsTrigger value="parado">Estoque parado</TabsTrigger>
         <TabsTrigger value="cobranca">Cobrança de fiado</TabsTrigger>
+        <TabsTrigger value="caixa">Diferenças de caixa</TabsTrigger>
       </TabsList>
 
       <TabsContent value="reposicao"><RestockReport /></TabsContent>
       <TabsContent value="parado"><StagnantStockReport /></TabsContent>
       <TabsContent value="cobranca"><FiadoCollectionReport /></TabsContent>
+      <TabsContent value="caixa"><RegisterDifferencesReport /></TabsContent>
 
       <TabsContent value="resultado" className="space-y-4 md:space-y-6">
       <div className="space-y-3">

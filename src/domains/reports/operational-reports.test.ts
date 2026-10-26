@@ -9,7 +9,6 @@ import {
   computeFiadoCollection,
   computeSizesAndRestock,
   computeStagnantStock,
-  whatsappNumber,
 } from "./operational-reports";
 import type { Client, Product } from "@/lib/db-types";
 
@@ -111,11 +110,5 @@ describe("computeFiadoCollection", () => {
     expect(lines[0].lastPaymentAt).not.toBeNull();
     expect(lines[1]).toMatchObject({ whatsapp: null, lastPaymentAt: null });
     expect(totals).toEqual({ owed: 190, clients: 2, over60: 150, over90: 150 });
-  });
-
-  it("reads Brazilian phone formats", () => {
-    expect(whatsappNumber("11 3333-4444")).toBe("551133334444");
-    expect(whatsappNumber("+55 (21) 99999-0000")).toBe("5521999990000");
-    expect(whatsappNumber("123")).toBeNull();
   });
 });

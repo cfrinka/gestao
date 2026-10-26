@@ -7,10 +7,13 @@ import type {
   CheckoutIdempotency,
   CheckoutOrder,
   CheckoutResult,
+  FiadoStanding,
   ProcessCheckoutInput,
 } from "@/domains/checkout/repository";
 import { toCompetencyMonth } from "@/lib/dates";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
+import { oldestOpenFiadoAt, type FiadoOrderLike } from "@/domains/clients/fiado-credit";
+import { isValidPhone } from "@/lib/phone";
 
 function idempotencyRef(idempotency: CheckoutIdempotency) {
   // Same document layout as domains/shared/idempotency.ts uses for the other flows.
@@ -22,6 +25,21 @@ export async function findCompletedCheckout(idempotency: CheckoutIdempotency): P
   const data = snap.data() as { requestHash?: string; status?: string; response?: CheckoutOrder } | undefined;
   if (!data || data.status !== "COMPLETED" || data.requestHash !== idempotency.requestHash) return null;
   return data.response ?? null;
+}
+
+export async function getFiadoStanding(clientId: string): Promise<FiadoStanding | null> {
+  const [clientSnap, ordersSnap] = await Promise.all([
+    adminDb.collection("clients").doc(clientId).get(),
+    adminDb.collection("orders").where("clientId", "==", clientId).where("isPaidLater", "==", true).get(),
+  ]);
+  if (!clientSnap.exists) return null;
+  const data = clientSnap.data() as { name?: string; balance?: number; phone?: string };
+  return {
+    name: String(data.name || "").trim() || "Cliente",
+    balance: roundMoney(Number(data.balance || 0)),
+    phone: String(data.phone || ""),
+    oldestOpenAt: oldestOpenFiadoAt(ordersSnap.docs.map((doc) => doc.data() as FiadoOrderLike)),
+  };
 }
 
 function mapOrderPaymentMethodToFinancial(method: PaymentMethod["method"]): FinancialMovementPaymentMethod {
@@ -257,8 +275,11 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Chec
 
     if (payLater) {
       if (clientRef) {
+        // A phone typed at the counter fills a missing one; it never replaces a valid number.
+        const savePhone = input.clientPhone && !isValidPhone(clientSnap?.data()?.phone);
         tx.update(clientRef, {
           balance: FieldValue.increment(totalAmount),
+          ...(savePhone ? { phone: input.clientPhone } : {}),
           updatedAt: nowTs,
         });
       }

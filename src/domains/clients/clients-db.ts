@@ -41,12 +41,17 @@ export async function getClient(id: string): Promise<Client | null> {
   };
 }
 
+/** Fields the request left out stay as they are: Firestore refuses `undefined` values. */
+function definedFields<T extends object>(data: T): Partial<T> {
+  return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
 export async function createClient(
   data: Omit<Client, "id" | "createdAt" | "updatedAt" | "balance">
 ): Promise<Client> {
   const now = new Date();
   const docRef = await adminDb.collection("clients").add({
-    ...data,
+    ...definedFields(data),
     balance: 0,
     createdAt: Timestamp.fromDate(now),
     updatedAt: Timestamp.fromDate(now),
@@ -59,7 +64,7 @@ export async function updateClient(
   data: Partial<Omit<Client, "id" | "createdAt" | "updatedAt">>
 ): Promise<void> {
   await adminDb.collection("clients").doc(id).update({
-    ...data,
+    ...definedFields(data),
     updatedAt: Timestamp.fromDate(new Date()),
   });
 }

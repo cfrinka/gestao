@@ -16,11 +16,23 @@ import type {
 } from "@/domains/clients/types";
 import type { Client, Order } from "@/lib/db-types";
 import { isZeroMoney } from "@/lib/money";
+import { formatPhone, isValidPhone } from "@/lib/phone";
 
 const ALLOWED_METHODS = ["DINHEIRO", "DEBITO", "CREDITO", "PIX"] as const;
 
 function toPaymentMethod(value: unknown): ClientPaymentMethod {
   return (ALLOWED_METHODS as readonly string[]).includes(String(value)) ? (value as ClientPaymentMethod) : "DINHEIRO";
+}
+
+/**
+ * Every client can buy fiado, so every client needs a number the store can reach (and remind on
+ * WhatsApp). Stored in one format: "(11) 98765-4321".
+ */
+function requiredPhone(value: unknown): string {
+  if (!isValidPhone(value)) {
+    throw new HttpError(400, "Informe o celular do cliente com DDD, por exemplo (11) 98765-4321");
+  }
+  return formatPhone(value);
 }
 
 export class ClientsService {
@@ -84,7 +96,7 @@ export class ClientsService {
 
     return this.repository.createClient({
       name,
-      phone: typeof command.phone === "string" ? command.phone : undefined,
+      phone: requiredPhone(command.phone),
       email: typeof command.email === "string" ? command.email : undefined,
       notes: typeof command.notes === "string" ? command.notes : undefined,
     });
@@ -96,7 +108,7 @@ export class ClientsService {
 
     await this.repository.updateClient(command.clientId, {
       name: typeof command.name === "string" ? command.name : undefined,
-      phone: typeof command.phone === "string" ? command.phone : undefined,
+      phone: command.phone === undefined ? undefined : requiredPhone(command.phone),
       email: typeof command.email === "string" ? command.email : undefined,
       notes: typeof command.notes === "string" ? command.notes : undefined,
     });

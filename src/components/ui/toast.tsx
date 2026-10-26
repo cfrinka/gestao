@@ -23,14 +23,17 @@ const ToastViewport = React.forwardRef<
 ));
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName;
 
+// The logo's colours carry the outcome: verde for something done, vermelho for something that
+// failed. Notices that are neither (no change to save, demo mode) use `neutral`.
 const toastVariants = cva(
   "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-sm border p-4 pr-10 shadow-[0_14px_32px_-12px_rgba(40,40,40,0.45)] transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full",
   {
     variants: {
       variant: {
-        default: "border-ink bg-paper text-ink",
+        default: "success group border-verde bg-verde text-white",
         destructive:
           "destructive group border-vermelho bg-vermelho text-white",
+        neutral: "border-ink bg-paper text-ink",
       },
     },
     defaultVariants: {
@@ -76,7 +79,7 @@ const ToastClose = React.forwardRef<
   <ToastPrimitives.Close
     ref={ref}
     className={cn(
-      "absolute right-2 top-2 rounded-sm p-1 text-ink-2 opacity-70 transition-opacity hover:text-ink hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-denim group-[.destructive]:text-white group-[.destructive]:hover:text-white",
+      "absolute right-2 top-2 rounded-sm p-1 text-ink-2 opacity-70 transition-opacity hover:text-ink hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-denim group-[.destructive]:text-white group-[.destructive]:hover:text-white group-[.success]:text-white group-[.success]:hover:text-white group-[.success]:focus-visible:ring-white group-[.destructive]:focus-visible:ring-white",
       className
     )}
     toast-close=""

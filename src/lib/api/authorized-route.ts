@@ -110,7 +110,10 @@ export async function withAuthorizedRoute(
     }
 
     return NextResponse.json(
-      { error: httpError.exposeMessage ? httpError.message : INTERNAL_ERROR_MESSAGE },
+      {
+        error: httpError.exposeMessage ? httpError.message : INTERNAL_ERROR_MESSAGE,
+        ...(httpError.exposeMessage && httpError.code ? { code: httpError.code } : {}),
+      },
       { status: httpError.statusCode }
     );
   }

@@ -1,14 +1,22 @@
 export class HttpError extends Error {
   readonly statusCode: number;
   readonly exposeMessage: boolean;
+  /** Lets a screen react to one specific refusal (asking for a password, say) instead of only showing it. */
+  readonly code?: string;
 
-  constructor(statusCode: number, message: string, exposeMessage: boolean = true) {
+  constructor(statusCode: number, message: string, exposeMessage: boolean = true, code?: string) {
     super(message);
     this.name = "HttpError";
     this.statusCode = statusCode;
     this.exposeMessage = exposeMessage;
+    this.code = code;
   }
 }
+
+/** A fiado sale over the client's limit or with a purchase open too long: needs an administrator. */
+export const FIADO_BLOCKED = "FIADO_BLOCKED";
+/** A register closing with a cash difference above the tolerance: needs the reason. */
+export const DIFFERENCE_NOTE_REQUIRED = "DIFFERENCE_NOTE_REQUIRED";
 
 export const INTERNAL_ERROR_MESSAGE = "Erro interno no servidor. Tente novamente.";
 

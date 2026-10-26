@@ -60,7 +60,7 @@ export default function BulkCategoryPage() {
 
   const handleSave = async () => {
     if (changedProducts.length === 0) {
-      toast({ title: "Nenhuma alteração para salvar" });
+      toast({ title: "Nenhuma alteração para salvar", variant: "neutral" });
       return;
     }
 

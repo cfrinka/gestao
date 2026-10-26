@@ -17,6 +17,8 @@ export interface ProcessCheckoutInput {
   /** Total the payments were settled against; the transaction refuses the sale if prices moved. */
   expectedTotal: number;
   clientId?: string;
+  /** Saved on the client with the sale, when the client had no valid phone on file. */
+  clientPhone?: string;
   payLater: boolean;
   createdById: string;
   createdByName: string;
@@ -39,6 +41,14 @@ export interface CheckoutResult {
   order: CheckoutOrder;
 }
 
+/** What the fiado rules look at before a sale on credit. */
+export interface FiadoStanding {
+  name: string;
+  balance: number;
+  phone: string;
+  oldestOpenAt: Date | null;
+}
+
 export interface CheckoutRepository {
   /**
    * In one transaction: checks the idempotency key, the cashier's open register, the client and
@@ -50,4 +60,8 @@ export interface CheckoutRepository {
   findCompletedCheckout(idempotency: CheckoutIdempotency): Promise<CheckoutOrder | null>;
   /** Consumes a server-issued discount-override grant for this user, if one is live. Single-use. */
   consumeDiscountAuthorization(userId: string): Promise<boolean>;
+  /** The client's balance, phone and oldest open fiado purchase; null when the client does not exist. */
+  getFiadoStanding(clientId: string): Promise<FiadoStanding | null>;
+  /** Consumes a grant to sell fiado past the store's rules, if one is live. Single-use. */
+  consumeFiadoAuthorization(userId: string): Promise<boolean>;
 }

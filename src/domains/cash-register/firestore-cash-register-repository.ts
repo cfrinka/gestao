@@ -21,8 +21,8 @@ export class FirestoreCashRegisterRepository implements CashRegisterRepository {
     return openCashRegister(userId, userName, openingBalance);
   }
 
-  async closeRegister(registerId: string, closingBalance: number): Promise<CashRegister> {
-    return closeCashRegister(registerId, closingBalance);
+  async closeRegister(registerId: string, closingBalance: number, differenceNote?: string): Promise<CashRegister> {
+    return closeCashRegister(registerId, closingBalance, differenceNote);
   }
 
   async getRegisterOrders(registerId: string): Promise<Order[]> {

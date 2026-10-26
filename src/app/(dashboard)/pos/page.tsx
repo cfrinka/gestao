@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/auth-context";
-import { apiGet, apiPost } from "@/lib/api-client";
+import { ApiError, apiGet, apiPost } from "@/lib/api-client";
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,9 +16,13 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { cn, formatCurrency } from "@/lib/utils";
 import { roundMoney } from "@/lib/money";
+import { formatPhone, isValidPhone } from "@/lib/phone";
+import { assessFiadoSale, oldestOpenFiadoAt, toFiadoPolicy } from "@/domains/clients/fiado-credit";
+import { differenceNeedsNote, expectedRegisterCash, registerCashDifference } from "@/domains/cash-register/register-difference";
 import { Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, ArrowDownCircle, ArrowUpCircle, Check, ScanLine, BadgePercent, AlertTriangle, ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useProductCategories } from "@/lib/use-product-categories";
 import { PageHeader, StateTag } from "@/components/layout/page-header";
 import { SizeGrid } from "@/components/etiqueta/size-grid";
@@ -76,6 +80,9 @@ interface CashRegister {
   totalExchangeDifferenceIn?: number;
   totalExchangeRefundOut?: number;
   exchangeDifferenceCount?: number;
+  expectedCash?: number;
+  cashDifference?: number;
+  differenceNote?: string;
 }
 
 interface Order {
@@ -113,6 +120,9 @@ interface StoreSettings {
   cnpj: string;
   footerMessage: string;
   exchangeDays: number;
+  fiadoLimit: number;
+  fiadoMaxDays: number;
+  registerDifferenceLimit: number;
   discounts: DiscountSettings;
 }
 
@@ -186,11 +196,16 @@ export default function POSPage() {
   const [adminPassword, setAdminPassword] = useState("");
   const [verifyingAdmin, setVerifyingAdmin] = useState(false);
   const [adminAuthorized, setAdminAuthorized] = useState(false);
+  // The same password dialog authorizes a discount above the cap or a fiado sale the rules refuse.
+  const [adminAuthPurpose, setAdminAuthPurpose] = useState<"discount" | "fiado">("discount");
 
   // Pay later state
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [showPayLater, setShowPayLater] = useState(false);
+  // What the fiado rules look at for the chosen client, read when the client is picked.
+  const [fiadoStanding, setFiadoStanding] = useState<{ clientId: string; balance: number; oldestOpenAt: Date | null } | null>(null);
+  const [fiadoPhone, setFiadoPhone] = useState("");
   const [showMobileCart, setShowMobileCart] = useState(false);
 
   // Cash register state
@@ -222,6 +237,7 @@ export default function POSPage() {
   const [openingDenominations, setOpeningDenominations] = useState<DenominationCounts>(() => createEmptyDenominationCounts());
   const [closingDenominations, setClosingDenominations] = useState<DenominationCounts>(() => createEmptyDenominationCounts());
   const [closingReportData, setClosingReportData] = useState<{ register: CashRegister; orders: Order[] } | null>(null);
+  const [closingNote, setClosingNote] = useState("");
 
   // Store settings for receipt
   const [storeSettings, setStoreSettings] = useState<StoreSettings>({
@@ -231,6 +247,9 @@ export default function POSPage() {
     cnpj: "",
     footerMessage: "Obrigado pela preferência!\nVolte sempre!",
     exchangeDays: 10,
+    fiadoLimit: 0,
+    fiadoMaxDays: 60,
+    registerDifferenceLimit: 10,
     discounts: {
       pixDiscountEnabled: false,
       pixDiscountPercent: 5,
@@ -289,6 +308,26 @@ export default function POSPage() {
     // Auto-focus search input for barcode scanner
     searchInputRef.current?.focus();
   }, [fetchProducts]);
+
+  // The chosen client's balance and oldest open fiado purchase, for the fiado warnings.
+  const loadFiadoStanding = useCallback(async (clientId: string) => {
+    try {
+      const data = await apiGet(`/api/clients/${clientId}`);
+      setFiadoStanding({
+        clientId,
+        balance: Number(data.balance || 0),
+        oldestOpenAt: oldestOpenFiadoAt(Array.isArray(data.pendingOrders) ? data.pendingOrders : []),
+      });
+    } catch {
+      setFiadoStanding(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    setFiadoPhone("");
+    setFiadoStanding(null);
+    if (showPayLater && selectedClientId) loadFiadoStanding(selectedClientId);
+  }, [showPayLater, selectedClientId, loadFiadoStanding]);
 
   const fetchClients = async () => {
     try {
@@ -350,6 +389,9 @@ export default function POSPage() {
         cnpj: data.cnpj || "",
         footerMessage: data.footerMessage || "Obrigado pela preferência!\nVolte sempre!",
         exchangeDays: Number.isFinite(data.exchangeDays) ? data.exchangeDays : 10,
+        fiadoLimit: Number.isFinite(Number(data.fiadoLimit)) ? Number(data.fiadoLimit) : 0,
+        fiadoMaxDays: Number.isFinite(Number(data.fiadoMaxDays)) ? Number(data.fiadoMaxDays) : 60,
+        registerDifferenceLimit: Number.isFinite(Number(data.registerDifferenceLimit)) ? Number(data.registerDifferenceLimit) : 10,
         discounts: {
           pixDiscountEnabled: data.discounts?.pixDiscountEnabled ?? false,
           pixDiscountPercent: data.discounts?.pixDiscountPercent ?? 5,
@@ -480,15 +522,23 @@ export default function POSPage() {
       const data = await apiPost("/api/cash-register", {
         action: "close",
         closingBalance,
+        ...(closingNote.trim() ? { differenceNote: closingNote.trim() } : {}),
       });
       setClosingReportData(data);
       setShowCloseRegisterModal(false);
       setShowClosingReport(true);
       setCashRegister(null);
       setClosingBalance(0);
+      setClosingNote("");
       setClosingDenominations(createEmptyDenominationCounts());
-    } catch {
-      toast({ title: "Erro ao fechar caixa", variant: "destructive" });
+    } catch (error) {
+      // The tolerance may have changed in Configurações since this screen loaded it.
+      if (error instanceof ApiError && error.code === "DIFFERENCE_NOTE_REQUIRED") fetchStoreSettings();
+      toast({
+        title: "Erro ao fechar caixa",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     } finally {
       setClosingRegister(false);
     }
@@ -523,6 +573,7 @@ export default function POSPage() {
   const closeRegisterModal = () => {
     setClosingDenominations(createEmptyDenominationCounts());
     setClosingBalance(0);
+    setClosingNote("");
     setShowCloseRegisterModal(true);
   };
 
@@ -562,7 +613,9 @@ export default function POSPage() {
         ["Quantidade de Vendas", register.salesCount.toString()],
         ["Trocas com Diferença", (register.exchangeDifferenceCount || 0).toString()],
         ["Saldo Final Informado", formatCurrency(register.closingBalance || 0)],
-        ["Saldo Esperado (Inicial + Dinheiro)", formatCurrency(register.openingBalance + register.totalCash)],
+        ["Saldo Esperado (Inicial + Dinheiro + Troco - Sangria)", formatCurrency(register.expectedCash ?? expectedRegisterCash(register))],
+        ["Diferença", formatCurrency(register.cashDifference ?? registerCashDifference(register, register.closingBalance || 0))],
+        ...(register.differenceNote ? [["Motivo da Diferença", register.differenceNote]] : []),
       ],
     });
 
@@ -749,6 +802,24 @@ export default function POSPage() {
 
   const canApplyDiscount = userData?.role === "ADMIN" || userData?.role === "CASHIER";
   const canUsePayLater = userData?.role === "ADMIN" || userData?.role === "CASHIER";
+
+  // Fiado needs a reachable client and, past the store's limit or deadline, an administrator.
+  const fiadoClient = clients.find((client) => client.id === selectedClientId);
+  const fiadoNeedsPhone = Boolean(fiadoClient) && !isValidPhone(fiadoClient?.phone);
+  const fiadoBlocks =
+    fiadoStanding && fiadoStanding.clientId === selectedClientId
+      ? assessFiadoSale({
+          balance: fiadoStanding.balance,
+          oldestOpenAt: fiadoStanding.oldestOpenAt,
+          saleTotal: total,
+          policy: toFiadoPolicy(storeSettings),
+          now: new Date(),
+        })
+      : [];
+
+  // Closing count against what the drawer should hold; past the tolerance it needs a reason.
+  const closingDifference = cashRegister ? registerCashDifference(cashRegister, closingBalance) : 0;
+  const closingNeedsNote = Boolean(cashRegister) && differenceNeedsNote(closingDifference, storeSettings.registerDifferenceLimit);
   const maxCashierDiscount = subtotal * 0.10;
 
   const openPaymentModal = () => {
@@ -772,6 +843,7 @@ export default function POSPage() {
     if (isCashier && value > maxCashierDiscount && !adminAuthorized) {
       // Cashier trying to apply discount > 10%, require admin authorization
       setDiscount(value);
+      setAdminAuthPurpose("discount");
       setShowAdminPasswordModal(true);
       return;
     }
@@ -787,30 +859,34 @@ export default function POSPage() {
 
     setVerifyingAdmin(true);
     try {
-      // Verify admin password using the same method as debt corrections
+      // The server keeps a one-time grant for this purpose; the sale that needs it uses it up.
       const response = await apiPost("/api/admin/verify-password", {
-        adminPassword: adminPassword.trim()
+        adminPassword: adminPassword.trim(),
+        purpose: adminAuthPurpose,
       });
 
       if (response.success) {
-        toast({ title: "Autorização confirmada" });
-        setAdminAuthorized(true);
         setShowAdminPasswordModal(false);
         setAdminPassword("");
-        // Discount is already set, just close the modal
+        if (adminAuthPurpose === "fiado") {
+          handlePayLater();
+        } else {
+          toast({ title: "Autorização confirmada" });
+          setAdminAuthorized(true);
+        }
       } else {
         toast({ title: response.error || "Senha de administrador inválida", variant: "destructive" });
         // Reset discount to max allowed for cashier
-        setDiscount(maxCashierDiscount);
+        if (adminAuthPurpose === "discount") setDiscount(maxCashierDiscount);
       }
-    } catch {
+    } catch (error) {
       toast({
         title: "Erro na verificação",
-        description: "Senha de administrador inválida",
+        description: error instanceof Error ? error.message : "Senha de administrador inválida",
         variant: "destructive"
       });
       // Reset discount to max allowed for cashier
-      setDiscount(maxCashierDiscount);
+      if (adminAuthPurpose === "discount") setDiscount(maxCashierDiscount);
     } finally {
       setVerifyingAdmin(false);
     }
@@ -1062,7 +1138,21 @@ export default function POSPage() {
     receiptWindow.document.close();
   };
 
-  const handlePayLater = async () => {
+  const openFiadoAuthorization = () => {
+    setAdminAuthPurpose("fiado");
+    setAdminPassword("");
+    setShowAdminPasswordModal(true);
+  };
+
+  // Within the rules the sale goes straight through; outside them an admin confirms by pressing
+  // the button that names it, and a cashier types the admin password first.
+  const confirmPayLater = () => {
+    if (fiadoBlocks.length === 0) return handlePayLater();
+    if (userData?.role === "ADMIN") return handlePayLater({ override: true });
+    openFiadoAuthorization();
+  };
+
+  const handlePayLater = async (options: { override?: boolean } = {}) => {
     if (cart.length === 0) {
       toast({ title: "Carrinho vazio", variant: "destructive" });
       return;
@@ -1070,6 +1160,11 @@ export default function POSPage() {
 
     if (!selectedClientId) {
       toast({ title: "Selecione um cliente", variant: "destructive" });
+      return;
+    }
+
+    if (fiadoNeedsPhone && !isValidPhone(fiadoPhone)) {
+      toast({ title: "Informe o celular do cliente com DDD", variant: "destructive" });
       return;
     }
 
@@ -1094,8 +1189,12 @@ export default function POSPage() {
     };
 
     try {
+      // The phone and the admin confirmation ride along outside the key: they don't change the
+      // sale, so a retry after a lost response still finds the sale already saved.
       const order = await apiPost("/api/checkout", {
         ...payLaterPayload,
+        ...(fiadoNeedsPhone ? { clientPhone: formatPhone(fiadoPhone) } : {}),
+        ...(options.override ? { fiadoOverride: true } : {}),
         idempotencyKey: idempotencyKeyFor(payLaterPayload),
       });
       checkoutAttempt.current = null;
@@ -1113,6 +1212,15 @@ export default function POSPage() {
       applySaleResult(order);
       fetchClients();
     } catch (error) {
+      if (error instanceof ApiError && error.code === "FIADO_BLOCKED") {
+        // The screen had an older picture of the client: refresh it, and let a cashier type
+        // the admin password right away.
+        loadFiadoStanding(selectedClientId);
+        if (userData?.role !== "ADMIN") {
+          openFiadoAuthorization();
+          return;
+        }
+      }
       toast({
         title: "Erro ao processar venda",
         description: error instanceof Error ? error.message : "Erro desconhecido",
@@ -1808,6 +1916,43 @@ export default function POSPage() {
                     {clients.length === 0 && (
                       <p className="text-xs text-ink-3">Nenhum cliente cadastrado. Cadastre em Clientes e fiado.</p>
                     )}
+
+                    {fiadoNeedsPhone && (
+                      <div className="space-y-1.5 pt-1">
+                        <Label htmlFor="fiado-phone">Celular de {fiadoClient?.name} com DDD</Label>
+                        <Input
+                          id="fiado-phone"
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="off"
+                          placeholder="(11) 98765-4321"
+                          value={fiadoPhone}
+                          onChange={(e) => setFiadoPhone(e.target.value)}
+                          onBlur={() => setFiadoPhone((current) => formatPhone(current))}
+                          aria-invalid={fiadoPhone.trim() !== "" && !isValidPhone(fiadoPhone)}
+                          aria-describedby="fiado-phone-hint"
+                        />
+                        <p id="fiado-phone-hint" className="text-xs text-ink-3">
+                          O cadastro está sem celular. Ele fica salvo com a venda e serve para lembrar do pagamento.
+                        </p>
+                      </div>
+                    )}
+
+                    {fiadoBlocks.length > 0 && (
+                      <div role="alert" className="space-y-1 border-l-[3px] border-vermelho bg-vermelho-tint px-3 py-2.5 text-sm text-ink">
+                        <p className="font-semibold text-vermelho">Fiado fora das regras da loja</p>
+                        <ul className="space-y-0.5">
+                          {fiadoBlocks.map((block) => (
+                            <li key={block.kind}>{block.message}</li>
+                          ))}
+                        </ul>
+                        <p className="text-ink-2">
+                          {userData?.role === "ADMIN"
+                            ? "Como administrador, você pode vender mesmo assim."
+                            : "Para vender, peça a senha do administrador."}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1820,10 +1965,16 @@ export default function POSPage() {
               {showPayLater ? (
                 <Button
                   className="flex-1"
-                  onClick={handlePayLater}
-                  disabled={processing || !selectedClientId}
+                  onClick={confirmPayLater}
+                  disabled={processing || !selectedClientId || (fiadoNeedsPhone && !isValidPhone(fiadoPhone))}
                 >
-                  {processing ? "Registrando…" : "Confirmar fiado"}
+                  {processing
+                    ? "Registrando…"
+                    : fiadoBlocks.length === 0
+                      ? "Confirmar fiado"
+                      : userData?.role === "ADMIN"
+                        ? "Vender fiado mesmo assim"
+                        : "Pedir senha e vender"}
                 </Button>
               ) : (
                 <Button
@@ -1844,10 +1995,8 @@ export default function POSPage() {
         open={showAdminPasswordModal}
         onOpenChange={(open) => {
           setShowAdminPasswordModal(open);
-          if (!open && !adminAuthorized) {
-            setAdminPassword("");
-            setDiscount(0);
-          }
+          if (!open) setAdminPassword("");
+          if (!open && adminAuthPurpose === "discount" && !adminAuthorized) setDiscount(0);
         }}
       >
         <DialogContent className="sm:max-w-md">
@@ -1855,9 +2004,22 @@ export default function POSPage() {
             <DialogTitle>Autorização do administrador</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-ink-2">
-              Descontos acima de 10% precisam da senha de um administrador.
-            </p>
+            {adminAuthPurpose === "fiado" ? (
+              <div className="space-y-1 text-sm text-ink-2">
+                <p>Esta venda fiado está fora das regras da loja e precisa da senha de um administrador.</p>
+                {fiadoBlocks.length > 0 && (
+                  <ul className="list-disc space-y-0.5 pl-5 text-ink">
+                    {fiadoBlocks.map((block) => (
+                      <li key={block.kind}>{block.message}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-ink-2">
+                Descontos acima de 10% precisam da senha de um administrador.
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="admin-password">Senha do administrador</Label>
               <Input
@@ -1875,7 +2037,7 @@ export default function POSPage() {
                 onClick={() => {
                   setShowAdminPasswordModal(false);
                   setAdminPassword("");
-                  setDiscount(0); // Reset discount if cancelled
+                  if (adminAuthPurpose === "discount") setDiscount(0); // Reset discount if cancelled
                 }}
               >
                 Cancelar
@@ -1885,7 +2047,7 @@ export default function POSPage() {
                 onClick={handleAdminVerification}
                 disabled={verifyingAdmin}
               >
-                {verifyingAdmin ? "Verificando…" : "Autorizar desconto"}
+                {verifyingAdmin ? "Verificando…" : adminAuthPurpose === "fiado" ? "Autorizar e vender" : "Autorizar desconto"}
               </Button>
             </div>
           </div>
@@ -2087,14 +2249,7 @@ export default function POSPage() {
                 <Separator />
                 <div className="flex justify-between text-base font-bold">
                   <span>Saldo esperado em dinheiro</span>
-                  <span>
-                    {formatCurrency(
-                      cashRegister.openingBalance +
-                        cashRegister.totalCash +
-                        (cashRegister.totalCashSupply || 0) -
-                        (cashRegister.totalCashWithdrawal || 0)
-                    )}
-                  </span>
+                  <span>{formatCurrency(expectedRegisterCash(cashRegister))}</span>
                 </div>
               </div>
             )}
@@ -2131,6 +2286,43 @@ export default function POSPage() {
               <span className="pb-1 text-sm font-semibold text-ink-2">Saldo final contado</span>
               <PriceTag value={closingBalance} className="text-[36px]" />
             </div>
+            {cashRegister && (
+              <div className="space-y-3">
+                <div className="flex items-baseline justify-between gap-3" aria-live="polite">
+                  <span className="text-sm font-semibold text-ink-2">Diferença</span>
+                  <span
+                    className={cn(
+                      "font-tag text-xl font-extrabold tabular-nums",
+                      closingDifference < -0.004 ? "text-vermelho" : closingDifference > 0.004 ? "text-verde" : "text-ink"
+                    )}
+                  >
+                    {closingDifference < -0.004
+                      ? `Faltam ${formatCurrency(-closingDifference)}`
+                      : closingDifference > 0.004
+                        ? `Sobram ${formatCurrency(closingDifference)}`
+                        : "Confere"}
+                  </span>
+                </div>
+                {closingNeedsNote && (
+                  <div className="space-y-1.5 border-l-[3px] border-vermelho bg-vermelho-tint px-3 py-2.5">
+                    <Label htmlFor="closing-note">Motivo da diferença</Label>
+                    <Textarea
+                      id="closing-note"
+                      rows={2}
+                      maxLength={500}
+                      value={closingNote}
+                      onChange={(e) => setClosingNote(e.target.value)}
+                      placeholder="Ex.: troco dado a mais, sangria sem registro"
+                      className="bg-paper"
+                    />
+                    <p className="text-xs text-ink-2">
+                      Diferença acima de {formatCurrency(storeSettings.registerDifferenceLimit)}: escreva o que houve para fechar o caixa.
+                      Fica em Relatórios, na aba Diferenças de caixa.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -2139,11 +2331,17 @@ export default function POSPage() {
                   setShowCloseRegisterModal(false);
                   setClosingDenominations(createEmptyDenominationCounts());
                   setClosingBalance(0);
+                  setClosingNote("");
                 }}
               >
                 Cancelar
               </Button>
-              <Button variant="destructive" className="flex-1" onClick={handleCloseRegister} disabled={closingRegister}>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={handleCloseRegister}
+                disabled={closingRegister || (closingNeedsNote && !closingNote.trim())}
+              >
                 <Lock className="h-4 w-4" aria-hidden="true" />
                 {closingRegister ? "Fechando…" : "Fechar caixa"}
               </Button>
@@ -2239,12 +2437,7 @@ export default function POSPage() {
                   <div className="flex justify-between text-sm">
                     <span>Esperado (inicial + dinheiro + troco − sangria)</span>
                     <span className="font-medium">
-                      {formatCurrency(
-                        closingReportData.register.openingBalance +
-                          closingReportData.register.totalCash +
-                          (closingReportData.register.totalCashSupply || 0) -
-                          (closingReportData.register.totalCashWithdrawal || 0)
-                      )}
+                      {formatCurrency(closingReportData.register.expectedCash ?? expectedRegisterCash(closingReportData.register))}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -2254,27 +2447,18 @@ export default function POSPage() {
                   <Separator />
                   <div className="flex justify-between text-sm font-bold">
                     <span>Diferença</span>
-                    <span
-                      className={
-                        (closingReportData.register.closingBalance || 0) -
-                          (closingReportData.register.openingBalance +
-                            closingReportData.register.totalCash +
-                            (closingReportData.register.totalCashSupply || 0) -
-                            (closingReportData.register.totalCashWithdrawal || 0)) <
-                        0
-                          ? "text-vermelho"
-                          : "text-verde"
-                      }
-                    >
-                      {formatCurrency(
-                        (closingReportData.register.closingBalance || 0) -
-                          (closingReportData.register.openingBalance +
-                            closingReportData.register.totalCash +
-                            (closingReportData.register.totalCashSupply || 0) -
-                            (closingReportData.register.totalCashWithdrawal || 0))
-                      )}
-                    </span>
+                    {(() => {
+                      const difference =
+                        closingReportData.register.cashDifference ??
+                        registerCashDifference(closingReportData.register, closingReportData.register.closingBalance || 0);
+                      return (
+                        <span className={difference < -0.004 ? "text-vermelho" : "text-verde"}>{formatCurrency(difference)}</span>
+                      );
+                    })()}
                   </div>
+                  {closingReportData.register.differenceNote ? (
+                    <p className="text-sm text-ink-2">Motivo: {closingReportData.register.differenceNote}</p>
+                  ) : null}
                 </CardContent>
               </Card>
 

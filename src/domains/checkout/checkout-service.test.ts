@@ -5,6 +5,7 @@ import type {
   CheckoutOrder,
   CheckoutRepository,
   CheckoutResult,
+  FiadoStanding,
   ProcessCheckoutInput,
 } from "./repository";
 import type { CheckoutCommand } from "./types";
@@ -51,6 +52,10 @@ class FakeCheckoutRepository implements CheckoutRepository {
     return { replayed: false, order };
   });
   consumeDiscountAuthorizationMock = vi.fn(async (_userId: string) => false);
+  consumeFiadoAuthorizationMock = vi.fn(async (_userId: string) => false);
+  standings = new Map<string, FiadoStanding>([
+    ["client-1", { name: "Ana", balance: 0, phone: "(11) 98765-4321", oldestOpenAt: null }],
+  ]);
 
   async processCheckout(input: ProcessCheckoutInput) {
     return this.processCheckoutMock(input);
@@ -61,6 +66,12 @@ class FakeCheckoutRepository implements CheckoutRepository {
   }
   async consumeDiscountAuthorization(userId: string) {
     return this.consumeDiscountAuthorizationMock(userId);
+  }
+  async getFiadoStanding(clientId: string) {
+    return this.standings.get(clientId) ?? null;
+  }
+  async consumeFiadoAuthorization(userId: string) {
+    return this.consumeFiadoAuthorizationMock(userId);
   }
 }
 
@@ -151,6 +162,104 @@ describe("CheckoutService — pay later", () => {
     expect(repo.processCheckoutMock).toHaveBeenCalledWith(
       expect.objectContaining({ clientId: "client-1", payLater: true, payments: [], change: 0 })
     );
+  });
+});
+
+describe("CheckoutService — fiado rules", () => {
+  const now = new Date("2026-10-26T15:00:00.000Z");
+  const DAY = 24 * 60 * 60 * 1000;
+  const policy = { limit: 300, maxDays: 60 };
+  const fiado = (overrides: Partial<CheckoutCommand> = {}) =>
+    baseCommand({ payLater: true, clientId: "client-1", fiadoPolicy: policy, now, ...overrides });
+
+  it("asks for the client's phone when the record has none, and saves the typed one formatted", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.standings.set("client-1", { name: "Ana", balance: 0, phone: "", oldestOpenAt: null });
+    const service = new CheckoutService(repo);
+
+    await expect(service.execute(fiado())).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.execute(fiado({ clientPhone: "123" }))).rejects.toMatchObject({ statusCode: 400 });
+    expect(repo.processCheckoutMock).not.toHaveBeenCalled();
+
+    await service.execute(fiado({ clientPhone: "11987654321" }));
+    expect(repo.processCheckoutMock).toHaveBeenCalledWith(expect.objectContaining({ clientPhone: "(11) 98765-4321" }));
+  });
+
+  it("never sends a phone to save when the client already has a valid one", async () => {
+    const repo = new FakeCheckoutRepository();
+    await new CheckoutService(repo).execute(fiado({ clientPhone: "21999990000" }));
+    expect(repo.processCheckoutMock.mock.calls[0][0].clientPhone).toBeUndefined();
+  });
+
+  it("refuses a cashier's sale past the limit without the admin password, and lets it through with it", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.standings.set("client-1", { name: "Ana", balance: 250, phone: "(11) 98765-4321", oldestOpenAt: null });
+    const service = new CheckoutService(repo);
+
+    await expect(service.execute(fiado())).rejects.toMatchObject({ statusCode: 403, code: "FIADO_BLOCKED" });
+    expect(repo.processCheckoutMock).not.toHaveBeenCalled();
+
+    repo.consumeFiadoAuthorizationMock.mockResolvedValueOnce(true);
+    const result = await service.execute(fiado());
+    expect(result.status).toBe(201);
+  });
+
+  it("measures the limit with the sale's discounts taken off", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.standings.set("client-1", { name: "Ana", balance: 250, phone: "(11) 98765-4321", oldestOpenAt: null });
+    // 100 − 40 promo − 10 manual = 50 → owes exactly 300, the limit.
+    const result = await new CheckoutService(repo).execute(fiado({ promoDiscount: 40, discount: 10 }));
+    expect(result.status).toBe(201);
+    expect(repo.consumeFiadoAuthorizationMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a purchase left open past the deadline; an admin sells only after confirming", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.standings.set("client-1", {
+      name: "Ana",
+      balance: 40,
+      phone: "(11) 98765-4321",
+      oldestOpenAt: new Date(now.getTime() - 75 * DAY),
+    });
+    const service = new CheckoutService(repo);
+
+    await expect(service.execute(fiado({ userRole: "ADMIN" }))).rejects.toThrow(/75 dias/);
+    expect(repo.consumeFiadoAuthorizationMock).not.toHaveBeenCalled();
+
+    const result = await service.execute(fiado({ userRole: "ADMIN", fiadoOverride: true }));
+    expect(result.status).toBe(201);
+  });
+
+  it("ignores the admin confirmation flag on a cashier's sale", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.standings.set("client-1", { name: "Ana", balance: 500, phone: "(11) 98765-4321", oldestOpenAt: null });
+    await expect(new CheckoutService(repo).execute(fiado({ fiadoOverride: true }))).rejects.toMatchObject({ code: "FIADO_BLOCKED" });
+  });
+
+  it("keeps the cashier's discount authorization when the fiado sale is refused", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.standings.set("client-1", { name: "Ana", balance: 500, phone: "(11) 98765-4321", oldestOpenAt: null });
+    await expect(new CheckoutService(repo).execute(fiado({ discount: 20 }))).rejects.toMatchObject({ code: "FIADO_BLOCKED" });
+    expect(repo.consumeDiscountAuthorizationMock).not.toHaveBeenCalled();
+  });
+
+  it("recovers a fiado sale whose response was lost, though it now puts the client past the limit", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    const first = await service.execute(fiado());
+
+    repo.standings.set("client-1", { name: "Ana", balance: 400, phone: "(11) 98765-4321", oldestOpenAt: now });
+    const retry = await service.execute(fiado());
+    expect(retry.status).toBe(200);
+    expect(retry.body).toEqual(first.body);
+    expect(repo.processCheckoutMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies no rule when the store has none", async () => {
+    const repo = new FakeCheckoutRepository();
+    repo.standings.set("client-1", { name: "Ana", balance: 9000, phone: "(11) 98765-4321", oldestOpenAt: new Date(0) });
+    const result = await new CheckoutService(repo).execute(fiado({ fiadoPolicy: { limit: 0, maxDays: 0 } }));
+    expect(result.status).toBe(201);
   });
 });
 

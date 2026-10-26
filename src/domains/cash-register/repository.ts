@@ -4,7 +4,8 @@ import type { IdempotencyReservation } from "@/domains/cash-register/types";
 export interface CashRegisterRepository {
   getOpenRegister(userId: string): Promise<CashRegister | null>;
   openRegister(userId: string, userName: string, openingBalance: number): Promise<CashRegister>;
-  closeRegister(registerId: string, closingBalance: number): Promise<CashRegister>;
+  /** Closes the register, storing the expected cash, the difference and its reason (if any). */
+  closeRegister(registerId: string, closingBalance: number, differenceNote?: string): Promise<CashRegister>;
   getRegisterOrders(registerId: string): Promise<Order[]>;
   applyAdjustment(input: {
     registerId: string;

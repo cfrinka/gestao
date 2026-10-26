@@ -6,6 +6,11 @@ import { roundMoney } from "@/lib/money";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { createFinancialAuditLog } from "@/domains/financial/financial-db";
 import { toCompetencyMonth } from "@/lib/dates";
+import {
+  expectedRegisterCash,
+  registerCashDifference,
+  type RegisterCashTotals,
+} from "@/domains/cash-register/register-difference";
 
 type CashAdjustmentType = "SUPPLY" | "WITHDRAWAL";
 
@@ -93,7 +98,11 @@ export async function openCashRegister(
   };
 }
 
-export async function closeCashRegister(registerId: string, closingBalance: number): Promise<CashRegister> {
+export async function closeCashRegister(
+  registerId: string,
+  closingBalance: number,
+  differenceNote?: string
+): Promise<CashRegister> {
   const now = new Date();
   const registerRef = adminDb.collection("cashRegisters").doc(registerId);
 
@@ -102,11 +111,19 @@ export async function closeCashRegister(registerId: string, closingBalance: numb
     if (!snap.exists) {
       throw new HttpError(404, "Caixa não encontrado");
     }
-    const data = snap.data() as { userId?: string };
+    const data = snap.data() as { userId?: string; status?: string } & RegisterCashTotals;
+    if (data.status !== "OPEN") {
+      throw new HttpError(400, "Este caixa já foi fechado");
+    }
 
+    // The comparison is frozen at closing time, so the differences report reads what the
+    // operator saw even if the register's totals are corrected later.
     tx.update(registerRef, {
       closedAt: Timestamp.fromDate(now),
       closingBalance,
+      expectedCash: expectedRegisterCash(data),
+      cashDifference: registerCashDifference(data, closingBalance),
+      ...(differenceNote ? { differenceNote } : {}),
       status: "CLOSED",
     });
 

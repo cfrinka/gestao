@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest, user }) => {
-      const { adminPassword } = await authorizedRequest.json();
+      const { adminPassword, purpose } = await authorizedRequest.json();
 
       if (!adminPassword) {
         return NextResponse.json({ error: "Informe a senha de administrador" }, { status: 400 });
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
       // Issue a short-lived, single-use grant so checkout can verify this authorization
       // server-side instead of trusting a client-supplied flag.
-      await grantDiscountAuthorization(user.uid);
+      await grantDiscountAuthorization(user.uid, purpose === "fiado" ? "fiado" : "discount");
 
       return NextResponse.json({ success: true });
     },

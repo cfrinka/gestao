@@ -40,8 +40,8 @@ class FakeCashRegisterRepository implements CashRegisterRepository {
   openRegisterMock = vi.fn(async (userId: string, userName: string, openingBalance: number): Promise<CashRegister> =>
     makeRegister({ userId, userName, openingBalance })
   );
-  closeRegisterMock = vi.fn(async (registerId: string, closingBalance: number): Promise<CashRegister> =>
-    makeRegister({ id: registerId, status: "CLOSED", closingBalance })
+  closeRegisterMock = vi.fn(async (registerId: string, closingBalance: number, differenceNote?: string): Promise<CashRegister> =>
+    makeRegister({ id: registerId, status: "CLOSED", closingBalance, differenceNote })
   );
   getRegisterOrdersMock = vi.fn(async (_registerId: string): Promise<Order[]> => []);
   applyAdjustmentMock = vi.fn(
@@ -55,8 +55,8 @@ class FakeCashRegisterRepository implements CashRegisterRepository {
   async openRegister(userId: string, userName: string, openingBalance: number) {
     return this.openRegisterMock(userId, userName, openingBalance);
   }
-  async closeRegister(registerId: string, closingBalance: number) {
-    return this.closeRegisterMock(registerId, closingBalance);
+  async closeRegister(registerId: string, closingBalance: number, differenceNote?: string) {
+    return this.closeRegisterMock(registerId, closingBalance, differenceNote);
   }
   async getRegisterOrders(registerId: string) {
     return this.getRegisterOrdersMock(registerId);
@@ -130,8 +130,43 @@ describe("CashRegisterService.close", () => {
     const repo = new FakeCashRegisterRepository();
     const service = new CashRegisterService(repo);
     const result = await service.close("user-1", 50);
-    expect(repo.closeRegisterMock).toHaveBeenCalledWith("register-1", 50);
+    expect(repo.closeRegisterMock).toHaveBeenCalledWith("register-1", 50, undefined);
     expect(result.register.status).toBe("CLOSED");
+  });
+
+  // Opening 100 + cash 80 + change added 20 − withdrawal 50 = 150 expected in the drawer.
+  const busyRegister = () => makeRegister({ totalCash: 80, totalCashSupply: 20, totalCashWithdrawal: 50 });
+
+  it("closes without a reason when the count is within the tolerance", async () => {
+    const repo = new FakeCashRegisterRepository();
+    repo.openRegisterRecord = busyRegister();
+    await new CashRegisterService(repo).close("user-1", 140, { tolerance: 10 });
+    expect(repo.closeRegisterMock).toHaveBeenCalledWith("register-1", 140, undefined);
+  });
+
+  it("asks for the reason when cash is missing beyond the tolerance, and keeps it once given", async () => {
+    const repo = new FakeCashRegisterRepository();
+    repo.openRegisterRecord = busyRegister();
+    const service = new CashRegisterService(repo);
+
+    await expect(service.close("user-1", 120.5, { tolerance: 10 })).rejects.toMatchObject({
+      statusCode: 400,
+      code: "DIFFERENCE_NOTE_REQUIRED",
+      message: expect.stringContaining("Faltam"),
+    });
+    await expect(service.close("user-1", 120.5, { tolerance: 10, note: "   " })).rejects.toMatchObject({
+      code: "DIFFERENCE_NOTE_REQUIRED",
+    });
+    expect(repo.closeRegisterMock).not.toHaveBeenCalled();
+
+    await service.close("user-1", 120.5, { tolerance: 10, note: "  Troco dado errado  " });
+    expect(repo.closeRegisterMock).toHaveBeenCalledWith("register-1", 120.5, "Troco dado errado");
+  });
+
+  it("asks for any difference at all when the tolerance is zero", async () => {
+    const repo = new FakeCashRegisterRepository();
+    repo.openRegisterRecord = busyRegister();
+    await expect(new CashRegisterService(repo).close("user-1", 150.5, { tolerance: 0 })).rejects.toThrow(/Sobram/);
   });
 });
 

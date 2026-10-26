@@ -1,4 +1,13 @@
-import { HttpError, IDEMPOTENCY_CONFLICT_MESSAGE, IDEMPOTENCY_IN_PROGRESS_MESSAGE, IDEMPOTENCY_KEY_REQUIRED_MESSAGE } from "@/lib/api/http-errors";
+import {
+  DIFFERENCE_NOTE_REQUIRED,
+  HttpError,
+  IDEMPOTENCY_CONFLICT_MESSAGE,
+  IDEMPOTENCY_IN_PROGRESS_MESSAGE,
+  IDEMPOTENCY_KEY_REQUIRED_MESSAGE,
+} from "@/lib/api/http-errors";
+import { roundMoney } from "@/lib/money";
+import { formatCurrency } from "@/lib/utils";
+import { differenceNeedsNote, registerCashDifference } from "@/domains/cash-register/register-difference";
 import { getUser } from "@/domains/users/users-db";
 import type { CashRegisterRepository } from "@/domains/cash-register/repository";
 import type { AdjustmentCommand, AdjustmentExecutionResult } from "@/domains/cash-register/types";
@@ -28,14 +37,34 @@ export class CashRegisterService {
     return this.repository.openRegister(userId, userName, Number(openingBalance || 0));
   }
 
-  async close(userId: string, closingBalance: number): Promise<{ register: CashRegister; orders: Order[] }> {
+  /**
+   * Closes the operator's register with the cash counted. A difference above the store's
+   * tolerance needs the reason, which is kept with the closing for the differences report.
+   */
+  async close(
+    userId: string,
+    closingBalance: number,
+    options: { note?: unknown; tolerance?: number } = {}
+  ): Promise<{ register: CashRegister; orders: Order[] }> {
     const register = await this.repository.getOpenRegister(userId);
     if (!register) {
       throw new HttpError(400, "Nenhum caixa aberto");
     }
 
+    const counted = roundMoney(Number(closingBalance || 0));
+    const note = typeof options.note === "string" ? options.note.trim().slice(0, 500) : "";
+    const difference = registerCashDifference(register, counted);
+    if (!note && options.tolerance !== undefined && differenceNeedsNote(difference, options.tolerance)) {
+      throw new HttpError(
+        400,
+        `${difference < 0 ? "Faltam" : "Sobram"} ${formatCurrency(Math.abs(difference))} no caixa. Escreva o motivo antes de fechar.`,
+        true,
+        DIFFERENCE_NOTE_REQUIRED
+      );
+    }
+
     const orders = await this.repository.getRegisterOrders(register.id);
-    const closedRegister = await this.repository.closeRegister(register.id, Number(closingBalance || 0));
+    const closedRegister = await this.repository.closeRegister(register.id, counted, note || undefined);
     return { register: closedRegister, orders };
   }
 

@@ -9,6 +9,7 @@ import { getStoreSettingsCached } from "@/domains/settings/settings-db";
 import { calculateAutoDiscount } from "@/domains/checkout/discount-calculator";
 import { normalizeCartItems, normalizePayments } from "@/domains/checkout/cart-validation";
 import { roundMoney } from "@/lib/money";
+import { toFiadoPolicy } from "@/domains/clients/fiado-credit";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,8 @@ interface CheckoutBody {
   clientId?: string;
   payLater?: boolean;
   idempotencyKey?: string;
+  clientPhone?: string;
+  fiadoOverride?: boolean;
 }
 
 async function buildDemoOrder(body: CheckoutBody, userId: string) {
@@ -126,6 +129,9 @@ export async function POST(request: NextRequest) {
         payLater,
         idempotencyKey: body.idempotencyKey || "",
         subtotal,
+        clientPhone: body.clientPhone,
+        fiadoOverride: body.fiadoOverride === true,
+        fiadoPolicy: toFiadoPolicy(storeSettings),
       });
 
       return NextResponse.json(result.body, { status: result.status });

@@ -6,6 +6,8 @@ import { addDaysISO, endOfStoreDay, startOfStoreDay, todayISO } from "@/lib/date
 import type { Client, Product } from "@/lib/db-types";
 import { getProductsCached } from "@/domains/products/products-db";
 import { getClients } from "@/domains/clients/clients-db";
+import { daysSince, isOpenFiadoOrder, oldestOpenFiadoAt, toDate, type FiadoOrderLike } from "@/domains/clients/fiado-credit";
+import { whatsappNumber } from "@/lib/phone";
 
 /**
  * The store's day-to-day reports: what to reorder, what is not selling, and who owes. The
@@ -26,16 +28,6 @@ export function compareSizes(a: string, b: string): number {
   const ib = SIZE_ORDER.indexOf(b);
   if (ia !== -1 || ib !== -1) return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
   return a.localeCompare(b, "pt-BR", { numeric: true });
-}
-
-function toDate(value: unknown): Date | null {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  if (typeof value === "object" && value !== null && "toDate" in value) {
-    return (value as { toDate: () => Date }).toDate();
-  }
-  const parsed = new Date(String(value));
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function sizesOf(product: Product): Array<{ size: string; stock: number }> {
@@ -226,16 +218,6 @@ export function computeStagnantStock(
 
 // ─────────────────────────────────────── 3. Fiado collection ─────────────────────────────────────
 
-export interface FiadoOrderLike {
-  clientId?: string;
-  isCancelled?: boolean;
-  remainingAmount?: number;
-  totalAmount?: number;
-  paidAt?: unknown;
-  createdAt?: unknown;
-  paymentHistory?: Array<{ createdAt?: unknown }>;
-}
-
 export interface CollectionLine {
   clientId: string;
   name: string;
@@ -247,13 +229,6 @@ export interface CollectionLine {
   oldestOpenAt: string | null;
   daysOpen: number | null;
   lastPaymentAt: string | null;
-}
-
-export function whatsappNumber(phone: string | undefined | null): string | null {
-  const digits = String(phone || "").replace(/\D/g, "");
-  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
-  if ((digits.length === 12 || digits.length === 13) && digits.startsWith("55")) return digits;
-  return null;
 }
 
 export function computeFiadoCollection(
@@ -280,22 +255,14 @@ export function computeFiadoCollection(
     if (owed < 0.01) continue;
 
     const orders = ordersByClient.get(client.id) ?? [];
-    const open = orders.filter((order) => {
-      if (order.isCancelled === true) return false;
-      const remaining =
-        typeof order.remainingAmount === "number" ? order.remainingAmount : order.paidAt ? 0 : Number(order.totalAmount || 0);
-      return remaining >= 0.005;
-    });
-    const oldest = open
-      .map((order) => toDate(order.createdAt))
-      .filter((d): d is Date => Boolean(d))
-      .sort((a, b) => a.getTime() - b.getTime())[0];
+    const open = orders.filter(isOpenFiadoOrder);
+    const oldest = oldestOpenFiadoAt(open);
     const lastPayment = orders
       .flatMap((order) => (Array.isArray(order.paymentHistory) ? order.paymentHistory : []))
       .map((payment) => toDate(payment.createdAt))
       .filter((d): d is Date => Boolean(d))
       .sort((a, b) => b.getTime() - a.getTime())[0];
-    const daysOpen = oldest ? Math.max(0, Math.floor((now.getTime() - oldest.getTime()) / DAY_MS)) : null;
+    const daysOpen = oldest ? daysSince(oldest, now) : null;
 
     lines.push({
       clientId: client.id,

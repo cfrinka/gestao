@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { discountSettingsSchema } from "@/domains/settings/discount-settings-schema";
 import { PageHeader } from "@/components/layout/page-header";
 import { currentMonthISO, todayISO } from "@/lib/dates";
+import { formatCurrency } from "@/lib/utils";
 
 interface Product {
   id: string;
@@ -186,6 +187,9 @@ interface StoreSettings {
   footerMessage: string;
   exchangeDays: number;
   commissionPercent: number;
+  fiadoLimit: number;
+  fiadoMaxDays: number;
+  registerDifferenceLimit: number;
   discounts: DiscountSettings;
 }
 
@@ -202,6 +206,9 @@ export default function SettingsPage() {
     footerMessage: "",
     exchangeDays: 10,
     commissionPercent: 3,
+    fiadoLimit: 0,
+    fiadoMaxDays: 60,
+    registerDifferenceLimit: 10,
     discounts: {
       pixDiscountEnabled: false,
       pixDiscountPercent: 5,
@@ -239,6 +246,9 @@ export default function SettingsPage() {
         footerMessage: data.footerMessage || "",
         exchangeDays: Number.isFinite(data.exchangeDays) ? data.exchangeDays : 10,
         commissionPercent: Number.isFinite(Number(data.commissionPercent)) ? Number(data.commissionPercent) : 3,
+        fiadoLimit: Number.isFinite(Number(data.fiadoLimit)) ? Number(data.fiadoLimit) : 0,
+        fiadoMaxDays: Number.isFinite(Number(data.fiadoMaxDays)) ? Number(data.fiadoMaxDays) : 60,
+        registerDifferenceLimit: Number.isFinite(Number(data.registerDifferenceLimit)) ? Number(data.registerDifferenceLimit) : 10,
         discounts: {
           pixDiscountEnabled: data.discounts?.pixDiscountEnabled ?? false,
           pixDiscountPercent: data.discounts?.pixDiscountPercent ?? 5,
@@ -341,8 +351,12 @@ export default function SettingsPage() {
     try {
       await apiPut("/api/settings", settings);
       toast({ title: "Configurações salvas com sucesso!" });
-    } catch {
-      toast({ title: "Erro ao salvar configurações", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Erro ao salvar configurações",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
@@ -378,7 +392,7 @@ export default function SettingsPage() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Configurações"
-        meta={<span>Dados da loja, cupom, descontos e senha do administrador</span>}
+        meta={<span>Dados da loja, cupom, fiado e caixa, descontos e senha do administrador</span>}
         actions={
           <Button size="sm" onClick={handleSave} disabled={saving}>
             <Save className="h-4 w-4" aria-hidden="true" />
@@ -526,6 +540,73 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Fiado e caixa</CardTitle>
+          <CardDescription>
+            Quando o PDV para de vender fiado e quando o fechamento do caixa pede explicação
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-6 md:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="fiadoLimit">Limite de fiado por cliente (R$)</Label>
+            <Input
+              id="fiadoLimit"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="10"
+              value={settings.fiadoLimit}
+              onChange={(e) => setSettings({ ...settings, fiadoLimit: Math.max(0, Number(e.target.value) || 0) })}
+              className="w-36 tabular-nums"
+            />
+            <p className="text-xs text-ink-3">
+              {settings.fiadoLimit > 0
+                ? `Uma venda que deixe o cliente devendo mais de ${formatCurrency(settings.fiadoLimit)} precisa do administrador.`
+                : "0 = sem limite de valor."}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="fiadoMaxDays">Prazo para pagar o fiado (dias)</Label>
+            <Input
+              id="fiadoMaxDays"
+              type="number"
+              inputMode="numeric"
+              min="0"
+              max="365"
+              value={settings.fiadoMaxDays}
+              onChange={(e) =>
+                setSettings({ ...settings, fiadoMaxDays: Math.min(365, Math.max(0, Math.floor(Number(e.target.value) || 0))) })
+              }
+              className="w-28 tabular-nums"
+            />
+            <p className="text-xs text-ink-3">
+              {settings.fiadoMaxDays > 0
+                ? `Quem tem compra em aberto há mais de ${settings.fiadoMaxDays} dias só compra fiado com o administrador.`
+                : "0 = sem prazo."}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="registerDifferenceLimit">Diferença de caixa tolerada (R$)</Label>
+            <Input
+              id="registerDifferenceLimit"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="1"
+              value={settings.registerDifferenceLimit}
+              onChange={(e) => setSettings({ ...settings, registerDifferenceLimit: Math.max(0, Number(e.target.value) || 0) })}
+              className="w-28 tabular-nums"
+            />
+            <p className="text-xs text-ink-3">
+              {settings.registerDifferenceLimit > 0
+                ? `Faltando ou sobrando mais de ${formatCurrency(settings.registerDifferenceLimit)}, o operador escreve o motivo para fechar.`
+                : "0 = qualquer diferença pede o motivo."}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

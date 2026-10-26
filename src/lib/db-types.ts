@@ -233,6 +233,10 @@ export interface CashRegister {
   /** Cash handed back to customers on exchanges (already taken out of totalCash). */
   totalExchangeRefundOut?: number;
   exchangeDifferenceCount: number;
+  /** Set at closing: the cash the drawer should have held, counted minus expected, and why. */
+  expectedCash?: number;
+  cashDifference?: number;
+  differenceNote?: string;
 }
 
 export interface ProductDiscount {
@@ -264,6 +268,12 @@ export interface StoreSettings {
   exchangeDays: number;
   /** Sellers' commission on their sales, in percent (3 = 3%). */
   commissionPercent: number;
+  /** Most a client may owe after a fiado sale, in reais; 0 = no limit. */
+  fiadoLimit: number;
+  /** New fiado is refused once a client's oldest open purchase is older than this; 0 = never. */
+  fiadoMaxDays: number;
+  /** Closing a register with a cash difference above this (in reais) asks for the reason. */
+  registerDifferenceLimit: number;
   discounts: DiscountSettings;
   updatedAt: Date;
 }
