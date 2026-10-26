@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { BadgePercent } from "lucide-react";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 import { TagHeader, TagRow } from "@/components/etiqueta/tag-row";
 import { ProductPhoto } from "@/components/etiqueta/product-photo";
@@ -79,11 +81,20 @@ export function StagnantStockReport() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <ChoiceRow label="Sem venda há" options={MIN_DAYS} value={minDays} onChange={(v) => setMinDays(v as 30 | 60 | 90)} />
           {!loading && !error ? (
-            <p className="text-sm text-ink-2">
-              <b className="font-semibold tabular-nums text-ink">{lines.length}</b> produtos ·{" "}
-              <b className="font-semibold tabular-nums text-ink">{pieces}</b> peças ·{" "}
-              <b className="font-semibold tabular-nums text-vermelho">{formatCurrency(tiedUp)}</b> parados
-            </p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <p className="text-sm text-ink-2">
+                <b className="font-semibold tabular-nums text-ink">{lines.length}</b> produtos ·{" "}
+                <b className="font-semibold tabular-nums text-ink">{pieces}</b> peças ·{" "}
+                <b className="font-semibold tabular-nums text-vermelho">{formatCurrency(tiedUp)}</b> parados
+              </p>
+              <Link
+                href="/clearance"
+                className="inline-flex h-9 items-center gap-2 border-[1.5px] border-ink bg-paper px-3 text-sm font-semibold text-ink transition-colors hover:bg-sub"
+              >
+                <BadgePercent className="h-4 w-4" aria-hidden="true" />
+                Montar liquidação
+              </Link>
+            </div>
           ) : null}
         </div>
         <ReportState

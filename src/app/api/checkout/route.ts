@@ -29,6 +29,7 @@ interface CheckoutBody {
   idempotencyKey?: string;
   clientPhone?: string;
   fiadoOverride?: boolean;
+  customerPhone?: string;
 }
 
 async function buildDemoOrder(body: CheckoutBody, userId: string) {
@@ -130,6 +131,7 @@ export async function POST(request: NextRequest) {
         idempotencyKey: body.idempotencyKey || "",
         subtotal,
         clientPhone: body.clientPhone,
+        customerPhone: body.customerPhone,
         fiadoOverride: body.fiadoOverride === true,
         fiadoPolicy: toFiadoPolicy(storeSettings),
       });

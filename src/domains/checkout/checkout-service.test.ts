@@ -165,6 +165,40 @@ describe("CheckoutService — pay later", () => {
   });
 });
 
+describe("CheckoutService — customer phone on a regular sale", () => {
+  it("is optional, and saved formatted when typed", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    await service.execute(baseCommand());
+    expect(repo.processCheckoutMock.mock.calls[0][0].customerPhone).toBeUndefined();
+
+    await service.execute(baseCommand({ idempotencyKey: "key-2", customerPhone: "16 99123 4567" }));
+    expect(repo.processCheckoutMock.mock.calls[1][0].customerPhone).toBe("(16) 99123-4567");
+  });
+
+  it("refuses a number that cannot be dialled instead of saving it", async () => {
+    const repo = new FakeCheckoutRepository();
+    await expect(new CheckoutService(repo).execute(baseCommand({ customerPhone: "9912" }))).rejects.toMatchObject({ statusCode: 400 });
+    expect(repo.processCheckoutMock).not.toHaveBeenCalled();
+  });
+
+  it("is part of the sale: the same key with another phone is a different sale", async () => {
+    const service = new CheckoutService(new FakeCheckoutRepository());
+    await service.execute(baseCommand({ customerPhone: "11987654321" }));
+    await expect(service.execute(baseCommand({ customerPhone: "21999990000" }))).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("records how the discount splits between the store's and the cashier's", async () => {
+    const repo = new FakeCheckoutRepository();
+    await new CheckoutService(repo).execute(
+      baseCommand({ promoDiscount: 15, discount: 5, payments: [{ method: "DINHEIRO", amount: 80 }] })
+    );
+    expect(repo.processCheckoutMock).toHaveBeenCalledWith(
+      expect.objectContaining({ promoDiscount: 15, manualDiscount: 5, discount: 20, expectedTotal: 80 })
+    );
+  });
+});
+
 describe("CheckoutService — fiado rules", () => {
   const now = new Date("2026-10-26T15:00:00.000Z");
   const DAY = 24 * 60 * 60 * 1000;

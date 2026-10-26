@@ -26,6 +26,9 @@ interface Product {
 interface ProductDiscount {
   productId: string;
   discountPercent: number;
+  startsAt?: string;
+  endsAt?: string;
+  source?: "clearance";
 }
 
 interface ProductDiscountSelectorProps {
@@ -134,7 +137,11 @@ function ProductDiscountSelector({ productDiscounts, onChange }: ProductDiscount
                 <div key={pd.productId} className="flex items-center gap-2 p-2 border rounded">
                   <div className="flex-1">
                     <p className="font-medium">{product?.name || "Produto não encontrado"}</p>
-                    <p className="text-sm text-ink-3">{product?.sku}</p>
+                    <p className="text-sm text-ink-3">
+                      {product?.sku}
+                      {pd.source === "clearance" ? " · liquidação" : ""}
+                      {pd.endsAt ? ` até ${pd.endsAt.split("-").reverse().join("/")}` : ""}
+                    </p>
                   </div>
                   <div className="flex items-center gap-1">
                     <Input

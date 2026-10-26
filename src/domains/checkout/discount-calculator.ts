@@ -1,10 +1,28 @@
-import type { DiscountSettings, PaymentMethod } from "@/lib/db-types";
+import type { DiscountSettings, PaymentMethod, ProductDiscount } from "@/lib/db-types";
 import { roundMoney } from "@/lib/money";
+import { todayISO } from "@/lib/dates";
 
 export interface DiscountableItem {
   productId: string;
   quantity: number;
   salePrice: number;
+}
+
+/**
+ * The product's discount on a store day, if one counts: product discounts switched on, a
+ * percentage above zero, and the day within its dates (a clearance can end on its own).
+ */
+export function activeProductDiscount(
+  settings: Pick<DiscountSettings, "productDiscountsEnabled" | "productDiscounts">,
+  productId: string,
+  today: string = todayISO()
+): ProductDiscount | undefined {
+  if (!settings.productDiscountsEnabled) return undefined;
+  const discount = settings.productDiscounts.find((pd) => pd.productId === productId);
+  if (!discount || !(discount.discountPercent > 0)) return undefined;
+  if (discount.startsAt && today < discount.startsAt) return undefined;
+  if (discount.endsAt && today > discount.endsAt) return undefined;
+  return discount;
 }
 
 export function progressivePercentForItemCount(settings: DiscountSettings, totalItems: number): number {
@@ -25,16 +43,15 @@ export function calculateAutoDiscountBreakdown(
   items: DiscountableItem[],
   subtotal: number,
   settings: DiscountSettings,
-  payments: PaymentMethod[]
+  payments: PaymentMethod[],
+  today: string = todayISO()
 ): { cart: number; pix: number } {
   let cartDiscount = 0;
 
-  if (settings.productDiscountsEnabled) {
-    for (const item of items) {
-      const productDiscount = settings.productDiscounts.find((pd) => pd.productId === item.productId);
-      if (productDiscount && productDiscount.discountPercent > 0) {
-        cartDiscount += (item.salePrice * item.quantity * productDiscount.discountPercent) / 100;
-      }
+  for (const item of items) {
+    const productDiscount = activeProductDiscount(settings, item.productId, today);
+    if (productDiscount) {
+      cartDiscount += (item.salePrice * item.quantity * productDiscount.discountPercent) / 100;
     }
   }
 
@@ -70,8 +87,9 @@ export function calculateAutoDiscount(
   items: DiscountableItem[],
   subtotal: number,
   settings: DiscountSettings,
-  payments: PaymentMethod[]
+  payments: PaymentMethod[],
+  today: string = todayISO()
 ): number {
-  const { cart, pix } = calculateAutoDiscountBreakdown(items, subtotal, settings, payments);
+  const { cart, pix } = calculateAutoDiscountBreakdown(items, subtotal, settings, payments, today);
   return roundMoney(cart + pix);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateAutoDiscount, calculateAutoDiscountBreakdown } from "./discount-calculator";
+import { activeProductDiscount, calculateAutoDiscount, calculateAutoDiscountBreakdown } from "./discount-calculator";
 import type { DiscountSettings, PaymentMethod } from "@/lib/db-types";
 
 const baseSettings: DiscountSettings = {
@@ -70,6 +70,25 @@ describe("calculateAutoDiscount", () => {
       { productId: "p2", quantity: 1, salePrice: 30 }, // no matching discount
     ];
     expect(calculateAutoDiscount(items, 130, settings, [])).toBeCloseTo(20);
+  });
+
+  it("counts a dated product discount only from its first day through its last", () => {
+    const settings: DiscountSettings = {
+      ...baseSettings,
+      productDiscountsEnabled: true,
+      productDiscounts: [{ productId: "p1", discountPercent: 30, startsAt: "2026-10-26", endsAt: "2026-11-09", source: "clearance" }],
+    };
+    const items = [{ productId: "p1", quantity: 1, salePrice: 100 }];
+    expect(calculateAutoDiscount(items, 100, settings, [], "2026-10-25")).toBe(0);
+    expect(calculateAutoDiscount(items, 100, settings, [], "2026-10-26")).toBe(30);
+    expect(calculateAutoDiscount(items, 100, settings, [], "2026-11-09")).toBe(30);
+    expect(calculateAutoDiscount(items, 100, settings, [], "2026-11-10")).toBe(0);
+  });
+
+  it("finds no active product discount while product discounts are switched off", () => {
+    const settings: DiscountSettings = { ...baseSettings, productDiscounts: [{ productId: "p1", discountPercent: 30 }] };
+    expect(activeProductDiscount(settings, "p1", "2026-10-26")).toBeUndefined();
+    expect(activeProductDiscount({ ...settings, productDiscountsEnabled: true }, "p1", "2026-10-26")).toMatchObject({ discountPercent: 30 });
   });
 
   it("applies the fixed discount as a percentage of subtotal", () => {

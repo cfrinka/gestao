@@ -26,6 +26,8 @@ import { RestockReport } from "@/components/reports/restock-report";
 import { StagnantStockReport } from "@/components/reports/stagnant-stock-report";
 import { FiadoCollectionReport } from "@/components/reports/fiado-collection-report";
 import { RegisterDifferencesReport } from "@/components/reports/register-differences-report";
+import { SalesInsightsReport } from "@/components/reports/sales-insights-report";
+import { ExchangesReport } from "@/components/reports/exchanges-report";
 import type { jsPDF as JsPdfDoc } from "jspdf";
 
 interface StoreReport {
@@ -196,7 +198,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [tab, setTab] = useState<"resultado" | "reposicao" | "parado" | "cobranca" | "caixa">("resultado");
+  const [tab, setTab] = useState<"resultado" | "vendas" | "trocas" | "reposicao" | "parado" | "cobranca" | "caixa">("resultado");
 
   const fetchReports = async (forceRefresh: boolean = false) => {
     setLoading(true);
@@ -421,7 +423,7 @@ export default function ReportsPage() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Relatórios"
-        meta={<span>Resultado, reposição, estoque parado e cobrança</span>}
+        meta={<span>Resultado, vendas, trocas, estoque, cobrança e caixa</span>}
         actions={
           tab !== "resultado" ? null : <>
             <Button variant="outline" size="sm" onClick={exportCSV}>
@@ -440,12 +442,16 @@ export default function ReportsPage() {
       <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
       <TabsList className="-mx-3 flex w-[calc(100%+1.5rem)] scroll-row overflow-x-auto px-3 sm:mx-0 sm:w-full sm:px-0">
         <TabsTrigger value="resultado">Resultado</TabsTrigger>
+        <TabsTrigger value="vendas">Vendas</TabsTrigger>
+        <TabsTrigger value="trocas">Trocas</TabsTrigger>
         <TabsTrigger value="reposicao">Reposição</TabsTrigger>
         <TabsTrigger value="parado">Estoque parado</TabsTrigger>
         <TabsTrigger value="cobranca">Cobrança de fiado</TabsTrigger>
         <TabsTrigger value="caixa">Diferenças de caixa</TabsTrigger>
       </TabsList>
 
+      <TabsContent value="vendas"><SalesInsightsReport /></TabsContent>
+      <TabsContent value="trocas"><ExchangesReport /></TabsContent>
       <TabsContent value="reposicao"><RestockReport /></TabsContent>
       <TabsContent value="parado"><StagnantStockReport /></TabsContent>
       <TabsContent value="cobranca"><FiadoCollectionReport /></TabsContent>

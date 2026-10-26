@@ -25,6 +25,8 @@ export interface CheckoutCommand {
   subtotal?: number;
   /** Fiado only: the client's mobile, typed at the counter when the record has none. */
   clientPhone?: unknown;
+  /** Regular sale only, optional: the customer's mobile, to know who comes back. */
+  customerPhone?: unknown;
   /** Fiado only: an administrator saw the warnings and sells anyway. */
   fiadoOverride?: boolean;
   /** The store's fiado rules; none means fiado is never refused. */

@@ -1,8 +1,13 @@
 import { z } from "zod";
 
+const storeDay = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/, "Data inválida");
+
 export const productDiscountSchema = z.object({
   productId: z.string().min(1),
   discountPercent: z.number().min(0).max(100),
+  startsAt: storeDay.optional(),
+  endsAt: storeDay.optional(),
+  source: z.literal("clearance").optional(),
 });
 
 export const discountSettingsSchema = z.object({

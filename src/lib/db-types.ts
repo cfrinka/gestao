@@ -132,6 +132,11 @@ export interface Order {
   cashRegisterId?: string;
   /** Cash handed back to the customer; `payments` already holds only what the store kept. */
   change?: number;
+  /** The customer's mobile on a regular sale, when the cashier took it: "(11) 98765-4321". */
+  customerPhone?: string;
+  /** The store's automatic discounts and the cashier's manual one; together they make `discount`. */
+  promoDiscount?: number;
+  manualDiscount?: number;
   createdAt: Date;
   items?: OrderItem[];
 }
@@ -242,6 +247,11 @@ export interface CashRegister {
 export interface ProductDiscount {
   productId: string;
   discountPercent: number;
+  /** First and last store day ("YYYY-MM-DD") the discount counts; without them it always does. */
+  startsAt?: string;
+  endsAt?: string;
+  /** "clearance" when it was set from the Liquidação screen. */
+  source?: "clearance";
 }
 
 export interface DiscountSettings {

@@ -40,6 +40,13 @@ export class CheckoutService {
       throw new HttpError(400, "Informe a forma de pagamento");
     }
 
+    // Optional on a regular sale; when typed it has to be a number the store can reach.
+    const typedPhone = payLater ? "" : String(command.customerPhone ?? "").trim();
+    if (typedPhone && !isValidPhone(typedPhone)) {
+      throw new HttpError(400, "O celular do cliente está incompleto. Confira o DDD e os dígitos, ou deixe em branco.");
+    }
+    const customerPhone = typedPhone ? formatPhone(typedPhone) : undefined;
+
     // The hash covers what the cashier asked for, not what the server derives from it (a
     // consumed discount grant, the change): a retry of the same sale must hash the same, or a
     // sale whose response was lost on a bad connection could never be recovered.
@@ -53,6 +60,7 @@ export class CheckoutService {
         clientId: payLater ? command.clientId : undefined,
         payLater,
         userId: command.userId,
+        ...(customerPhone ? { customerPhone } : {}),
       }),
     };
 
@@ -104,6 +112,9 @@ export class CheckoutService {
       expectedTotal,
       clientId: payLater ? command.clientId : undefined,
       ...(fiado?.clientPhone ? { clientPhone: fiado.clientPhone } : {}),
+      ...(customerPhone ? { customerPhone } : {}),
+      promoDiscount,
+      manualDiscount: allowedManualDiscount,
       payLater,
       createdById: command.userId,
       createdByName: command.userName,

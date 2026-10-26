@@ -19,6 +19,11 @@ export interface ProcessCheckoutInput {
   clientId?: string;
   /** Saved on the client with the sale, when the client had no valid phone on file. */
   clientPhone?: string;
+  /** Regular sale: the customer's mobile, when the cashier took it. */
+  customerPhone?: string;
+  /** How `discount` splits between the store's automatic discounts and the cashier's. */
+  promoDiscount: number;
+  manualDiscount: number;
   payLater: boolean;
   createdById: string;
   createdByName: string;

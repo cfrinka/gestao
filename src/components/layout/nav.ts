@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  BadgePercent,
   Barcode,
   BarChart3,
   Boxes,
@@ -58,6 +59,7 @@ export const navigation: NavGroup[] = [
       { name: "Categorias", href: "/products/categories", icon: Tags, roles: ADMIN },
       { name: "Estoque", href: "/inventory", icon: Boxes, roles: ADMIN },
       { name: "Entradas de estoque", href: "/stock-entries", icon: PackagePlus, roles: ADMIN },
+      { name: "Liquidação", href: "/clearance", icon: BadgePercent, roles: ADMIN },
     ],
   },
   {

@@ -289,7 +289,7 @@ export function computeFiadoCollection(
 // ─────────────────────────────────────────── Loaders ─────────────────────────────────────────────
 
 /** Pieces sold between two instants, leaving out cancelled sales. */
-async function loadSoldLines(start: Date, end: Date): Promise<SoldLine[]> {
+export async function loadSoldLines(start: Date, end: Date): Promise<SoldLine[]> {
   const [itemsSnapshot, ordersSnapshot] = await Promise.all([
     adminDb.collection("orderItems").where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<=", Timestamp.fromDate(end)).get(),
     adminDb.collection("orders").where("createdAt", ">=", Timestamp.fromDate(start)).where("createdAt", "<=", Timestamp.fromDate(end)).get(),

@@ -16,9 +16,12 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { cn, formatCurrency } from "@/lib/utils";
 import { roundMoney } from "@/lib/money";
-import { formatPhone, isValidPhone } from "@/lib/phone";
+import { formatPhone, isValidPhone, nationalPhone } from "@/lib/phone";
 import { assessFiadoSale, oldestOpenFiadoAt, toFiadoPolicy } from "@/domains/clients/fiado-credit";
 import { differenceNeedsNote, expectedRegisterCash, registerCashDifference } from "@/domains/cash-register/register-difference";
+import { activeProductDiscount } from "@/domains/checkout/discount-calculator";
+import { priceForPercent } from "@/domains/clearance/clearance";
+import { readSavedCart, restoreCartLines, writeSavedCart } from "@/lib/saved-cart";
 import { Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, ArrowDownCircle, ArrowUpCircle, Check, ScanLine, BadgePercent, AlertTriangle, ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Label } from "@/components/ui/label";
@@ -97,6 +100,9 @@ interface Order {
 interface ProductDiscount {
   productId: string;
   discountPercent: number;
+  startsAt?: string;
+  endsAt?: string;
+  source?: "clearance";
 }
 
 interface DiscountSettings {
@@ -206,6 +212,8 @@ export default function POSPage() {
   // What the fiado rules look at for the chosen client, read when the client is picked.
   const [fiadoStanding, setFiadoStanding] = useState<{ clientId: string; balance: number; oldestOpenAt: Date | null } | null>(null);
   const [fiadoPhone, setFiadoPhone] = useState("");
+  // Optional on a regular sale: who bought, to see who comes back.
+  const [customerPhone, setCustomerPhone] = useState("");
   const [showMobileCart, setShowMobileCart] = useState(false);
 
   // Cash register state
@@ -328,6 +336,37 @@ export default function POSPage() {
     setFiadoStanding(null);
     if (showPayLater && selectedClientId) loadFiadoStanding(selectedClientId);
   }, [showPayLater, selectedClientId, loadFiadoStanding]);
+
+  // The sale in progress survives leaving the PDV screen: it is restored once the catalogue is
+  // loaded (with today's prices and stock) and saved on every change after that.
+  const cartRestored = useRef(false);
+  useEffect(() => {
+    const userId = userData?.id;
+    if (loading || !userId || products.length === 0 || cartRestored.current) return;
+    cartRestored.current = true;
+    const lines = readSavedCart(userId);
+    if (lines.length === 0) return;
+    const { cart: restored, dropped } = restoreCartLines(lines, products);
+    setCart((current) => (current.length > 0 ? current : restored));
+    const pieces = restored.reduce((sum, line) => sum + line.quantity, 0);
+    toast({
+      title: restored.length > 0 ? "Venda em andamento recuperada" : "A venda em andamento ficou sem estoque",
+      description:
+        restored.length > 0
+          ? `${pieces} ${pieces === 1 ? "peça voltou" : "peças voltaram"} para o carrinho` +
+            (dropped > 0 ? `; ${dropped} ${dropped === 1 ? "item mudou" : "itens mudaram"} porque o estoque acabou.` : ".")
+          : "Os produtos que estavam no carrinho não têm mais estoque.",
+      variant: "neutral",
+    });
+  }, [loading, userData?.id, products, toast]);
+
+  useEffect(() => {
+    if (!cartRestored.current || !userData?.id) return;
+    writeSavedCart(
+      userData.id,
+      cart.map((item) => ({ productId: item.product.id, size: item.size, quantity: item.quantity }))
+    );
+  }, [cart, userData?.id]);
 
   const fetchClients = async () => {
     try {
@@ -733,26 +772,23 @@ export default function POSPage() {
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   // Calculate automatic discounts
+  const today = todayISO();
   const calculateAutoDiscounts = () => {
     let autoDiscount = 0;
     const details: { label: string; value: number }[] = [];
 
-    // Product-specific discounts
-    if (storeSettings.discounts.productDiscountsEnabled) {
-      cart.forEach((cartItem) => {
-        const productDiscount = storeSettings.discounts.productDiscounts.find(
-          (pd) => pd.productId === cartItem.product.id
-        );
-        if (productDiscount && productDiscount.discountPercent > 0) {
-          const discountValue = (cartItem.product.salePrice * cartItem.quantity * productDiscount.discountPercent) / 100;
-          autoDiscount += discountValue;
-          details.push({
-            label: `${cartItem.product.name} (${productDiscount.discountPercent}%)`,
-            value: discountValue
-          });
-        }
-      });
-    }
+    // Product-specific discounts (a clearance counts only inside its dates, as at checkout)
+    cart.forEach((cartItem) => {
+      const productDiscount = activeProductDiscount(storeSettings.discounts, cartItem.product.id, today);
+      if (productDiscount) {
+        const discountValue = (cartItem.product.salePrice * cartItem.quantity * productDiscount.discountPercent) / 100;
+        autoDiscount += discountValue;
+        details.push({
+          label: `${cartItem.product.name} (${productDiscount.discountPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)`,
+          value: discountValue
+        });
+      }
+    });
 
     // Fixed discount (percentage)
     if (storeSettings.discounts.fixedDiscountEnabled && storeSettings.discounts.fixedDiscountPercent > 0) {
@@ -817,6 +853,10 @@ export default function POSPage() {
         })
       : [];
 
+  const customerPhoneInvalid = customerPhone.trim() !== "" && !isValidPhone(customerPhone);
+  const customerDigits = nationalPhone(customerPhone);
+  const customerClient = customerDigits ? clients.find((client) => nationalPhone(client.phone) === customerDigits) : undefined;
+
   // Closing count against what the drawer should hold; past the tolerance it needs a reason.
   const closingDifference = cashRegister ? registerCashDifference(cashRegister, closingBalance) : 0;
   const closingNeedsNote = Boolean(cashRegister) && differenceNeedsNote(closingDifference, storeSettings.registerDifferenceLimit);
@@ -829,6 +869,7 @@ export default function POSPage() {
     }
     setPayments([]);
     setDiscount(0);
+    setCustomerPhone("");
     setSelectedClientId("");
     setShowPayLater(false);
     setAdminPassword("");
@@ -1251,6 +1292,11 @@ export default function POSPage() {
       return;
     }
 
+    if (customerPhoneInvalid) {
+      toast({ title: "Celular do cliente incompleto", description: "Confira o DDD ou deixe o campo em branco.", variant: "destructive" });
+      return;
+    }
+
     if (!cashRegister || cashRegister.status !== "OPEN") {
       pendingCheckoutAction.current = "checkout";
       openRegisterModal();
@@ -1269,6 +1315,7 @@ export default function POSPage() {
       payments: paymentsSnapshot,
       discount: effectiveManualDiscount,
       promoDiscount: totalAutoDiscount,
+      ...(customerDigits ? { customerPhone: formatPhone(customerPhone) } : {}),
     };
 
     try {
@@ -1296,6 +1343,7 @@ export default function POSPage() {
       clearCart();
       setShowPaymentModal(false);
       setPayments([]);
+      setCustomerPhone("");
       applySaleResult(order);
     } catch (error) {
       toast({
@@ -1672,10 +1720,27 @@ export default function POSPage() {
                             </Button>
                           )}
                         </div>
-                        <PriceTag
-                          value={product.salePrice}
-                          className="col-start-2 row-start-1 justify-self-end text-[26px] xl:col-start-3 xl:text-[30px]"
-                        />
+                        {(() => {
+                          const clearance = activeProductDiscount(storeSettings.discounts, product.id, today);
+                          if (!clearance) {
+                            return (
+                              <PriceTag
+                                value={product.salePrice}
+                                className="col-start-2 row-start-1 justify-self-end text-[26px] xl:col-start-3 xl:text-[30px]"
+                              />
+                            );
+                          }
+                          // On clearance: the price the customer pays, with the tag price struck above it.
+                          return (
+                            <div className="col-start-2 row-start-1 flex flex-col items-end justify-self-end xl:col-start-3">
+                              <span className="text-xs text-ink-3 line-through tabular-nums">{formatCurrency(product.salePrice)}</span>
+                              <PriceTag
+                                value={priceForPercent(product.salePrice, clearance.discountPercent)}
+                                className="text-[26px] text-verde xl:text-[30px]"
+                              />
+                            </div>
+                          );
+                        })()}
                       </div>
                     </li>
                   );
@@ -1881,6 +1946,33 @@ export default function POSPage() {
               <p className="text-sm text-ink-3">Escolha a forma de pagamento. Dá para dividir a venda em mais de uma.</p>
             )}
 
+            {!showPayLater && (
+              <div className="space-y-1.5 border-t border-rule pt-4">
+                <Label htmlFor="customer-phone">
+                  Celular do cliente <span className="font-normal text-ink-3">(opcional)</span>
+                </Label>
+                <Input
+                  id="customer-phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="off"
+                  placeholder="(11) 98765-4321"
+                  value={customerPhone}
+                  onChange={(e) => setCustomerPhone(e.target.value)}
+                  onBlur={() => setCustomerPhone((current) => formatPhone(current))}
+                  aria-invalid={customerPhoneInvalid}
+                  aria-describedby="customer-phone-hint"
+                />
+                <p id="customer-phone-hint" className={customerPhoneInvalid ? "text-xs text-vermelho" : "text-xs text-ink-3"}>
+                  {customerPhoneInvalid
+                    ? "Número incompleto: confira o DDD ou deixe em branco."
+                    : customerClient
+                      ? `Cliente cadastrado: ${customerClient.name}`
+                      : "Para saber quem volta e o que compra."}
+                </p>
+              </div>
+            )}
+
             {canUsePayLater && (
               <div className="border-t border-rule pt-4">
                 <div className="flex items-center justify-between gap-3">
@@ -1980,7 +2072,7 @@ export default function POSPage() {
                 <Button
                   className="flex-1"
                   onClick={handleCheckout}
-                  disabled={processing || remaining > 0.01 || payments.length === 0}
+                  disabled={processing || remaining > 0.01 || payments.length === 0 || customerPhoneInvalid}
                 >
                   {processing ? "Registrando…" : "Confirmar venda"}
                 </Button>

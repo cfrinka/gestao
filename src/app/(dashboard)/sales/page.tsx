@@ -75,6 +75,7 @@ interface Order {
   items: OrderItem[];
   clientId?: string;
   clientName?: string;
+  customerPhone?: string;
   isPaidLater?: boolean;
   amountPaid?: number;
   remainingAmount?: number;
@@ -709,8 +710,8 @@ export default function SalesPage() {
                     <TableCell className="text-right tabular-nums">{order.items.length}</TableCell>
                     <TableCell>{renderPayment(order)}</TableCell>
                     <TableCell>
-                      {order.clientName ? (
-                        <span className="text-sm">{order.clientName}</span>
+                      {order.clientName || order.customerPhone ? (
+                        <span className="text-sm">{order.clientName || order.customerPhone}</span>
                       ) : (
                         <span className="text-ink-3">—</span>
                       )}
@@ -763,7 +764,7 @@ export default function SalesPage() {
                   </span>
                   <span className="text-sm text-ink-3">
                     {formatDate(new Date(order.createdAt))} · {order.items.length} {order.items.length === 1 ? "item" : "itens"}
-                    {order.clientName ? ` · ${order.clientName}` : ""}
+                    {order.clientName || order.customerPhone ? ` · ${order.clientName || order.customerPhone}` : ""}
                   </span>
                   <span className="text-right">{renderPayment(order)}</span>
                 </button>
@@ -783,7 +784,10 @@ export default function SalesPage() {
           {selectedOrder && (
             <div className="space-y-4">
               <div className="flex items-end justify-between gap-3 border-b-[1.5px] border-dashed border-rule-strong pb-3">
-                <span className="text-sm text-ink-2">{formatDate(new Date(selectedOrder.createdAt))}</span>
+                <span className="text-sm text-ink-2">
+                  {formatDate(new Date(selectedOrder.createdAt))}
+                  {selectedOrder.customerPhone ? <span className="block">Cliente: {selectedOrder.customerPhone}</span> : null}
+                </span>
                 <span className={selectedOrder.isCancelled ? "text-ink-3 line-through" : undefined}>
                   <PriceTag value={selectedOrder.isCancelled ? 0 : selectedOrder.totalAmount} className="text-[32px]" />
                 </span>
