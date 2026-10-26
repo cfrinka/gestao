@@ -21,7 +21,8 @@ import { assessFiadoSale, oldestOpenFiadoAt, toFiadoPolicy } from "@/domains/cli
 import { differenceNeedsNote, expectedRegisterCash, registerCashDifference } from "@/domains/cash-register/register-difference";
 import { activeProductDiscount } from "@/domains/checkout/discount-calculator";
 import { priceForPercent } from "@/domains/clearance/clearance";
-import { readSavedCart, restoreCartLines, writeSavedCart } from "@/lib/saved-cart";
+import { readSavedCarts, restoreCartLines, writeSavedCarts } from "@/lib/saved-cart";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Plus, Minus, Trash2, CreditCard, Search, Banknote, Smartphone, X, Lock, Unlock, FileText, ArrowDownCircle, ArrowUpCircle, Check, ScanLine, BadgePercent, AlertTriangle, ChevronDown } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Label } from "@/components/ui/label";
@@ -57,6 +58,19 @@ interface CartItem {
   size: string;
   quantity: number;
 }
+
+/** One customer's sale in progress; several can be open at the counter at once. */
+interface OpenCart {
+  id: string;
+  /** Order it was opened in, for the default label "Carrinho 2". */
+  number: number;
+  /** Who it is for, when the cashier writes it. */
+  name: string;
+  items: CartItem[];
+}
+
+const MAX_OPEN_CARTS = 8;
+const cartLabel = (openCart: OpenCart) => openCart.name.trim() || `Carrinho ${openCart.number}`;
 
 interface PaymentMethod {
   method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX";
@@ -187,7 +201,20 @@ export default function POSPage() {
   const { toast } = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const { confirm, confirmDialog } = useConfirm();
+  // Several sales can be open at once (one per customer at the counter); the screen works on one.
+  const [carts, setCarts] = useState<OpenCart[]>(() => [{ id: "cart-1", number: 1, name: "", items: [] }]);
+  const [activeCartId, setActiveCartId] = useState("cart-1");
+  const activeCart = carts.find((openCart) => openCart.id === activeCartId) ?? carts[0];
+  const cart = activeCart.items;
+  const setCart = (next: CartItem[] | ((current: CartItem[]) => CartItem[])) => {
+    const targetId = activeCart.id;
+    setCarts((all) =>
+      all.map((openCart) =>
+        openCart.id === targetId ? { ...openCart, items: typeof next === "function" ? next(openCart.items) : next } : openCart
+      )
+    );
+  };
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const productCategories = useProductCategories();
@@ -337,23 +364,43 @@ export default function POSPage() {
     if (showPayLater && selectedClientId) loadFiadoStanding(selectedClientId);
   }, [showPayLater, selectedClientId, loadFiadoStanding]);
 
-  // The sale in progress survives leaving the PDV screen: it is restored once the catalogue is
-  // loaded (with today's prices and stock) and saved on every change after that.
+  // The sales in progress survive leaving the PDV screen: they are restored once the catalogue is
+  // loaded (with today's prices and stock, never two carts holding the same last piece) and saved
+  // on every change after that.
   const cartRestored = useRef(false);
   useEffect(() => {
     const userId = userData?.id;
     if (loading || !userId || products.length === 0 || cartRestored.current) return;
     cartRestored.current = true;
-    const lines = readSavedCart(userId);
-    if (lines.length === 0) return;
-    const { cart: restored, dropped } = restoreCartLines(lines, products);
-    setCart((current) => (current.length > 0 ? current : restored));
-    const pieces = restored.reduce((sum, line) => sum + line.quantity, 0);
+    const saved = readSavedCarts(userId);
+    if (saved.carts.length === 0) return;
+
+    const held = new Map<string, number>();
+    let dropped = 0;
+    const restored: OpenCart[] = saved.carts
+      .map((savedCart) => {
+        const result = restoreCartLines(savedCart.lines, products, held);
+        dropped += result.dropped;
+        return { id: savedCart.id, number: savedCart.number, name: savedCart.name, items: result.cart };
+      })
+      .filter((openCart) => openCart.items.length > 0);
+
+    if (restored.length > 0) {
+      setCarts(restored);
+      const savedActive = restored.find((openCart) => openCart.id === saved.activeId);
+      setActiveCartId(savedActive ? savedActive.id : restored[0].id);
+    }
+    const pieces = restored.reduce((sum, openCart) => sum + openCart.items.reduce((s, item) => s + item.quantity, 0), 0);
     toast({
-      title: restored.length > 0 ? "Venda em andamento recuperada" : "A venda em andamento ficou sem estoque",
+      title:
+        restored.length > 1
+          ? `${restored.length} vendas em andamento recuperadas`
+          : restored.length === 1
+            ? "Venda em andamento recuperada"
+            : "A venda em andamento ficou sem estoque",
       description:
         restored.length > 0
-          ? `${pieces} ${pieces === 1 ? "peça voltou" : "peças voltaram"} para o carrinho` +
+          ? `${pieces} ${pieces === 1 ? "peça voltou" : "peças voltaram"} para ${restored.length > 1 ? "os carrinhos" : "o carrinho"}` +
             (dropped > 0 ? `; ${dropped} ${dropped === 1 ? "item mudou" : "itens mudaram"} porque o estoque acabou.` : ".")
           : "Os produtos que estavam no carrinho não têm mais estoque.",
       variant: "neutral",
@@ -362,11 +409,17 @@ export default function POSPage() {
 
   useEffect(() => {
     if (!cartRestored.current || !userData?.id) return;
-    writeSavedCart(
+    writeSavedCarts(
       userData.id,
-      cart.map((item) => ({ productId: item.product.id, size: item.size, quantity: item.quantity }))
+      carts.map((openCart) => ({
+        id: openCart.id,
+        number: openCart.number,
+        name: openCart.name,
+        lines: openCart.items.map((item) => ({ productId: item.product.id, size: item.size, quantity: item.quantity })),
+      })),
+      activeCartId
     );
-  }, [cart, userData?.id]);
+  }, [carts, activeCartId, userData?.id]);
 
   const fetchClients = async () => {
     try {
@@ -693,15 +746,28 @@ export default function POSPage() {
   const availableStock = (product: Product, size: string) =>
     product.sizes?.length > 0 ? product.sizes.find((s) => s.size === size)?.stock ?? 0 : product.stock;
 
+  /** Pieces of a product and size already in the other open carts. */
+  const heldInOtherCarts = (productId: string, size: string) =>
+    carts.reduce(
+      (sum, openCart) =>
+        openCart.id === activeCart.id
+          ? sum
+          : sum + openCart.items.reduce((s, item) => (item.product.id === productId && item.size === size ? s + item.quantity : s), 0),
+      0
+    );
+
   const addToCart = (product: Product, size: string) => {
-    const sizeStock = availableStock(product, size);
+    const held = heldInOtherCarts(product.id, size);
+    const sizeStock = availableStock(product, size) - held;
     const existing = cart.find((item) => item.product.id === product.id && item.size === size);
 
     if (existing) {
       if (existing.quantity >= sizeStock) {
         toast({
           title: "Estoque insuficiente",
-          description: `Apenas ${sizeStock} unidades disponíveis para tamanho ${size}`,
+          description:
+            `Apenas ${Math.max(0, sizeStock)} unidades disponíveis${size ? ` para tamanho ${size}` : ""}` +
+            (held > 0 ? ` (${held} em outro carrinho)` : ""),
           variant: "destructive",
         });
         return;
@@ -716,7 +782,7 @@ export default function POSPage() {
     } else {
       if (sizeStock < 1) {
         toast({
-          title: "Produto sem estoque neste tamanho",
+          title: held > 0 ? "A última peça está em outro carrinho" : "Produto sem estoque neste tamanho",
           variant: "destructive",
         });
         return;
@@ -739,7 +805,9 @@ export default function POSPage() {
       cart
         .map((item) => {
           if (item.product.id === productId && item.size === size) {
-            const sizeStock = availableStock(item.product, size);
+            // Today's stock, less what the other open carts hold.
+            const current = products.find((product) => product.id === productId) ?? item.product;
+            const sizeStock = availableStock(current, size) - heldInOtherCarts(productId, size);
             const newQty = item.quantity + delta;
             if (newQty > sizeStock) {
               toast({
@@ -762,6 +830,59 @@ export default function POSPage() {
 
   const clearCart = () => {
     setCart([]);
+  };
+
+  const openNewCart = () => {
+    if (carts.length >= MAX_OPEN_CARTS) {
+      toast({ title: `Até ${MAX_OPEN_CARTS} carrinhos abertos ao mesmo tempo`, description: "Finalize ou descarte um deles.", variant: "destructive" });
+      return;
+    }
+    const number = Math.max(0, ...carts.map((openCart) => openCart.number)) + 1;
+    const id = `cart-${Date.now().toString(36)}-${number}`;
+    setCarts((all) => [...all, { id, number, name: "", items: [] }]);
+    setActiveCartId(id);
+    setSelectedProduct(null);
+    searchInputRef.current?.focus();
+  };
+
+  const switchCart = (id: string) => {
+    setActiveCartId(id);
+    setSelectedProduct(null);
+  };
+
+  const renameActiveCart = (name: string) => {
+    const targetId = activeCart.id;
+    setCarts((all) => all.map((openCart) => (openCart.id === targetId ? { ...openCart, name } : openCart)));
+  };
+
+  /** Takes a cart off the counter; the last one left is only emptied. */
+  const closeCart = (id: string) => {
+    if (carts.length <= 1) {
+      setCarts((all) => all.map((openCart) => (openCart.id === id ? { ...openCart, name: "", items: [] } : openCart)));
+      return;
+    }
+    const index = carts.findIndex((openCart) => openCart.id === id);
+    const rest = carts.filter((openCart) => openCart.id !== id);
+    setCarts((all) => all.filter((openCart) => openCart.id !== id));
+    if (activeCartId === id) setActiveCartId((rest[Math.max(0, index - 1)] ?? rest[0]).id);
+  };
+
+  const discardCart = async (id: string) => {
+    const target = carts.find((openCart) => openCart.id === id);
+    if (!target) return;
+    const pieces = target.items.reduce((sum, item) => sum + item.quantity, 0);
+    if (
+      pieces > 0 &&
+      !(await confirm({
+        title: `Descartar ${cartLabel(target)}?`,
+        description: `${pieces} ${pieces === 1 ? "peça sai" : "peças saem"} do carrinho. Nada foi vendido.`,
+        confirmLabel: "Descartar",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    closeCart(id);
   };
 
   const subtotal = roundMoney(cart.reduce(
@@ -1217,6 +1338,7 @@ export default function POSPage() {
     }
 
     setProcessing(true);
+    const saleCartId = activeCart.id;
     const payLaterPayload = {
       items: cart.map((item) => ({
         productId: item.product.id,
@@ -1246,7 +1368,7 @@ export default function POSPage() {
         title: "Venda fiado registrada!",
         description: `Pedido #${order.id.slice(-6).toUpperCase()} - ${formatCurrency(order.totalAmount)} para ${selectedClient?.name}`,
       });
-      clearCart();
+      closeCart(saleCartId);
       setShowPaymentModal(false);
       setSelectedClientId("");
       setShowPayLater(false);
@@ -1305,6 +1427,7 @@ export default function POSPage() {
     }
 
     setProcessing(true);
+    const saleCartId = activeCart.id;
     const paymentsSnapshot = payments.filter(p => p.amount > 0);
     const salePayload = {
       items: cart.map((item) => ({
@@ -1340,7 +1463,7 @@ export default function POSPage() {
         title: "Venda realizada com sucesso!",
         description: `Pedido #${order.id.slice(-6).toUpperCase()} - ${formatCurrency(order.totalAmount)}`,
       });
-      clearCart();
+      closeCart(saleCartId);
       setShowPaymentModal(false);
       setPayments([]);
       setCustomerPhone("");
@@ -1384,6 +1507,62 @@ export default function POSPage() {
             </button>
           ) : null}
         </div>
+      </div>
+
+      <div className="space-y-2 px-5 pb-3">
+        <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Carrinhos abertos">
+          {carts.map((openCart) => {
+            const pieces = openCart.items.reduce((sum, item) => sum + item.quantity, 0);
+            const isActive = openCart.id === activeCart.id;
+            return (
+              <button
+                key={openCart.id}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => switchCart(openCart.id)}
+                className={cn(
+                  "inline-flex h-9 max-w-[11rem] items-center gap-1.5 border px-2.5 text-sm font-semibold transition-colors",
+                  isActive ? "border-ink bg-ink text-white" : "border-rule-strong bg-paper text-ink hover:border-ink"
+                )}
+              >
+                <span className="truncate">{cartLabel(openCart)}</span>
+                <span className={cn("tabular-nums", isActive ? "text-white/70" : "text-ink-3")}>{pieces}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={openNewCart}
+            className="inline-flex h-9 items-center gap-1 border border-dashed border-rule-strong bg-paper px-2.5 text-sm font-semibold text-denim transition-colors hover:border-denim"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Novo carrinho
+          </button>
+        </div>
+        {carts.length > 1 ? (
+          <div className="flex items-center gap-2">
+            <Input
+              aria-label="Cliente deste carrinho"
+              placeholder={`Nome do cliente (${`Carrinho ${activeCart.number}`})`}
+              value={activeCart.name}
+              maxLength={40}
+              onChange={(e) => renameActiveCart(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") searchInputRef.current?.focus();
+              }}
+              className="h-9"
+            />
+            <button
+              type="button"
+              onClick={() => discardCart(activeCart.id)}
+              className="inline-flex h-9 flex-shrink-0 items-center gap-1.5 px-2 text-sm font-medium text-vermelho transition-colors hover:bg-vermelho-tint"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+              Descartar
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {cart.length === 0 ? (
@@ -1761,7 +1940,8 @@ export default function POSPage() {
       {/* Phones and tablets: the stub folds into a bar, and opens as a sheet. */}
       <div className="flex items-center gap-3 border-t-2 border-ink bg-paper px-3 py-2.5 sm:px-4 lg:hidden">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-ink-3">
+          <p className="truncate text-xs font-medium text-ink-3">
+            {carts.length > 1 ? `${cartLabel(activeCart)} · ` : ""}
             {totalItems} {totalItems === 1 ? "peça" : "peças"}
           </p>
           <PriceTag value={total} className="text-[28px]" />
@@ -1793,7 +1973,7 @@ export default function POSPage() {
       <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Pagamento</DialogTitle>
+            <DialogTitle>Pagamento{carts.length > 1 ? ` · ${cartLabel(activeCart)}` : ""}</DialogTitle>
           </DialogHeader>
           <div className="space-y-5">
             <div className="border-b-[1.5px] border-dashed border-rule-strong pb-3">
@@ -2596,6 +2776,8 @@ export default function POSPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {confirmDialog}
     </div>
   );
 }
