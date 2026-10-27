@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BadgePercent } from "lucide-react";
+import { BadgePercent, Printer } from "lucide-react";
 import { apiGet, apiPost } from "@/lib/api-client";
 import { cn, formatCurrency } from "@/lib/utils";
 import { roundMoney } from "@/lib/money";
 import { addDaysISO, todayISO } from "@/lib/dates";
+import { loadPdf } from "@/lib/pdf";
 import { useToast } from "@/components/ui/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
@@ -211,6 +212,49 @@ export default function ClearancePage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const printSelection = async () => {
+    if (chosen.length === 0) return;
+    const { jsPDF, autoTable } = await loadPdf();
+    const doc = new jsPDF();
+    const today = data?.today ?? todayISO();
+
+    doc.setFontSize(18);
+    doc.text("Sugestões de Liquidação", 14, 20);
+    doc.setFontSize(10);
+    doc.text(`Data: ${formatDay(today)}`, 14, 28);
+
+    const rows = chosen.map((line) => {
+      const state = rowState(line);
+      return [
+        line.name,
+        line.sku,
+        String(line.stock),
+        formatCurrency(line.costPrice),
+        formatCurrency(line.salePrice),
+        state.valid ? formatCurrency(state.price) : "-",
+        state.valid ? formatPercent(state.percent ?? 0) : "-",
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 36,
+      head: [["Produto", "SKU", "Estoque", "Custo", "Preço", "Liquidação", "Desconto"]],
+      body: rows,
+      theme: "grid",
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [245, 245, 245], textColor: 20 },
+      columnStyles: {
+        2: { halign: "right" },
+        3: { halign: "right" },
+        4: { halign: "right" },
+        5: { halign: "right" },
+        6: { halign: "right" },
+      },
+    });
+
+    doc.save(`sugestoes-liquidacao-${today}.pdf`);
   };
 
   const handleEnd = async (line: ClearanceInProgress) => {
@@ -465,6 +509,10 @@ export default function ClearancePage() {
             <div className="ml-auto flex gap-2">
               <Button variant="outline" onClick={() => setSelected(new Set())} disabled={saving}>
                 Limpar seleção
+              </Button>
+              <Button variant="outline" onClick={printSelection} disabled={saving}>
+                <Printer className="h-4 w-4" aria-hidden="true" />
+                Imprimir seleção
               </Button>
               <Button onClick={handleApply} disabled={saving}>
                 <BadgePercent className="h-4 w-4" aria-hidden="true" />
