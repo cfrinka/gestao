@@ -10,11 +10,14 @@ export class OrdersService {
   constructor(private readonly repository: OrdersRepository) {}
 
   async list(query: ListOrdersQuery): Promise<unknown[]> {
-    const orders = await this.repository.getOrders(query.startDate, query.endDate);
+    const [orders, fiadoPayments] = await Promise.all([
+      this.repository.getOrders(query.startDate, query.endDate),
+      this.repository.getFiadoPayments(query.startDate, query.endDate),
+    ]);
     // Names and SKUs come from the cached catalogue: no extra database round trip per listing.
     const productsById = new Map((await getProductsCached()).map((product) => [product.id, product]));
 
-    return Promise.all(
+    const enrichedOrders = await Promise.all(
       orders.map(async (order) => {
         // Only what the Vendas screen shows: the full product (sizes, signed photo URL…) made
         // the 30-day list several times heavier than the sales themselves.
@@ -39,6 +42,8 @@ export class OrdersService {
         return { ...order, items: itemsWithDetails, ...(paymentHistory ? { paymentHistory } : {}) };
       })
     );
+
+    return [...enrichedOrders, ...fiadoPayments];
   }
 
   async cancel(command: CancelOrderCommand): Promise<Order> {

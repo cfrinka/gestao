@@ -85,6 +85,9 @@ interface Order {
   cancelledAt?: string;
   cancelledBy?: string;
   cancellationReason?: string;
+  /** Not a sale: money received today against an older fiado sale (see fiado-payment.ts). */
+  entryType?: "fiado_payment";
+  relatedOrderId?: string;
 }
 
 export default function SalesPage() {
@@ -120,6 +123,7 @@ export default function SalesPage() {
 
   const periodTotalSold = orders.reduce((sum, o) => {
     if (o.isCancelled) return sum;
+    if (o.entryType === "fiado_payment") return sum;
     return sum + (typeof o.totalAmount === "number" ? o.totalAmount : 0);
   }, 0);
 
@@ -163,12 +167,16 @@ export default function SalesPage() {
     setCancelPassword("");
   }, [selectedOrder]);
 
+  // Cash actually received in the period: non-fiado sales count in full (paid on the spot), and
+  // fiado sales count only through their "fiado_payment" entries (dated by when the money came
+  // in, not by the original sale) — never through the order's own amountPaid, which is its
+  // cumulative total as of now and would double-count whatever a fiado_payment entry already adds.
   const periodReceived = orders.reduce((sum, o) => {
     if (o.isCancelled) return sum;
     const total = typeof o.totalAmount === "number" ? o.totalAmount : 0;
-    if (!o.isPaidLater) return sum + total;
-    if (typeof o.amountPaid === "number") return sum + o.amountPaid;
-    return sum + (o.paidAt ? total : 0);
+    if (o.entryType === "fiado_payment") return sum + total;
+    if (o.isPaidLater) return sum;
+    return sum + total;
   }, 0);
 
   const fetchOrders = async (override?: { startDate?: string; endDate?: string }) => {
@@ -591,7 +599,9 @@ export default function SalesPage() {
     method === "DINHEIRO" ? "Dinheiro" : method === "DEBITO" ? "Débito" : method === "CREDITO" ? "Crédito" : method === "PIX" ? "PIX" : method;
 
   const renderPayment = (order: (typeof orders)[number]) =>
-    order.isPaidLater ? (
+    order.entryType === "fiado_payment" ? (
+      <Badge variant="positive">Recebimento fiado · {paymentLabel(order.payments?.[0]?.method || "")}</Badge>
+    ) : order.isPaidLater ? (
       <Badge variant={order.paidAt ? "positive" : "destructive"}>
         {order.paidAt ? "Fiado pago" : `Fiado · ${formatCurrency(order.remainingAmount ?? order.totalAmount)}`}
       </Badge>
@@ -605,7 +615,16 @@ export default function SalesPage() {
     <div className="space-y-4 md:space-y-6">
       <PageHeader
         title="Vendas"
-        meta={!loading ? <span><b className="font-semibold text-ink">{orders.length}</b> vendas no período</span> : null}
+        meta={
+          !loading ? (
+            <span>
+              <b className="font-semibold text-ink">
+                {orders.filter((o) => o.entryType !== "fiado_payment").length}
+              </b>{" "}
+              vendas no período
+            </span>
+          ) : null
+        }
         actions={
           <Button variant="outline" size="sm" onClick={exportCSV}>
             <Download className="h-4 w-4" aria-hidden="true" />
@@ -699,15 +718,27 @@ export default function SalesPage() {
               </TableHeader>
               <TableBody>
                 {orders?.map((order) => (
-                  <TableRow key={order.id} className={order.isCancelled ? "text-ink-3" : undefined}>
+                  <TableRow
+                    key={order.id}
+                    className={order.isCancelled ? "text-ink-3" : order.entryType === "fiado_payment" ? "bg-verde-tint/30" : undefined}
+                  >
                     <TableCell className="pl-4 font-semibold">
-                      <div className="flex items-center gap-2">
-                        <span>#{order.id.slice(-6).toUpperCase()}</span>
-                        {order.isCancelled && <Badge variant="destructive">Cancelada</Badge>}
-                      </div>
+                      {order.entryType === "fiado_payment" ? (
+                        <div className="flex items-center gap-2 text-ink-2">
+                          <Banknote className="h-4 w-4" aria-hidden="true" />
+                          <span>Pagamento de fiado</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span>#{order.id.slice(-6).toUpperCase()}</span>
+                          {order.isCancelled && <Badge variant="destructive">Cancelada</Badge>}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap tabular-nums text-ink-2">{formatDate(new Date(order.createdAt))}</TableCell>
-                    <TableCell className="text-right tabular-nums">{order.items.length}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {order.entryType === "fiado_payment" ? <span className="text-ink-3">—</span> : order.items.length}
+                    </TableCell>
                     <TableCell>{renderPayment(order)}</TableCell>
                     <TableCell>
                       {order.clientName || order.customerPhone ? (
@@ -720,26 +751,30 @@ export default function SalesPage() {
                       {order.isCancelled ? "R$ 0,00" : formatCurrency(order.totalAmount)}
                     </TableCell>
                     <TableCell className="pr-4 text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => printReceipt(order)}
-                          title="Reimprimir cupom"
-                          aria-label={`Reimprimir cupom do pedido ${order.id.slice(-6).toUpperCase()}`}
-                        >
-                          <Printer className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setSelectedOrder(order)}
-                          title="Ver detalhes"
-                          aria-label={`Ver pedido ${order.id.slice(-6).toUpperCase()}`}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      {order.entryType === "fiado_payment" ? (
+                        <span className="text-ink-3">—</span>
+                      ) : (
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => printReceipt(order)}
+                            title="Reimprimir cupom"
+                            aria-label={`Reimprimir cupom do pedido ${order.id.slice(-6).toUpperCase()}`}
+                          >
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setSelectedOrder(order)}
+                            title="Ver detalhes"
+                            aria-label={`Ver pedido ${order.id.slice(-6).toUpperCase()}`}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -749,25 +784,42 @@ export default function SalesPage() {
 
           <ul className="divide-y divide-rule border border-rule bg-paper md:hidden">
             {orders?.map((order) => (
-              <li key={order.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedOrder(order)}
-                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 px-3 py-3 text-left"
-                >
-                  <span className="font-semibold">
-                    #{order.id.slice(-6).toUpperCase()}
-                    {order.isCancelled ? <Badge variant="destructive" className="ml-2 align-[1px]">Cancelada</Badge> : null}
-                  </span>
-                  <span className={cn("text-right font-tag text-xl font-extrabold tabular-nums", order.isCancelled && "text-ink-3 line-through")}>
-                    {order.isCancelled ? "R$ 0,00" : formatCurrency(order.totalAmount)}
-                  </span>
-                  <span className="text-sm text-ink-3">
-                    {formatDate(new Date(order.createdAt))} · {order.items.length} {order.items.length === 1 ? "item" : "itens"}
-                    {order.clientName || order.customerPhone ? ` · ${order.clientName || order.customerPhone}` : ""}
-                  </span>
-                  <span className="text-right">{renderPayment(order)}</span>
-                </button>
+              <li key={order.id} className={order.entryType === "fiado_payment" ? "bg-verde-tint/30" : undefined}>
+                {order.entryType === "fiado_payment" ? (
+                  <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 px-3 py-3 text-left">
+                    <span className="flex items-center gap-2 font-semibold text-ink-2">
+                      <Banknote className="h-4 w-4" aria-hidden="true" />
+                      Pagamento de fiado
+                    </span>
+                    <span className="text-right font-tag text-xl font-extrabold tabular-nums">
+                      {formatCurrency(order.totalAmount)}
+                    </span>
+                    <span className="text-sm text-ink-3">
+                      {formatDate(new Date(order.createdAt))}
+                      {order.clientName ? ` · ${order.clientName}` : ""}
+                    </span>
+                    <span className="text-right">{renderPayment(order)}</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrder(order)}
+                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 px-3 py-3 text-left"
+                  >
+                    <span className="font-semibold">
+                      #{order.id.slice(-6).toUpperCase()}
+                      {order.isCancelled ? <Badge variant="destructive" className="ml-2 align-[1px]">Cancelada</Badge> : null}
+                    </span>
+                    <span className={cn("text-right font-tag text-xl font-extrabold tabular-nums", order.isCancelled && "text-ink-3 line-through")}>
+                      {order.isCancelled ? "R$ 0,00" : formatCurrency(order.totalAmount)}
+                    </span>
+                    <span className="text-sm text-ink-3">
+                      {formatDate(new Date(order.createdAt))} · {order.items.length} {order.items.length === 1 ? "item" : "itens"}
+                      {order.clientName || order.customerPhone ? ` · ${order.clientName || order.customerPhone}` : ""}
+                    </span>
+                    <span className="text-right">{renderPayment(order)}</span>
+                  </button>
+                )}
               </li>
             ))}
           </ul>

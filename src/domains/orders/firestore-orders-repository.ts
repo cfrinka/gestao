@@ -1,10 +1,14 @@
-import { cancelOrder, getOrders, updateOrder } from "@/domains/orders/orders-db";
+import { cancelOrder, getFiadoPaymentEntries, getOrders, updateOrder, type FiadoPaymentListEntry } from "@/domains/orders/orders-db";
 import type { OrdersRepository } from "@/domains/orders/repository";
 import type { Order } from "@/lib/db-types";
 
 export class FirestoreOrdersRepository implements OrdersRepository {
   async getOrders(startDate?: Date, endDate?: Date): Promise<Order[]> {
     return getOrders(startDate, endDate);
+  }
+
+  async getFiadoPayments(startDate?: Date, endDate?: Date): Promise<FiadoPaymentListEntry[]> {
+    return getFiadoPaymentEntries(startDate, endDate);
   }
 
   async cancelOrder(input: {

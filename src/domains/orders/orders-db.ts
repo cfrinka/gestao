@@ -1,6 +1,6 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin";
-import type { Order, OrderItem } from "@/lib/db-types";
+import type { FinancialMovementPaymentMethod, Order, OrderItem, PaymentMethod } from "@/lib/db-types";
 import { convertTimestamp } from "@/domains/shared/firestore-serializers";
 import { getProductsCached } from "@/domains/products/products-db";
 import { roundMoney } from "@/lib/money";
@@ -457,6 +457,74 @@ export async function getOrders(startDate?: Date, endDate?: Date): Promise<Order
   return orders
     .map((order) => ({ ...order, items: itemsByOrderId.get(order.id) ?? [] }))
     .sort(byNewestFirst);
+}
+
+export interface FiadoPaymentListEntry {
+  id: string;
+  entryType: "fiado_payment";
+  createdAt: Date;
+  totalAmount: number;
+  clientName: string;
+  payments: PaymentMethod[];
+  items: OrderItem[];
+  relatedOrderId: string;
+}
+
+function mapFinancialToOrderPaymentMethod(method?: FinancialMovementPaymentMethod): PaymentMethod["method"] {
+  if (method === "cash") return "DINHEIRO";
+  if (method === "pix") return "PIX";
+  if (method === "credit") return "CREDITO";
+  return "DEBITO";
+}
+
+/**
+ * Fiado payments received in a period, as pseudo-sale entries for the Vendas screen. A payment
+ * only updates the original order (see fiado-payment.ts) — it never creates a new order — so
+ * without this, money that comes in today against an old fiado sale is invisible when the
+ * screen is filtered to "hoje". Filters by type in JS rather than in the query, matching the
+ * cash register's reading of the same collection, to avoid a composite index on type+occurredAt.
+ */
+export async function getFiadoPaymentEntries(startDate?: Date, endDate?: Date): Promise<FiadoPaymentListEntry[]> {
+  let query: FirebaseFirestore.Query = adminDb.collection("financialMovements");
+  if (startDate && endDate) {
+    query = query
+      .where("occurredAt", ">=", Timestamp.fromDate(startDate))
+      .where("occurredAt", "<=", Timestamp.fromDate(endDate));
+  }
+  const snapshot = await query.get();
+
+  type FiadoPaymentMovement = {
+    id: string;
+    type?: string;
+    amount?: number;
+    paymentMethod?: FinancialMovementPaymentMethod;
+    occurredAt?: Date;
+    metadata?: Record<string, unknown>;
+  };
+
+  return snapshot.docs
+    .map(
+      (doc) =>
+        ({ id: doc.id, ...convertTimestamp<Record<string, unknown>>(doc.data()) }) as FiadoPaymentMovement
+    )
+    .filter((movement) => movement.type === "FIADO_PAYMENT")
+    .map((movement) => {
+      const metadata = (movement.metadata as Record<string, unknown>) || {};
+      const amount = roundMoney(Number(movement.amount || 0));
+      const occurredAt = movement.occurredAt instanceof Date ? movement.occurredAt : new Date();
+      const method = mapFinancialToOrderPaymentMethod(movement.paymentMethod as FinancialMovementPaymentMethod | undefined);
+
+      return {
+        id: `fiado-payment-${movement.id}`,
+        entryType: "fiado_payment" as const,
+        createdAt: occurredAt,
+        totalAmount: amount,
+        clientName: String(metadata.clientName || "Cliente"),
+        payments: [{ method, amount }],
+        items: [] as OrderItem[],
+        relatedOrderId: String(metadata.orderId || ""),
+      };
+    });
 }
 
 /** Items written in a period (checkout stamps each item with its sale's time). */

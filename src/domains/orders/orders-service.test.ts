@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { OrdersService } from "./orders-service";
 import type { OrdersRepository } from "./repository";
+import type { FiadoPaymentListEntry } from "./orders-db";
 import type { Order } from "@/lib/db-types";
 import { HttpError } from "@/lib/api/http-errors";
 
@@ -12,6 +13,7 @@ vi.mock("@/domains/products/products-db", () => ({
 
 class FakeOrdersRepository implements OrdersRepository {
   getOrdersMock = vi.fn(async (_startDate?: Date, _endDate?: Date): Promise<Order[]> => []);
+  getFiadoPaymentsMock = vi.fn(async (_startDate?: Date, _endDate?: Date): Promise<FiadoPaymentListEntry[]> => []);
   cancelOrderMock = vi.fn(
     async (input: { orderId: string; actorId: string; actorRole: string; reason?: string }): Promise<Order> => ({
       id: input.orderId,
@@ -42,6 +44,9 @@ class FakeOrdersRepository implements OrdersRepository {
 
   async getOrders(startDate?: Date, endDate?: Date) {
     return this.getOrdersMock(startDate, endDate);
+  }
+  async getFiadoPayments(startDate?: Date, endDate?: Date) {
+    return this.getFiadoPaymentsMock(startDate, endDate);
   }
   async cancelOrder(input: Parameters<OrdersRepository["cancelOrder"]>[0]) {
     return this.cancelOrderMock(input);
@@ -202,5 +207,28 @@ describe("OrdersService.list", () => {
     const service = new OrdersService(repo);
     const result = (await service.list({})) as Array<{ items: unknown[] }>;
     expect(result[0].items).toEqual([]);
+  });
+
+  it("includes fiado payments received in the period alongside orders", async () => {
+    const repo = new FakeOrdersRepository();
+    repo.getOrdersMock.mockResolvedValueOnce([
+      { id: "order-1", subtotal: 100, discount: 0, totalAmount: 100, payments: [], createdAt: new Date(), items: [] },
+    ]);
+    repo.getFiadoPaymentsMock.mockResolvedValueOnce([
+      {
+        id: "fiado-payment-mov-1",
+        entryType: "fiado_payment",
+        createdAt: new Date(),
+        totalAmount: 50,
+        clientName: "Maria",
+        payments: [{ method: "DINHEIRO", amount: 50 }],
+        items: [],
+        relatedOrderId: "order-0",
+      },
+    ]);
+    const service = new OrdersService(repo);
+    const result = (await service.list({})) as Array<{ id: string; entryType?: string }>;
+    expect(result.map((r) => r.id)).toEqual(["order-1", "fiado-payment-mov-1"]);
+    expect(result[1].entryType).toBe("fiado_payment");
   });
 });
