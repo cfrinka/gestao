@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useLayoutEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, ReactNode } from "react";
 import {
   User,
   signInWithEmailAndPassword,
@@ -72,6 +72,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [accessError, setAccessError] = useState<string | null>(null);
 
+  // Lets signIn() resolve only once the access check for that uid has settled, instead of right
+  // after Firebase confirms the password — otherwise the dashboard's redirect-if-signed-out effect
+  // ran before userData was set and bounced the user straight back to /login.
+  const accessWaitersRef = useRef<Map<string, Array<() => void>>>(new Map());
+
+  const waitForAccessResolved = (uid: string): Promise<void> => {
+    return new Promise((resolve) => {
+      const waiters = accessWaitersRef.current.get(uid) ?? [];
+      waiters.push(resolve);
+      accessWaitersRef.current.set(uid, waiters);
+    });
+  };
+
+  const notifyAccessResolved = (uid: string) => {
+    const waiters = accessWaitersRef.current.get(uid);
+    if (!waiters) return;
+    accessWaitersRef.current.delete(uid);
+    waiters.forEach((resolve) => resolve());
+  };
+
   // A returning user with a stored session and a known profile gets the app before the first
   // paint; the Firebase check and the access check below confirm (or undo) it moments later.
   useBrowserLayoutEffect(() => {
@@ -122,7 +142,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           writeCachedProfile(null);
           setUser(null);
           setUserData(null);
-          setLoading(false);
           await firebaseSignOut(auth);
           return;
         }
@@ -138,9 +157,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error("Failed to fetch user data:", error);
         if (!cachedProfile) setUser(firebaseUser);
+      } finally {
+        setLoading(false);
+        notifyAccessResolved(firebaseUser.uid);
       }
-
-      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -148,7 +168,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     setAccessError(null);
-    await signInWithEmailAndPassword(auth, email, password);
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    await waitForAccessResolved(credential.user.uid);
   };
 
   const signOut = async () => {
