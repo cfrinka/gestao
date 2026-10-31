@@ -420,6 +420,7 @@ export async function updateOrder(input: {
 
     return {
       ...order,
+      id: input.orderId,
       discount: safeDiscount,
       totalAmount: nextTotalAmount,
       payments: normalizedPayments,
