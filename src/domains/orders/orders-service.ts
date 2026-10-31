@@ -77,6 +77,7 @@ export class OrdersService {
       orderId,
       discount: command.discount,
       payments: command.payments,
+      customerPhone: command.customerPhone,
       actorId: command.actorId,
       actorRole: command.actorRole,
     });

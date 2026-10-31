@@ -15,6 +15,7 @@ export interface UpdateOrderCommand {
   orderId: string;
   discount: number;
   payments: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>;
+  customerPhone?: string;
   actorId: string;
   actorRole: string;
 }

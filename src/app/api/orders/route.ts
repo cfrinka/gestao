@@ -26,6 +26,7 @@ interface UpdateOrderBody {
   orderId?: string;
   discount?: number;
   payments?: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>;
+  customerPhone?: string;
 }
 
 interface CancelOrderBody {
@@ -65,6 +66,7 @@ export async function PATCH(request: NextRequest) {
         orderId: String(body.orderId || "").trim(),
         discount: Number(body.discount || 0),
         payments: Array.isArray(body.payments) ? body.payments : [],
+        customerPhone: body.customerPhone,
         actorId: user.uid,
         actorRole: user.role,
       });

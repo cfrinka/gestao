@@ -30,6 +30,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { TotalsStrip } from "@/components/etiqueta/totals-strip";
 import { PriceTag } from "@/components/etiqueta/price-tag";
 import { addDaysISO, toStoreISODate, todayISO } from "@/lib/dates";
+import { formatPhone, isValidPhone } from "@/lib/phone";
 
 interface OrderItem {
   id: string;
@@ -102,6 +103,7 @@ export default function SalesPage() {
   const [cancelReason, setCancelReason] = useState("");
   const [cancelPassword, setCancelPassword] = useState("");
   const [editDiscount, setEditDiscount] = useState("0");
+  const [editCustomerPhone, setEditCustomerPhone] = useState("");
   const [editPayments, setEditPayments] = useState<Record<PaymentMethod["method"], string>>({
     DINHEIRO: "0",
     DEBITO: "0",
@@ -161,6 +163,7 @@ export default function SalesPage() {
 
     setEditDiscount(String(initialDiscount));
     setEditPayments(paymentMap);
+    setEditCustomerPhone(selectedOrder.customerPhone || "");
     setIsEditingSale(false);
     setCancellingSale(false);
     setCancelReason("");
@@ -525,12 +528,19 @@ export default function SalesPage() {
       }))
       .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
 
+    const trimmedPhone = editCustomerPhone.trim();
+    if (trimmedPhone && !isValidPhone(trimmedPhone)) {
+      toast({ title: "Celular do cliente incompleto", description: "Confira o DDD ou deixe o campo em branco.", variant: "destructive" });
+      return;
+    }
+
     setSavingSaleEdit(true);
     try {
       const updatedOrder = (await apiPatch("/api/orders", {
         orderId: selectedOrder.id,
         discount: safeDiscount,
         payments,
+        customerPhone: trimmedPhone ? formatPhone(trimmedPhone) : undefined,
       })) as Order;
 
       setSelectedOrder(updatedOrder);
@@ -887,6 +897,18 @@ export default function SalesPage() {
                           step="0.01"
                           value={editDiscount}
                           onChange={(e) => setEditDiscount(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label>Celular do cliente</Label>
+                        <Input
+                          type="tel"
+                          inputMode="tel"
+                          placeholder="(11) 98765-4321"
+                          value={editCustomerPhone}
+                          onChange={(e) => setEditCustomerPhone(e.target.value)}
+                          onBlur={() => setEditCustomerPhone((current) => (current.trim() ? formatPhone(current) : current))}
                         />
                       </div>
 

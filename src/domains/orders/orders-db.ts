@@ -7,6 +7,7 @@ import { roundMoney } from "@/lib/money";
 import { normalizePayments } from "@/domains/checkout/cart-validation";
 import { HttpError, closedMonthError } from "@/lib/api/http-errors";
 import { addDaysISO, endOfStoreDay, startOfStoreDay, toCompetencyMonth, todayISO } from "@/lib/dates";
+import { formatPhone, isValidPhone } from "@/lib/phone";
 
 function normalizePositivePayments(
   payments: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>
@@ -292,6 +293,7 @@ export async function updateOrder(input: {
   orderId: string;
   discount: number;
   payments: Array<{ method: "DINHEIRO" | "DEBITO" | "CREDITO" | "PIX"; amount: number }>;
+  customerPhone?: string;
   actorId: string;
   actorRole: string;
 }): Promise<Order> {
@@ -303,6 +305,12 @@ export async function updateOrder(input: {
   if (!Number.isFinite(safeDiscount) || safeDiscount < 0) {
     throw new HttpError(400, "Desconto inválido");
   }
+
+  const typedPhone = String(input.customerPhone ?? "").trim();
+  if (typedPhone && !isValidPhone(typedPhone)) {
+    throw new HttpError(400, "Celular do cliente incompleto");
+  }
+  const customerPhone = typedPhone ? formatPhone(typedPhone) : undefined;
 
   const normalizedPayments = normalizePayments(input.payments);
 
@@ -368,6 +376,7 @@ export async function updateOrder(input: {
       discount: safeDiscount,
       totalAmount: nextTotalAmount,
       payments: normalizedPayments,
+      ...(customerPhone ? { customerPhone } : {}),
       updatedAt: nowTs,
     });
 
@@ -414,6 +423,7 @@ export async function updateOrder(input: {
       discount: safeDiscount,
       totalAmount: nextTotalAmount,
       payments: normalizedPayments,
+      ...(customerPhone ? { customerPhone } : {}),
       items,
     };
   });

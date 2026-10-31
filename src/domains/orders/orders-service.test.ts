@@ -144,6 +144,22 @@ describe("OrdersService.update", () => {
     });
     expect(result.totalAmount).toBe(80);
   });
+
+  it("passes customerPhone through to the repository", async () => {
+    const repo = new FakeOrdersRepository();
+    const service = new OrdersService(repo);
+    await service.update({
+      orderId: "order-1",
+      discount: 0,
+      payments: [],
+      customerPhone: "(11) 98765-4321",
+      actorId: "admin-1",
+      actorRole: "ADMIN",
+    });
+    expect(repo.updateOrderMock).toHaveBeenCalledWith(
+      expect.objectContaining({ customerPhone: "(11) 98765-4321" })
+    );
+  });
 });
 
 describe("OrdersService.list", () => {
