@@ -82,6 +82,18 @@ describe("saved carts", () => {
     expect(dropped).toBe(3);
   });
 
+  it("restores a custom-price line with its typed value, skipping the stock clamp", () => {
+    const products = [{ id: "p1", name: "Personalizado", stock: 0, sizes: [], isCustomPrice: true }];
+    const { cart: restored, dropped } = restoreCartLines(
+      [{ productId: "p1", size: "", quantity: 1, customPrice: 42.5 }],
+      products
+    );
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toMatchObject({ product: products[0], size: "", quantity: 1, customPrice: 42.5 });
+    expect(typeof restored[0].lineId).toBe("string");
+    expect(dropped).toBe(0);
+  });
+
   it("never gives two carts the same last piece", () => {
     const products = [{ id: "p1", name: "Vestido", stock: 1, sizes: [{ size: "M", stock: 1 }] }];
     const held = new Map<string, number>();

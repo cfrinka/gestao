@@ -50,14 +50,22 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  isCustomPrice?: boolean;
   image?: string;
 }
 
 interface CartItem {
+  /** Line identity in the UI; distinct from product+size so several custom-price lines can coexist. */
+  lineId: string;
   product: Product;
   size: string;
   quantity: number;
+  /** Set only on a custom-price line: the value the cashier typed, overriding the product's salePrice. */
+  customPrice?: number;
 }
+
+/** What the store actually charges for this line: the typed value for a custom-price product, else the catalogue price. */
+const lineUnitPrice = (item: CartItem) => item.customPrice ?? item.product.salePrice;
 
 /** One customer's sale in progress; several can be open at the counter at once. */
 interface OpenCart {
@@ -109,6 +117,7 @@ interface Order {
   createdAt: string;
   isPaidLater?: boolean;
   clientName?: string;
+  customProductTotal?: number;
 }
 
 interface ProductDiscount {
@@ -220,6 +229,10 @@ export default function POSPage() {
   const productCategories = useProductCategories();
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [customPriceInput, setCustomPriceInput] = useState("");
+  useEffect(() => {
+    setCustomPriceInput("");
+  }, [selectedProduct]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -415,7 +428,12 @@ export default function POSPage() {
         id: openCart.id,
         number: openCart.number,
         name: openCart.name,
-        lines: openCart.items.map((item) => ({ productId: item.product.id, size: item.size, quantity: item.quantity })),
+        lines: openCart.items.map((item) => ({
+          productId: item.product.id,
+          size: item.size,
+          quantity: item.quantity,
+          ...(item.customPrice !== undefined ? { customPrice: item.customPrice } : {}),
+        })),
       })),
       activeCartId
     );
@@ -558,8 +576,8 @@ export default function POSPage() {
 
       if (exactMatch) {
         setLastScanned(exactMatch.name);
-        if (exactMatch.sizes?.length > 0) {
-          // Product has sizes, show size selection
+        if (exactMatch.isCustomPrice || exactMatch.sizes?.length > 0) {
+          // Custom price (type the value) or has sizes: both need the modal, not a direct add.
           setSelectedProduct(exactMatch);
         } else {
           // No sizes, add directly to cart
@@ -688,6 +706,7 @@ export default function POSPage() {
     doc.text("Resumo do Caixa", 14, 56);
 
     const totalFiado = orders.filter(o => o.isPaidLater).reduce((sum, o) => sum + o.totalAmount, 0);
+    const totalPersonalizado = orders.reduce((sum, o) => sum + (o.customProductTotal || 0), 0);
 
     autoTable(doc, {
       startY: 60,
@@ -702,6 +721,7 @@ export default function POSPage() {
         ["Crédito", formatCurrency(register.totalCredit)],
         ["PIX", formatCurrency(register.totalPix)],
         ["Fiado", formatCurrency(totalFiado)],
+        ["Personalizado", formatCurrency(totalPersonalizado)],
         ["Quantidade de Vendas", register.salesCount.toString()],
         ["Trocas com Diferença", (register.exchangeDifferenceCount || 0).toString()],
         ["Saldo Final Informado", formatCurrency(register.closingBalance || 0)],
@@ -787,27 +807,35 @@ export default function POSPage() {
         });
         return;
       }
-      setCart([...cart, { product, size, quantity: 1 }]);
+      setCart([...cart, { lineId: crypto.randomUUID(), product, size, quantity: 1 }]);
     }
     setSelectedProduct(null);
   };
 
+  /** A custom-price product has no stock to check: every tap opens a fresh line with its own typed value. */
+  const addCustomPriceToCart = (product: Product, price: number) => {
+    setCart([...cart, { lineId: crypto.randomUUID(), product, size: "", quantity: 1, customPrice: roundMoney(price) }]);
+    setSelectedProduct(null);
+  };
+
   const handleProductClick = (product: Product) => {
-    if (product.sizes?.length > 0) {
+    if (product.isCustomPrice || product.sizes?.length > 0) {
       setSelectedProduct(product);
     } else {
       addToCart(product, "");
     }
   };
 
-  const updateQuantity = (productId: string, size: string, delta: number) => {
+  const updateQuantity = (lineId: string, delta: number) => {
     setCart(
       cart
         .map((item) => {
-          if (item.product.id === productId && item.size === size) {
+          if (item.lineId === lineId) {
+            // A custom-price line has no stock to check, and its quantity never moves past 1.
+            if (item.customPrice !== undefined) return item;
             // Today's stock, less what the other open carts hold.
-            const current = products.find((product) => product.id === productId) ?? item.product;
-            const sizeStock = availableStock(current, size) - heldInOtherCarts(productId, size);
+            const current = products.find((product) => product.id === item.product.id) ?? item.product;
+            const sizeStock = availableStock(current, item.size) - heldInOtherCarts(item.product.id, item.size);
             const newQty = item.quantity + delta;
             if (newQty > sizeStock) {
               toast({
@@ -824,8 +852,8 @@ export default function POSPage() {
     );
   };
 
-  const removeFromCart = (productId: string, size: string) => {
-    setCart(cart.filter((item) => !(item.product.id === productId && item.size === size)));
+  const removeFromCart = (lineId: string) => {
+    setCart(cart.filter((item) => item.lineId !== lineId));
   };
 
   const clearCart = () => {
@@ -886,7 +914,7 @@ export default function POSPage() {
   };
 
   const subtotal = roundMoney(cart.reduce(
-    (sum, item) => sum + item.product.salePrice * item.quantity,
+    (sum, item) => sum + lineUnitPrice(item) * item.quantity,
     0
   ));
 
@@ -902,7 +930,7 @@ export default function POSPage() {
     cart.forEach((cartItem) => {
       const productDiscount = activeProductDiscount(storeSettings.discounts, cartItem.product.id, today);
       if (productDiscount) {
-        const discountValue = (cartItem.product.salePrice * cartItem.quantity * productDiscount.discountPercent) / 100;
+        const discountValue = (lineUnitPrice(cartItem) * cartItem.quantity * productDiscount.discountPercent) / 100;
         autoDiscount += discountValue;
         details.push({
           label: `${cartItem.product.name} (${productDiscount.discountPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%)`,
@@ -1344,6 +1372,7 @@ export default function POSPage() {
         productId: item.product.id,
         size: item.size,
         quantity: item.quantity,
+        ...(item.customPrice !== undefined ? { unitPrice: item.customPrice } : {}),
       })),
       discount: effectiveManualDiscount,
       promoDiscount: totalAutoDiscount,
@@ -1434,6 +1463,7 @@ export default function POSPage() {
         productId: item.product.id,
         size: item.size,
         quantity: item.quantity,
+        ...(item.customPrice !== undefined ? { unitPrice: item.customPrice } : {}),
       })),
       payments: paymentsSnapshot,
       discount: effectiveManualDiscount,
@@ -1577,7 +1607,7 @@ export default function POSPage() {
         <ul className="min-h-0 flex-1 overflow-y-auto px-5" aria-label="Peças na venda">
           {cart.map((item) => (
             <li
-              key={`${item.product.id}-${item.size}`}
+              key={item.lineId}
               className="grid animate-line-in grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b-[1.5px] border-dashed border-rule-strong py-3 last:border-b-0"
             >
               <div className="min-w-0">
@@ -1590,16 +1620,16 @@ export default function POSPage() {
                   ) : null}
                 </p>
                 <p className="mt-0.5 text-xs text-ink-3">
-                  {item.product.sku} · {formatCurrency(item.product.salePrice)} cada
+                  {item.product.sku} · {formatCurrency(lineUnitPrice(item))} cada
                 </p>
               </div>
-              <PriceTag value={item.product.salePrice * item.quantity} className="self-start pt-0.5 text-lg" />
+              <PriceTag value={lineUnitPrice(item) * item.quantity} className="self-start pt-0.5 text-lg" />
               <div className="col-span-2 mt-2 flex items-center justify-between">
                 <div className="inline-flex items-stretch border border-rule-strong">
                   <button
                     type="button"
                     aria-label={`Diminuir ${item.product.name}`}
-                    onClick={() => updateQuantity(item.product.id, item.size, -1)}
+                    onClick={() => updateQuantity(item.lineId, -1)}
                     className="flex h-8 w-8 items-center justify-center text-ink-2 transition-colors hover:bg-sub hover:text-ink"
                   >
                     <Minus className="h-3.5 w-3.5" />
@@ -1607,18 +1637,20 @@ export default function POSPage() {
                   <span className="flex w-9 items-center justify-center border-x border-rule-strong text-sm font-semibold tabular-nums">
                     {item.quantity}
                   </span>
-                  <button
-                    type="button"
-                    aria-label={`Aumentar ${item.product.name}`}
-                    onClick={() => updateQuantity(item.product.id, item.size, 1)}
-                    className="flex h-8 w-8 items-center justify-center text-ink-2 transition-colors hover:bg-sub hover:text-ink"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
+                  {item.customPrice === undefined && (
+                    <button
+                      type="button"
+                      aria-label={`Aumentar ${item.product.name}`}
+                      onClick={() => updateQuantity(item.lineId, 1)}
+                      className="flex h-8 w-8 items-center justify-center text-ink-2 transition-colors hover:bg-sub hover:text-ink"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
                 <button
                   type="button"
-                  onClick={() => removeFromCart(item.product.id, item.size)}
+                  onClick={() => removeFromCart(item.lineId)}
                   className="inline-flex h-8 items-center gap-1.5 px-2 text-sm font-medium text-vermelho transition-colors hover:bg-vermelho-tint"
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1841,7 +1873,7 @@ export default function POSPage() {
             ) : (
               <ul className="space-y-2">
                 {filteredProducts.map((product) => {
-                  const soldOut = product.stock === 0;
+                  const soldOut = product.stock === 0 && !product.isCustomPrice;
                   const hasSizes = product.sizes?.length > 0;
                   return (
                     <li key={product.id}>
@@ -1859,7 +1891,7 @@ export default function POSPage() {
                           type="button"
                           onClick={() => handleProductClick(product)}
                           disabled={soldOut}
-                          aria-label={`${product.name}, ${formatCurrency(product.salePrice)}, estoque ${product.stock}`}
+                          aria-label={`${product.name}, ${product.isCustomPrice ? "valor digitado na venda" : formatCurrency(product.salePrice)}${product.isCustomPrice ? "" : `, estoque ${product.stock}`}`}
                           className="col-start-1 row-start-1 flex min-w-0 items-center gap-3 text-left focus-visible:outline-offset-4 disabled:cursor-not-allowed"
                         >
                           <ProductPhoto src={product.image} name={product.name} className="h-10 w-10 lg:h-12 lg:w-12" />
@@ -1874,7 +1906,7 @@ export default function POSPage() {
                             </span>
                             <span className="block text-xs font-medium tracking-[0.04em] text-ink-3">
                               {product.sku}
-                              {soldOut ? " · esgotado" : !hasSizes ? ` · ${product.stock} em estoque` : ""}
+                              {product.isCustomPrice ? "" : soldOut ? " · esgotado" : !hasSizes ? ` · ${product.stock} em estoque` : ""}
                             </span>
                           </span>
                         </button>
@@ -1892,7 +1924,7 @@ export default function POSPage() {
                               variant="outline"
                               size="sm"
                               disabled={soldOut}
-                              onClick={() => addToCart(product, "")}
+                              onClick={() => handleProductClick(product)}
                             >
                               <Plus className="h-4 w-4" aria-hidden="true" />
                               Adicionar
@@ -1900,6 +1932,13 @@ export default function POSPage() {
                           )}
                         </div>
                         {(() => {
+                          if (product.isCustomPrice) {
+                            return (
+                              <span className="col-start-2 row-start-1 justify-self-end text-sm text-ink-3 xl:col-start-3">
+                                Valor na venda
+                              </span>
+                            );
+                          }
                           const clearance = activeProductDiscount(storeSettings.discounts, product.id, today);
                           if (!clearance) {
                             return (
@@ -2385,32 +2424,67 @@ export default function POSPage() {
                   </DialogTitle>
                   <p className="text-sm text-ink-3">{selectedProduct.sku}</p>
                 </DialogHeader>
-                <PriceTag value={selectedProduct.salePrice} className="mt-2 text-[40px]" />
-                <p className="mb-2 mt-6 font-tag text-sm font-bold uppercase tracking-[0.1em] text-ink-2">
-                  Escolha o tamanho
-                </p>
-                <div className="grid grid-cols-3 border-l-[1.5px] border-t-[1.5px] border-ink">
-                  {selectedProduct.sizes?.map((sizeData) => {
-                    const out = sizeData.stock === 0;
-                    return (
-                      <button
-                        key={sizeData.size}
-                        type="button"
-                        disabled={out}
-                        onClick={() => addToCart(selectedProduct, sizeData.size)}
-                        className={cn(
-                          "flex h-[72px] flex-col items-center justify-center border-b-[1.5px] border-r-[1.5px] border-ink transition-colors focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-denim",
-                          out ? "cursor-not-allowed bg-sub text-ink-3/60" : "bg-paper text-ink hover:bg-denim hover:text-white"
-                        )}
-                      >
-                        <span className="font-tag text-2xl font-bold leading-none">{sizeData.size}</span>
-                        <span className={cn("mt-1 text-xs font-semibold", !out && sizeData.stock <= 1 ? "text-vermelho" : "opacity-70")}>
-                          {out ? "esgotado" : `${sizeData.stock} em estoque`}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                {selectedProduct.isCustomPrice ? (
+                  <form
+                    className="mt-2 flex flex-col gap-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const price = parseFloat(customPriceInput.replace(",", "."));
+                      if (!Number.isFinite(price) || price <= 0) {
+                        toast({ title: "Informe um valor válido", variant: "destructive" });
+                        return;
+                      }
+                      addCustomPriceToCart(selectedProduct, price);
+                    }}
+                  >
+                    <Label htmlFor="custom-price-input">Valor da venda</Label>
+                    <Input
+                      id="custom-price-input"
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0"
+                      autoFocus
+                      value={customPriceInput}
+                      onChange={(e) => setCustomPriceInput(e.target.value)}
+                      className="h-12 text-xl tabular-nums"
+                      placeholder="0,00"
+                    />
+                    <Button type="submit" className="mt-1">
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                      Adicionar à venda
+                    </Button>
+                  </form>
+                ) : (
+                  <>
+                    <PriceTag value={selectedProduct.salePrice} className="mt-2 text-[40px]" />
+                    <p className="mb-2 mt-6 font-tag text-sm font-bold uppercase tracking-[0.1em] text-ink-2">
+                      Escolha o tamanho
+                    </p>
+                    <div className="grid grid-cols-3 border-l-[1.5px] border-t-[1.5px] border-ink">
+                      {selectedProduct.sizes?.map((sizeData) => {
+                        const out = sizeData.stock === 0;
+                        return (
+                          <button
+                            key={sizeData.size}
+                            type="button"
+                            disabled={out}
+                            onClick={() => addToCart(selectedProduct, sizeData.size)}
+                            className={cn(
+                              "flex h-[72px] flex-col items-center justify-center border-b-[1.5px] border-r-[1.5px] border-ink transition-colors focus-visible:relative focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-denim",
+                              out ? "cursor-not-allowed bg-sub text-ink-3/60" : "bg-paper text-ink hover:bg-denim hover:text-white"
+                            )}
+                          >
+                            <span className="font-tag text-2xl font-bold leading-none">{sizeData.size}</span>
+                            <span className={cn("mt-1 text-xs font-semibold", !out && sizeData.stock <= 1 ? "text-vermelho" : "opacity-70")}>
+                              {out ? "esgotado" : `${sizeData.stock} em estoque`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -2696,6 +2770,12 @@ export default function POSPage() {
                     <span className="font-medium text-vermelho">Fiado</span>
                     <span className="font-medium text-vermelho">
                       {formatCurrency(closingReportData.orders.filter(o => o.isPaidLater).reduce((sum, o) => sum + o.totalAmount, 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="font-medium">Personalizado</span>
+                    <span className="font-medium">
+                      {formatCurrency(closingReportData.orders.reduce((sum, o) => sum + (o.customProductTotal || 0), 0))}
                     </span>
                   </div>
                 </CardContent>

@@ -2,13 +2,16 @@
  * The sales in progress at the POS, kept in this browser so leaving the PDV screen (or reloading
  * it) doesn't empty them. Each user has their own; they last 12 hours, so yesterday's forgotten
  * sale doesn't come back. Only ids, sizes and quantities are kept: prices and stock always come
- * from the catalogue when a cart is restored.
+ * from the catalogue when a cart is restored — except a custom-price line, which has no catalogue
+ * price to restore from and so also keeps the value the cashier typed.
  */
 
 export interface SavedCartLine {
   productId: string;
   size: string;
   quantity: number;
+  /** Set only for a custom-price line: the value the cashier typed when it was added. */
+  customPrice?: number;
 }
 
 export interface SavedCart {
@@ -24,6 +27,7 @@ interface StockedProduct {
   id: string;
   stock: number;
   sizes?: Array<{ size: string; stock: number }>;
+  isCustomPrice?: boolean;
 }
 
 const MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -31,10 +35,15 @@ const keyFor = (userId: string) => `pos-cart:${userId}`;
 
 function validLines(lines: unknown): SavedCartLine[] {
   if (!Array.isArray(lines)) return [];
-  return lines.filter(
-    (line): line is SavedCartLine =>
-      Boolean(line) && typeof line.productId === "string" && typeof line.size === "string" && Number(line.quantity) > 0
-  );
+  return lines
+    .filter(
+      (line): line is SavedCartLine =>
+        Boolean(line) && typeof line.productId === "string" && typeof line.size === "string" && Number(line.quantity) > 0
+    )
+    .map((line) => {
+      const customPrice = Number((line as { customPrice?: unknown }).customPrice);
+      return Number.isFinite(customPrice) && customPrice > 0 ? { ...line, customPrice } : { ...line, customPrice: undefined };
+    });
 }
 
 export function readSavedCarts(userId: string, now = Date.now()): { carts: SavedCart[]; activeId: string | null } {
@@ -87,13 +96,21 @@ export function restoreCartLines<P extends StockedProduct>(
   lines: SavedCartLine[],
   products: P[],
   held: Map<string, number> = new Map()
-): { cart: Array<{ product: P; size: string; quantity: number }>; dropped: number } {
+): { cart: Array<{ lineId: string; product: P; size: string; quantity: number; customPrice?: number }>; dropped: number } {
   const byId = new Map(products.map((product) => [product.id, product]));
-  const cart: Array<{ product: P; size: string; quantity: number }> = [];
+  const cart: Array<{ lineId: string; product: P; size: string; quantity: number; customPrice?: number }> = [];
   let dropped = 0;
 
   for (const line of lines) {
     const product = byId.get(line.productId);
+
+    // A custom-price line has no stock to clamp against: it's always restored as its own line,
+    // carrying the value the cashier typed when it was added.
+    if (product?.isCustomPrice && line.customPrice !== undefined) {
+      cart.push({ lineId: crypto.randomUUID(), product, size: "", quantity: 1, customPrice: line.customPrice });
+      continue;
+    }
+
     const key = `${line.productId}::${line.size}`;
     const stock = !product
       ? 0
@@ -108,7 +125,7 @@ export function restoreCartLines<P extends StockedProduct>(
     }
     if (quantity < line.quantity) dropped += 1;
     held.set(key, (held.get(key) || 0) + quantity);
-    cart.push({ product, size: line.size, quantity });
+    cart.push({ lineId: crypto.randomUUID(), product, size: line.size, quantity });
   }
 
   return { cart, dropped };

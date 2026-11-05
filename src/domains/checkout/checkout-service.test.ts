@@ -110,6 +110,17 @@ describe("CheckoutService — validation", () => {
     expect(repo.processCheckoutMock).not.toHaveBeenCalled();
   });
 
+  it("passes a custom-price line's typed unitPrice through to the transaction", async () => {
+    const repo = new FakeCheckoutRepository();
+    const service = new CheckoutService(repo);
+    await service.execute(
+      baseCommand({ items: [{ productId: "p1", size: "", quantity: 1, unitPrice: 42.5 }] })
+    );
+    expect(repo.processCheckoutMock.mock.calls[0][0].items).toEqual([
+      { productId: "p1", size: "", quantity: 1, unitPrice: 42.5 },
+    ]);
+  });
+
   it("rejects a negative manual discount", async () => {
     const service = new CheckoutService(new FakeCheckoutRepository());
     await expect(service.execute(baseCommand({ discount: -10 }))).rejects.toMatchObject({ statusCode: 400 });

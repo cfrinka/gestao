@@ -17,6 +17,16 @@ describe("normalizeCartItems", () => {
     expect(() => normalizeCartItems([])).toThrow(HttpError);
     expect(() => normalizeCartItems([{ productId: "", quantity: 1 }])).toThrow(HttpError);
   });
+
+  it("keeps a valid unitPrice (custom-price line), rounded to cents", () => {
+    expect(normalizeCartItems([{ productId: "p1", size: "", quantity: 1, unitPrice: 42.505 }])).toEqual([
+      { productId: "p1", size: "", quantity: 1, unitPrice: 42.51 },
+    ]);
+  });
+
+  it.each([0, -1, Number.NaN, "abc", 100001])("rejects unitPrice %p", (unitPrice) => {
+    expect(() => normalizeCartItems([{ productId: "p1", size: "", quantity: 1, unitPrice }])).toThrow(HttpError);
+  });
 });
 
 describe("normalizePayments", () => {

@@ -34,6 +34,7 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  isCustomPrice?: boolean;
   image?: string;
 }
 
@@ -103,9 +104,11 @@ export default function ExchangesPage() {
   }, [fetchAll]);
 
   const filteredProducts = useMemo(() => {
+    // A custom-price product has no tracked stock, so it can't go out or come back in an exchange.
+    const exchangeable = products.filter((p) => !p.isCustomPrice);
     const term = search.trim().toLowerCase();
-    if (!term) return products;
-    return products.filter((p) => p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term));
+    if (!term) return exchangeable;
+    return exchangeable.filter((p) => p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term));
   }, [products, search]);
 
   const getSizeStock = (product: Product, size: string): number => {

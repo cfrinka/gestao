@@ -15,6 +15,8 @@ export interface CreateProductCommand {
   image: unknown;
   imageSource: unknown;
   idempotencyKey: unknown;
+  /** No stock, no sizes: the sale price is typed by the cashier when it's added to the cart. */
+  isCustomPrice: unknown;
   createdById: string;
   createdByName: string;
 }
@@ -35,6 +37,7 @@ export interface UpdateProductCommand {
   image: unknown;
   imageSource: unknown;
   idempotencyKey: unknown;
+  isCustomPrice: unknown;
   createdById: string;
   createdByName: string;
 }

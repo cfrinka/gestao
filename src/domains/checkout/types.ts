@@ -9,6 +9,8 @@ export interface CheckoutCartItem {
   productId: string;
   size: string;
   quantity: number;
+  /** Custom-price product only: the value the cashier typed when it was added to the cart. */
+  unitPrice?: number;
 }
 
 export interface CheckoutCommand {

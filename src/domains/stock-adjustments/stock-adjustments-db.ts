@@ -24,7 +24,12 @@ export async function createAdjustment(input: {
       sku?: string;
       stock?: number;
       sizes?: Array<{ size: string; stock: number }>;
+      isCustomPrice?: boolean;
     };
+
+    if (product.isCustomPrice) {
+      throw new HttpError(400, "Este produto não tem estoque: o valor é digitado na venda");
+    }
 
     const previousStock = Number(product.stock || 0);
     const previousSizes = Array.isArray(product.sizes) ? product.sizes : [];

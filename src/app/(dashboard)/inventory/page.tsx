@@ -37,6 +37,7 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  isCustomPrice?: boolean;
   image?: string;
 }
 
@@ -271,10 +272,12 @@ export default function InventoryPage() {
                     </div>
                   </dl>
                   <div className="col-start-2 row-start-3 flex justify-end xl:col-start-6 xl:row-start-1">
-                    <Button variant="outline" size="sm" onClick={() => openAdjust(product)}>
-                      <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
-                      Ajustar
-                    </Button>
+                    {!product.isCustomPrice && (
+                      <Button variant="outline" size="sm" onClick={() => openAdjust(product)}>
+                        <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        Ajustar
+                      </Button>
+                    )}
                   </div>
                 </TagRow>
               </li>

@@ -17,6 +17,8 @@ interface CartItem {
   productId: string;
   size: string;
   quantity: number;
+  /** Custom-price product only: the value the cashier typed when it was added to the cart. */
+  unitPrice?: number;
 }
 
 interface CheckoutBody {
@@ -37,7 +39,7 @@ async function buildDemoOrder(body: CheckoutBody, userId: string) {
   const products = await Promise.all(
     items.map(async (item) => {
       const product = await getProduct(item.productId).catch(() => null);
-      const salePrice = Number(product?.salePrice || 0);
+      const salePrice = product?.isCustomPrice ? Number(item.unitPrice || 0) : Number(product?.salePrice || 0);
       const costPrice = Number(product?.costPrice || 0);
       const quantity = Number(item.quantity || 0);
       return {
@@ -107,12 +109,15 @@ export async function POST(request: NextRequest) {
       // Prices for the discount math come from the cached catalogue and settings (read at once);
       // the checkout transaction re-reads every product and refuses the sale if a price moved.
       const [catalogue, storeSettings] = await Promise.all([getProductsCached(), getStoreSettingsCached()]);
-      const priceById = new Map(catalogue.map((product) => [product.id, Number(product.salePrice || 0)]));
-      const lineItems = items.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        salePrice: priceById.get(item.productId) ?? 0,
-      }));
+      const catalogueById = new Map(catalogue.map((product) => [product.id, product]));
+      const lineItems = items.map((item) => {
+        const product = catalogueById.get(item.productId);
+        // A custom-price product has no catalogue price: the cashier's typed value is the only
+        // price it has, and it's only honored because the catalogue itself (read on the server,
+        // never from the client) confirms this product is flagged custom-price.
+        const salePrice = product?.isCustomPrice ? Number(item.unitPrice || 0) : Number(product?.salePrice || 0);
+        return { productId: item.productId, quantity: item.quantity, salePrice };
+      });
       const subtotal = roundMoney(lineItems.reduce((sum, item) => sum + roundMoney(item.salePrice * item.quantity), 0));
 
       const promoDiscount = calculateAutoDiscount(lineItems, subtotal, storeSettings.discounts, payments);

@@ -42,6 +42,7 @@ interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  isCustomPrice?: boolean;
   image?: string;
   imageSource?: "uploaded" | "random" | "none";
 }
@@ -108,12 +109,13 @@ export default function ProductsPage() {
     salePrice: "",
     stock: "0",
     sizes: DEFAULT_SIZES.map(size => ({ size, stock: 0 })),
+    isCustomPrice: false,
     image: "",
     imageSource: "none" as "uploaded" | "random" | "none",
   });
 
   useEffect(() => {
-    if (editingProduct) return;
+    if (editingProduct || formData.isCustomPrice) return;
     const expected = getSizeGrid(formData.sizeType, formData.plusSized);
     const sameShape =
       Array.isArray(formData.sizes) &&
@@ -216,6 +218,7 @@ export default function ProductsPage() {
       salePrice: product.salePrice.toString(),
       stock: product.stock.toString(),
       sizes: formSizes,
+      isCustomPrice: product.isCustomPrice === true,
       image: product.image || "",
       imageSource: product.imageSource || "none",
     });
@@ -235,9 +238,20 @@ export default function ProductsPage() {
       salePrice: "",
       stock: "0",
       sizes: DEFAULT_SIZES.map(size => ({ size, stock: 0 })),
+      isCustomPrice: false,
       image: "",
       imageSource: "none",
     });
+  };
+
+  const toggleCustomPrice = (checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      isCustomPrice: checked,
+      stock: "0",
+      sizes: checked ? [] : getSizeGrid(prev.sizeType, prev.plusSized).map((size) => ({ size, stock: 0 })),
+      salePrice: checked ? "0" : prev.salePrice,
+    }));
   };
 
   const updateSizeStock = (sizeIndex: number, stock: number) => {
@@ -439,7 +453,7 @@ export default function ProductsPage() {
                     ))}
                   </select>
                 </div>
-                <div className="flex items-end">
+                <div className="flex items-end gap-4">
                   <label className="flex h-10 cursor-pointer items-center gap-2.5 text-sm font-semibold">
                     <input
                       type="checkbox"
@@ -449,10 +463,19 @@ export default function ProductsPage() {
                     />
                     Plus size
                   </label>
+                  <label className="flex h-10 cursor-pointer items-center gap-2.5 text-sm font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={formData.isCustomPrice}
+                      onChange={(e) => toggleCustomPrice(e.target.checked)}
+                      className="h-[18px] w-[18px] accent-[hsl(var(--denim))]"
+                    />
+                    Sem estoque (valor digitado na venda)
+                  </label>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+              <div className={cn("grid grid-cols-2 gap-4", !formData.isCustomPrice && "sm:grid-cols-3")}>
                 <div className="space-y-2">
                   <Label htmlFor="costPrice">Preço de custo</Label>
                   <Input
@@ -464,7 +487,7 @@ export default function ProductsPage() {
                     onChange={(e) => {
                       const nextCostPrice = e.target.value;
 
-                      if (editingProduct) {
+                      if (editingProduct || formData.isCustomPrice) {
                         setFormData({ ...formData, costPrice: nextCostPrice });
                         return;
                       }
@@ -484,88 +507,98 @@ export default function ProductsPage() {
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="salePrice">Preço de venda</Label>
-                  <Input
-                    id="salePrice"
-                    type="number"
-                    inputMode="decimal"
-                    step="0.01"
-                    value={formData.salePrice}
-                    onChange={(e) =>
-                      setFormData({ ...formData, salePrice: e.target.value })
-                    }
-                    className="tabular-nums"
-                    required
-                  />
-                  {!editingProduct ? (
-                    <p className="text-xs text-ink-3">Sugerido: custo × {MARKUP_MULTIPLIER.toString().replace(".", ",")}</p>
-                  ) : null}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="stock-total">Estoque total</Label>
-                  <Input
-                    id="stock-total"
-                    type="number"
-                    value={formData.stock}
-                    disabled
-                    className="bg-sub tabular-nums"
-                  />
-                </div>
+                {!formData.isCustomPrice && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="salePrice">Preço de venda</Label>
+                      <Input
+                        id="salePrice"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        value={formData.salePrice}
+                        onChange={(e) =>
+                          setFormData({ ...formData, salePrice: e.target.value })
+                        }
+                        className="tabular-nums"
+                        required
+                      />
+                      {!editingProduct ? (
+                        <p className="text-xs text-ink-3">Sugerido: custo × {MARKUP_MULTIPLIER.toString().replace(".", ",")}</p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="stock-total">Estoque total</Label>
+                      <Input
+                        id="stock-total"
+                        type="number"
+                        value={formData.stock}
+                        disabled
+                        className="bg-sub tabular-nums"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
-              <fieldset className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <legend className="text-sm font-semibold">
-                    Estoque por {formData.sizeType === "numeric" ? "numeração" : "tamanho"}
-                  </legend>
-                  <div className="inline-flex border-[1.5px] border-ink" role="group" aria-label="Tipo de grade">
-                    <button
-                      type="button"
-                      aria-pressed={formData.sizeType === "letter"}
-                      onClick={() => changeSizeType("letter")}
-                      className={cn(
-                        "h-8 px-3 text-sm font-semibold transition-colors",
-                        formData.sizeType === "letter" ? "bg-ink text-white" : "bg-paper text-ink hover:bg-sub"
-                      )}
-                    >
-                      Letras
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={formData.sizeType === "numeric"}
-                      onClick={() => changeSizeType("numeric")}
-                      className={cn(
-                        "h-8 border-l-[1.5px] border-ink px-3 text-sm font-semibold transition-colors",
-                        formData.sizeType === "numeric" ? "bg-ink text-white" : "bg-paper text-ink hover:bg-sub"
-                      )}
-                    >
-                      Numeração
-                    </button>
+              {formData.isCustomPrice ? (
+                <p className="text-sm text-ink-3">
+                  Sem grade de tamanhos: o valor é digitado pelo caixa ao adicionar este produto à venda.
+                </p>
+              ) : (
+                <fieldset className="space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <legend className="text-sm font-semibold">
+                      Estoque por {formData.sizeType === "numeric" ? "numeração" : "tamanho"}
+                    </legend>
+                    <div className="inline-flex border-[1.5px] border-ink" role="group" aria-label="Tipo de grade">
+                      <button
+                        type="button"
+                        aria-pressed={formData.sizeType === "letter"}
+                        onClick={() => changeSizeType("letter")}
+                        className={cn(
+                          "h-8 px-3 text-sm font-semibold transition-colors",
+                          formData.sizeType === "letter" ? "bg-ink text-white" : "bg-paper text-ink hover:bg-sub"
+                        )}
+                      >
+                        Letras
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={formData.sizeType === "numeric"}
+                        onClick={() => changeSizeType("numeric")}
+                        className={cn(
+                          "h-8 border-l-[1.5px] border-ink px-3 text-sm font-semibold transition-colors",
+                          formData.sizeType === "numeric" ? "bg-ink text-white" : "bg-paper text-ink hover:bg-sub"
+                        )}
+                      >
+                        Numeração
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex flex-wrap border-l-[1.5px] border-t-[1.5px] border-ink">
-                  {formData.sizes.map((sizeData, index) => (
-                    <label
-                      key={sizeData.size}
-                      className="flex w-[25%] min-w-[72px] flex-col border-b-[1.5px] border-r-[1.5px] border-ink sm:w-auto sm:flex-1"
-                    >
-                      <span className="bg-sub py-1 text-center font-tag text-lg font-bold leading-none">
-                        {sizeData.size}
-                      </span>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min="0"
-                        aria-label={`Estoque do tamanho ${sizeData.size}`}
-                        value={sizeData.stock}
-                        onChange={(e) => updateSizeStock(index, parseInt(e.target.value) || 0)}
-                        className="h-10 w-full bg-paper text-center text-base font-semibold tabular-nums focus:bg-denim-tint focus:outline-none"
-                      />
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
+                  <div className="flex flex-wrap border-l-[1.5px] border-t-[1.5px] border-ink">
+                    {formData.sizes.map((sizeData, index) => (
+                      <label
+                        key={sizeData.size}
+                        className="flex w-[25%] min-w-[72px] flex-col border-b-[1.5px] border-r-[1.5px] border-ink sm:w-auto sm:flex-1"
+                      >
+                        <span className="bg-sub py-1 text-center font-tag text-lg font-bold leading-none">
+                          {sizeData.size}
+                        </span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min="0"
+                          aria-label={`Estoque do tamanho ${sizeData.size}`}
+                          value={sizeData.stock}
+                          onChange={(e) => updateSizeStock(index, parseInt(e.target.value) || 0)}
+                          className="h-10 w-full bg-paper text-center text-base font-semibold tabular-nums focus:bg-denim-tint focus:outline-none"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="image-url">Foto do produto</Label>
@@ -702,19 +735,25 @@ export default function ProductsPage() {
                     )}
                   </div>
                   <div className="col-start-2 row-start-1 text-right lg:col-start-3">
-                    <PriceTag value={product.salePrice} className="text-2xl" />
+                    {product.isCustomPrice ? (
+                      <span className="text-sm text-ink-3">Valor na venda</span>
+                    ) : (
+                      <PriceTag value={product.salePrice} className="text-2xl" />
+                    )}
                   </div>
                   <p className="col-start-1 row-start-3 text-xs text-ink-3 lg:col-start-4 lg:row-start-1 lg:text-right lg:text-sm lg:text-ink-2">
                     <span className="lg:sr-only">Custo </span>
                     {formatCurrency(product.costPrice)}
-                    <span className="lg:hidden">
-                      {" · "}
-                      <b className={cn("font-semibold", product.stock <= LOW_STOCK ? "text-vermelho" : "text-ink")}>{product.stock}</b> peças
-                    </span>
+                    {!product.isCustomPrice && (
+                      <span className="lg:hidden">
+                        {" · "}
+                        <b className={cn("font-semibold", product.stock <= LOW_STOCK ? "text-vermelho" : "text-ink")}>{product.stock}</b> peças
+                      </span>
+                    )}
                   </p>
-                  <p className={cn("hidden text-right font-tag text-xl font-extrabold tabular-nums lg:col-start-5 lg:row-start-1 lg:block", product.stock <= LOW_STOCK ? "text-vermelho" : "text-ink")}>
+                  <p className={cn("hidden text-right font-tag text-xl font-extrabold tabular-nums lg:col-start-5 lg:row-start-1 lg:block", !product.isCustomPrice && product.stock <= LOW_STOCK ? "text-vermelho" : "text-ink")}>
                     <span className="sr-only">Peças em estoque: </span>
-                    {product.stock}
+                    {product.isCustomPrice ? "—" : product.stock}
                   </p>
                   <div className="col-start-2 row-start-3 flex justify-end gap-1 lg:col-start-6 lg:row-start-1">
                     <Button

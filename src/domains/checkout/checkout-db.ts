@@ -146,7 +146,14 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Chec
       }
       const quantity = Number(item.quantity);
 
-      if (product.sizes.length > 0) {
+      // A custom-price product has no stock: the catalogue (read inside this transaction, never
+      // the client) is what grants it an unchecked, cashier-typed price in the first place.
+      if (product.isCustomPrice) {
+        const typedPrice = Number(item.unitPrice || 0);
+        if (typedPrice <= 0) {
+          throw new HttpError(400, "Informe o valor do produto personalizado");
+        }
+      } else if (product.sizes.length > 0) {
         const sizeEntry = product.sizes.find((s) => s.size === item.size);
         if (!sizeEntry || sizeEntry.stock < quantity) {
           throw new HttpError(
@@ -163,7 +170,7 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Chec
       }
 
       const unitCost = Number(product.costPrice || 0);
-      const unitPrice = Number(product.salePrice || 0);
+      const unitPrice = product.isCustomPrice ? Number(item.unitPrice || 0) : Number(product.salePrice || 0);
       const totalCost = roundMoney(unitCost * quantity);
       const totalRevenue = roundMoney(unitPrice * quantity);
       const profit = roundMoney(totalRevenue - totalCost);
@@ -184,8 +191,13 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Chec
         totalCost,
         totalRevenue,
         profit,
+        ...(product.isCustomPrice ? { isCustomPrice: true } : {}),
       });
     }
+
+    const customProductTotal = roundMoney(
+      orderItems.filter((item) => item.isCustomPrice).reduce((sum, item) => sum + item.totalRevenue, 0)
+    );
 
     subtotal = roundMoney(subtotal);
     cogsTotal = roundMoney(cogsTotal);
@@ -207,6 +219,7 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Chec
       ...(input.customerPhone ? { customerPhone: input.customerPhone } : {}),
       ...(input.promoDiscount > 0 ? { promoDiscount: input.promoDiscount } : {}),
       ...(input.manualDiscount > 0 ? { manualDiscount: input.manualDiscount } : {}),
+      ...(customProductTotal > 0 ? { customProductTotal } : {}),
       cashRegisterId,
       isCancelled: false,
       createdById: input.createdById,
@@ -257,6 +270,8 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Chec
     }
 
     for (const [productId, product] of Array.from(productsById.entries())) {
+      // A custom-price product never carries stock: there is nothing here to write back.
+      if (product.isCustomPrice) continue;
       const productRef = adminDb.collection("products").doc(productId);
       if (product.sizes.length > 0) {
         const newStock = product.sizes.reduce((sum, s) => sum + Number(s.stock || 0), 0);
@@ -313,6 +328,7 @@ export async function processCheckout(input: ProcessCheckoutInput): Promise<Chec
       payments,
       ...(change > 0 ? { change } : {}),
       ...(input.customerPhone ? { customerPhone: input.customerPhone } : {}),
+      ...(customProductTotal > 0 ? { customProductTotal } : {}),
       cashRegisterId,
       isCancelled: false,
       ...(clientId ? { clientId } : {}),

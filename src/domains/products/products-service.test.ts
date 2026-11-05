@@ -140,6 +140,7 @@ function baseCreateCommand(overrides: Record<string, unknown> = {}) {
     image: undefined,
     imageSource: undefined,
     idempotencyKey: "key-1",
+    isCustomPrice: false,
     createdById: "user-1",
     createdByName: "Test User",
     ...overrides,

@@ -6,10 +6,15 @@ import type { CheckoutCartItem } from "@/domains/checkout/types";
 export const PAYMENT_METHODS = ["DINHEIRO", "DEBITO", "CREDITO", "PIX"] as const;
 
 const MAX_QUANTITY_PER_LINE = 999;
+const MAX_CUSTOM_UNIT_PRICE = 100000;
 
 /**
  * The browser is not trusted with quantities: a negative or fractional quantity would add
  * stock back and subtract revenue inside the checkout transaction.
+ *
+ * `unitPrice`, when present, is the cashier-typed value for a custom-price (no-stock) product —
+ * it's only ever honored downstream after the server's own catalogue confirms that product is
+ * flagged custom-price; for every other product it is simply ignored.
  */
 export function normalizeCartItems(raw: unknown): CheckoutCartItem[] {
   if (!Array.isArray(raw) || raw.length === 0) {
@@ -29,7 +34,16 @@ export function normalizeCartItems(raw: unknown): CheckoutCartItem[] {
       throw new HttpError(400, "Quantidade inválida na venda");
     }
 
-    return { productId, size, quantity };
+    if (item.unitPrice === undefined) {
+      return { productId, size, quantity };
+    }
+
+    const unitPrice = Number(item.unitPrice);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0 || unitPrice > MAX_CUSTOM_UNIT_PRICE) {
+      throw new HttpError(400, "Valor inválido na venda");
+    }
+
+    return { productId, size, quantity, unitPrice: roundMoney(unitPrice) };
   });
 }
 

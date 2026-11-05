@@ -23,6 +23,8 @@ export interface Product {
   salePrice: number;
   stock: number;
   sizes: ProductSize[];
+  /** No stock, no sizes: the sale price is typed by the cashier when it's added to the cart. */
+  isCustomPrice?: boolean;
   image?: string;
   imageSource?: ProductImageSource;
   createdAt: Date;
@@ -92,6 +94,8 @@ export interface OrderItem {
   totalCost: number;
   totalRevenue: number;
   profit: number;
+  /** Copied from the product at sale time: a custom-price line, typed by the cashier. */
+  isCustomPrice?: boolean;
 }
 
 export interface PaymentMethod {
@@ -137,6 +141,8 @@ export interface Order {
   /** The store's automatic discounts and the cashier's manual one; together they make `discount`. */
   promoDiscount?: number;
   manualDiscount?: number;
+  /** Revenue from custom-price (no-stock) lines in this order, for the cash register closing report. */
+  customProductTotal?: number;
   createdAt: Date;
   items?: OrderItem[];
 }

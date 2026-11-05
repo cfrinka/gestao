@@ -38,8 +38,11 @@ export class ProductsService {
       throw new HttpError(400, "Já existe um produto com este código (SKU)");
     }
 
+    const isCustomPrice = command.isCustomPrice === true;
     const costPrice = parseFloat(String(command.costPrice));
-    const stock = parseInt(String(command.stock)) || 0;
+    // A custom-price product never carries stock: the server enforces this regardless of
+    // what the form sent, so it can never end up with a real stock count.
+    const stock = isCustomPrice ? 0 : parseInt(String(command.stock)) || 0;
     const image = command.image ? String(command.image) : undefined;
 
     // Validated before any write: a product must never be created and then have the
@@ -56,9 +59,10 @@ export class ProductsService {
       sizeType: parseSizeType(command.sizeType),
       category: command.category ? (command.category as Product["category"]) : undefined,
       costPrice,
-      salePrice: parseFloat(String(command.salePrice)),
+      salePrice: parseFloat(String(command.salePrice)) || 0,
       stock,
-      sizes: Array.isArray(command.sizes) ? (command.sizes as Product["sizes"]) : [],
+      sizes: isCustomPrice ? [] : Array.isArray(command.sizes) ? (command.sizes as Product["sizes"]) : [],
+      isCustomPrice,
       image,
       imageSource: (command.imageSource as ProductImageSource) || (image ? "random" : "none"),
     });
@@ -95,18 +99,22 @@ export class ProductsService {
       }
     }
 
+    const isCustomPrice = command.isCustomPrice === undefined ? existing.isCustomPrice === true : command.isCustomPrice === true;
     const nextCostPrice = command.costPrice !== undefined ? parseFloat(String(command.costPrice)) : existing.costPrice;
-    const nextStock = command.stock !== undefined ? parseInt(String(command.stock)) : existing.stock;
+    const nextStock = isCustomPrice ? 0 : command.stock !== undefined ? parseInt(String(command.stock)) : existing.stock;
     const nextName = command.name ? String(command.name) : existing.name;
 
     // A form that says what stock it loaded gets its change applied as a difference over the
     // current stock (see stock-edit.ts); the purchase entry is the pieces it added. Without
     // that information (an older open tab) the form's numbers replace the stock as before.
-    const stockEdit = parseStockEdit(command);
+    // A custom-price product never carries stock, so it never goes through this at all.
+    const stockEdit = isCustomPrice ? undefined : parseStockEdit(command);
     const requestedDelta = stockEdit ? requestedStockDelta(stockEdit) : 0;
-    const stockIncrease = stockEdit
-      ? Math.max(0, requestedDelta)
-      : Math.max(0, (nextStock || 0) - (existing.stock || 0));
+    const stockIncrease = isCustomPrice
+      ? 0
+      : stockEdit
+        ? Math.max(0, requestedDelta)
+        : Math.max(0, (nextStock || 0) - (existing.stock || 0));
 
     // Validated before any write, for the same reason as in create(): the product must
     // never be updated and then have the request fail on a missing idempotency key,
@@ -126,9 +134,10 @@ export class ProductsService {
           ? ((command.category as Product["category"]) || undefined)
           : existing.category,
       costPrice: nextCostPrice,
-      salePrice: command.salePrice !== undefined ? parseFloat(String(command.salePrice)) : existing.salePrice,
+      salePrice: command.salePrice !== undefined ? parseFloat(String(command.salePrice)) || 0 : existing.salePrice,
       stock: nextStock,
-      sizes: command.sizes !== undefined ? (command.sizes as Product["sizes"]) : existing.sizes,
+      sizes: isCustomPrice ? [] : command.sizes !== undefined ? (command.sizes as Product["sizes"]) : existing.sizes,
+      isCustomPrice,
       image: command.image !== undefined ? (command.image as string) : existing.image,
       imageSource: command.imageSource !== undefined ? (command.imageSource as ProductImageSource) : existing.imageSource,
     }, stockEdit
