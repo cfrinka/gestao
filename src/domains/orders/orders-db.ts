@@ -101,17 +101,21 @@ export async function cancelOrder(input: {
       ...itemDoc.data(),
     })) as OrderItem[];
 
-    // Get product documents for stock restoration
+    // Get product documents for stock restoration — read the distinct products in parallel
+    // rather than one awaited tx.get() per line item.
     const productRefs = new Map<string, FirebaseFirestore.DocumentReference>();
-    const productData = new Map<string, any>();
     for (const item of items) {
       if (!productRefs.has(item.productId)) {
-        const productRef = adminDb.collection("products").doc(item.productId);
-        productRefs.set(item.productId, productRef);
-        const productSnap = await tx.get(productRef);
-        if (productSnap.exists) {
-          productData.set(item.productId, productSnap.data());
-        }
+        productRefs.set(item.productId, adminDb.collection("products").doc(item.productId));
+      }
+    }
+    const productData = new Map<string, any>();
+    const productSnaps = await Promise.all(
+      Array.from(productRefs.values()).map((ref) => tx.get(ref))
+    );
+    for (const productSnap of productSnaps) {
+      if (productSnap.exists) {
+        productData.set(productSnap.id, productSnap.data());
       }
     }
 
