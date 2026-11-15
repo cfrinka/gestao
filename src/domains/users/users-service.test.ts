@@ -46,7 +46,7 @@ class FakeUsersRepository implements UsersRepository {
     return this.users.get(id) || null;
   }
 
-  async createAuthUser(input: { email: string; password: string; name: string }): Promise<{ uid: string }> {
+  async createAuthUser(_input: { email: string; password: string; name: string }): Promise<{ uid: string }> {
     if (this.failCreateAuthUser) throw new Error("auth create failed");
     const uid = `auth-${this.authUsers.size + 1}`;
     this.authUsers.add(uid);

@@ -3,17 +3,17 @@ import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { ProductsService } from "@/domains/products/products-service";
 import { FirestoreProductsRepository } from "@/domains/products/firestore-products-repository";
 
+type RouteContext = { params: Promise<{ id: string }> };
+
 export const dynamic = "force-dynamic";
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async () => {
       const service = new ProductsService(new FirestoreProductsRepository());
-      const product = await service.get(params.id);
+      const product = await service.get(id);
 
       if (!product) {
         return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 });
@@ -25,17 +25,15 @@ export async function GET(
   );
 }
 
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async ({ request: authorizedRequest, user }) => {
       const body = await authorizedRequest.json();
       const service = new ProductsService(new FirestoreProductsRepository());
 
-      const updatedProduct = await service.update(params.id, {
+      const updatedProduct = await service.update(id, {
         ...body,
         createdById: user.uid,
         createdByName: user.email || user.uid,
@@ -47,15 +45,13 @@ export async function PUT(
   );
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, { params }: RouteContext) {
+  const { id } = await params;
   return withAuthorizedRoute(
     request,
     async () => {
       const service = new ProductsService(new FirestoreProductsRepository());
-      await service.remove(params.id);
+      await service.remove(id);
       return NextResponse.json({ message: "Product deleted" });
     },
     { roles: ["ADMIN"], operationName: "Product DELETE" }
