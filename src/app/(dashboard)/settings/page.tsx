@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
 import { apiGet, apiPut, apiPost } from "@/lib/api-client";
+import { imageFileToLogoDataUrl } from "@/lib/store-logo-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
-import { Save, Search, X, AlertTriangle } from "lucide-react";
+import { Save, Search, X, AlertTriangle, ImageIcon, Upload } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { discountSettingsSchema } from "@/domains/settings/discount-settings-schema";
@@ -198,12 +199,15 @@ interface StoreSettings {
   fiadoMaxDays: number;
   registerDifferenceLimit: number;
   discounts: DiscountSettings;
+  logoDataUrl: string;
 }
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [processingLogo, setProcessingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const [billSaving, setBillSaving] = useState(false);
   const [settings, setSettings] = useState<StoreSettings>({
     storeName: "",
@@ -229,6 +233,7 @@ export default function SettingsPage() {
       productDiscountsEnabled: false,
       productDiscounts: [],
     },
+    logoDataUrl: "",
   });
 
   const [billKind, setBillKind] = useState<"ONE_TIME" | "FIXED" | "INSTALLMENTS">("ONE_TIME");
@@ -269,6 +274,7 @@ export default function SettingsPage() {
           productDiscountsEnabled: data.discounts?.productDiscountsEnabled ?? false,
           productDiscounts: data.discounts?.productDiscounts ?? [],
         },
+        logoDataUrl: typeof data.logoDataUrl === "string" ? data.logoDataUrl : "",
       });
     } catch {
       toast({ title: "Erro ao carregar configurações", variant: "destructive" });
@@ -343,6 +349,27 @@ export default function SettingsPage() {
     }
   };
 
+  const handleLogoFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // permite escolher o mesmo arquivo de novo
+    if (!file) return;
+
+    setProcessingLogo(true);
+    try {
+      const logoDataUrl = await imageFileToLogoDataUrl(file);
+      setSettings((current) => ({ ...current, logoDataUrl }));
+      toast({ title: "Logo carregada", description: "Clique em Salvar configurações para aplicar." });
+    } catch (error) {
+      toast({
+        title: "Não foi possível usar essa imagem",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingLogo(false);
+    }
+  };
+
   const handleSave = async () => {
     const validation = discountSettingsSchema.safeParse(settings.discounts);
     if (!validation.success) {
@@ -414,10 +441,62 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle>Dados da loja</CardTitle>
             <CardDescription>
-              Informações que aparecem no cabeçalho do cupom
+              Informações que aparecem no cupom e nos relatórios exportados
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Logo</Label>
+              <div className="flex items-center gap-4">
+                <div className="flex h-20 w-36 shrink-0 items-center justify-center border border-rule bg-white p-2">
+                  {settings.logoDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={settings.logoDataUrl}
+                      alt="Logo da loja"
+                      className="max-h-full max-w-full object-contain"
+                    />
+                  ) : (
+                    <ImageIcon className="h-6 w-6 text-ink-3" aria-hidden="true" />
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={processingLogo}
+                    >
+                      <Upload className="h-4 w-4" aria-hidden="true" />
+                      {processingLogo ? "Processando…" : settings.logoDataUrl ? "Trocar logo" : "Enviar logo"}
+                    </Button>
+                    {settings.logoDataUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSettings((current) => ({ ...current, logoDataUrl: "" }))}
+                        disabled={processingLogo}
+                      >
+                        Remover
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-ink-3">
+                    PNG, JPG ou WebP. Aparece no cabeçalho da planilha de vendas exportada.
+                  </p>
+                </div>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handleLogoFile}
+                />
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="storeName">Nome da loja</Label>
               <Input

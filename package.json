@@ -25,6 +25,7 @@
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.0",
+    "exceljs": "^4.4.0",
     "firebase": "^12.19.0",
     "firebase-admin": "^13.10.0",
     "jspdf": "^4.2.1",

@@ -291,5 +291,7 @@ export interface StoreSettings {
   /** Closing a register with a cash difference above this (in reais) asks for the reason. */
   registerDifferenceLimit: number;
   discounts: DiscountSettings;
+  /** PNG da logo da loja como data URL (base64). String vazia = sem logo. */
+  logoDataUrl?: string;
   updatedAt: Date;
 }
