@@ -44,9 +44,9 @@ export class InMemoryOrdersRepository implements OrdersRepository {
 
   async getOrders(startDate?: Date, endDate?: Date): Promise<Order[]> {
     let list = Array.from(this.orders.values());
-    if (startDate && endDate) {
-      const start = startDate.getTime();
-      const end = endDate.getTime();
+    if (startDate || endDate) {
+      const start = startDate?.getTime() ?? -Infinity;
+      const end = endDate?.getTime() ?? Infinity;
       list = list.filter((order) => {
         const createdAt = toDate(order.createdAt).getTime();
         return createdAt >= start && createdAt <= end;

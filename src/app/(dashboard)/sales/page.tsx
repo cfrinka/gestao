@@ -26,6 +26,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { auth } from "@/lib/firebase";
 import { summarizeSales } from "@/domains/orders/sales-summary";
+import { localDayEnd, localDayStart, toLocalIsoDay } from "@/lib/local-date";
 import { ClipboardList, Eye, FileSpreadsheet, Banknote, CreditCard, Smartphone, Printer } from "lucide-react";
 
 interface OrderItem {
@@ -165,10 +166,14 @@ export default function SalesPage() {
       const effectiveStartDate = override?.startDate ?? startDate;
       const effectiveEndDate = override?.endDate ?? endDate;
 
+      // Manda o início/fim do dia já no fuso da loja: o servidor roda em UTC e, se recebesse
+      // só "2026-11-15", o dia dele começaria às 21h do dia 14 no horário de Brasília.
       let url = "/api/orders";
       const params = new URLSearchParams();
-      if (effectiveStartDate) params.append("startDate", effectiveStartDate);
-      if (effectiveEndDate) params.append("endDate", effectiveEndDate);
+      const rangeStart = effectiveStartDate ? localDayStart(effectiveStartDate) : null;
+      const rangeEnd = effectiveEndDate ? localDayEnd(effectiveEndDate) : null;
+      if (rangeStart) params.append("startDate", rangeStart.toISOString());
+      if (rangeEnd) params.append("endDate", rangeEnd.toISOString());
       if (params.toString()) url += `?${params.toString()}`;
 
       const data = await apiGet(url);
@@ -408,7 +413,7 @@ export default function SalesPage() {
 
   const applyPreset = (preset: "today" | "yesterday" | "this_week" | "this_month" | "last_30" | "last_90" | "all") => {
     const today = new Date();
-    const toISO = (d: Date) => d.toISOString().split("T")[0];
+    const toISO = toLocalIsoDay;
 
     if (preset === "all") {
       setStartDate("");

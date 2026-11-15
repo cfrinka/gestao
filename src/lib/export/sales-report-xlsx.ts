@@ -7,6 +7,7 @@ import {
   type SaleStatus,
   type SummarizableSale,
 } from "@/domains/orders/sales-summary";
+import { toLocalIsoDay } from "@/lib/local-date";
 
 /**
  * Relatório de vendas em .xlsx, com cabeçalho da loja (logo, nome, contato),
@@ -110,7 +111,7 @@ export function formatPeriodLabel({ startDate, endDate }: SalesReportPeriod): st
 }
 
 export function salesReportFilename(period: SalesReportPeriod, now: Date = new Date()): string {
-  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const today = toLocalIsoDay(now);
   const { startDate, endDate } = period;
   if (startDate && endDate) {
     return startDate === endDate ? `vendas_${startDate}.xlsx` : `vendas_${startDate}_a_${endDate}.xlsx`;

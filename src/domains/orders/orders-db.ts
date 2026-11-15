@@ -391,15 +391,11 @@ export async function updateOrder(input: {
 }
 
 export async function getOrders(startDate?: Date, endDate?: Date): Promise<Order[]> {
-  let query: FirebaseFirestore.Query = adminDb.collection("orders").orderBy("createdAt", "desc");
-
-  if (startDate && endDate) {
-    query = adminDb
-      .collection("orders")
-      .where("createdAt", ">=", Timestamp.fromDate(startDate))
-      .where("createdAt", "<=", Timestamp.fromDate(endDate))
-      .orderBy("createdAt", "desc");
-  }
+  // Cada limite vale sozinho: só a data inicial = "a partir de", só a final = "até".
+  let query: FirebaseFirestore.Query = adminDb.collection("orders");
+  if (startDate) query = query.where("createdAt", ">=", Timestamp.fromDate(startDate));
+  if (endDate) query = query.where("createdAt", "<=", Timestamp.fromDate(endDate));
+  query = query.orderBy("createdAt", "desc");
 
   const ordersSnapshot = await query.get();
   const orderIds = ordersSnapshot.docs.map((doc) => doc.id);
