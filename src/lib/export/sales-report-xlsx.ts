@@ -8,6 +8,7 @@ import {
   type SaleStatus,
   type SummarizableSale,
 } from "@/domains/orders/sales-summary";
+import { storeDateParts, toStoreISODate } from "@/lib/dates";
 
 /**
  * Relatório de vendas em .xlsx, com cabeçalho da loja (logo, nome, contato),
@@ -111,7 +112,7 @@ export function formatPeriodLabel({ startDate, endDate }: SalesReportPeriod): st
 }
 
 export function salesReportFilename(period: SalesReportPeriod, now: Date = new Date()): string {
-  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const today = toStoreISODate(now);
   const { startDate, endDate } = period;
   if (startDate && endDate) {
     return startDate === endDate ? `vendas_${startDate}.xlsx` : `vendas_${startDate}_a_${endDate}.xlsx`;
@@ -124,12 +125,11 @@ export function salesReportFilename(period: SalesReportPeriod, now: Date = new D
 /**
  * O Excel não tem fuso: guarda "data/hora de parede". O ExcelJS converte um Date usando
  * UTC, então uma venda às 14:30 no Brasil apareceria como 17:30. Reescrevemos os campos
- * locais como se fossem UTC para a planilha mostrar o horário da loja.
+ * no horário da loja (lib/dates) como se fossem UTC, seja qual for o fuso do navegador.
  */
 function toExcelWallClock(date: Date): Date {
-  return new Date(
-    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), date.getSeconds())
-  );
+  const p = storeDateParts(date);
+  return new Date(Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second));
 }
 
 /** Largura/altura lidas do cabeçalho IHDR de um PNG em data URL. */
@@ -257,9 +257,10 @@ export function buildSalesReportWorkbook(input: SalesReportInput): ExcelJS.Workb
   periodCell.font = { name: "Calibri", size: 10, color: { argb: COLOR.muted } };
 
   const generatedCell = merge(ROW.period, 5, LAST_COL);
+  const generated = storeDateParts(generatedAt);
   generatedCell.value =
-    `Gerado em ${pad(generatedAt.getDate())}/${pad(generatedAt.getMonth() + 1)}/${generatedAt.getFullYear()} ` +
-    `às ${pad(generatedAt.getHours())}:${pad(generatedAt.getMinutes())}`;
+    `Gerado em ${pad(generated.day)}/${pad(generated.month)}/${generated.year} ` +
+    `às ${pad(generated.hour)}:${pad(generated.minute)}`;
   generatedCell.font = { name: "Calibri", size: 10, color: { argb: COLOR.muted } };
   generatedCell.alignment = { horizontal: "right" };
 

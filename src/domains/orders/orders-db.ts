@@ -444,7 +444,7 @@ const byNewestFirst = (a: { createdAt: Date }, b: { createdAt: Date }) =>
  * items carry no date (very old sales) fall back to the id lookup.
  */
 export async function getOrders(startDate?: Date, endDate?: Date): Promise<Order[]> {
-  if (!startDate || !endDate) {
+  if (!startDate && !endDate) {
     const snapshot = await adminDb.collection("orders").orderBy("createdAt", "desc").get();
     const itemsByOrderId = await getItemsForOrders(snapshot.docs.map((doc) => doc.id));
     return snapshot.docs.map((orderDoc) => ({
@@ -454,12 +454,10 @@ export async function getOrders(startDate?: Date, endDate?: Date): Promise<Order
     }));
   }
 
+  // Each bound applies on its own: only a start date = "from", only an end date = "until".
+  // (Before, a range with one end set fell through to every sale ever made.)
   const [ordersSnapshot, itemsByOrderId] = await Promise.all([
-    adminDb
-      .collection("orders")
-      .where("createdAt", ">=", Timestamp.fromDate(startDate))
-      .where("createdAt", "<=", Timestamp.fromDate(endDate))
-      .get(),
+    withCreatedAtRange(adminDb.collection("orders"), startDate, endDate).get(),
     getItemsInRange(startDate, endDate),
   ]);
 
@@ -501,11 +499,8 @@ function mapFinancialToOrderPaymentMethod(method?: FinancialMovementPaymentMetho
  */
 export async function getFiadoPaymentEntries(startDate?: Date, endDate?: Date): Promise<FiadoPaymentListEntry[]> {
   let query: FirebaseFirestore.Query = adminDb.collection("financialMovements");
-  if (startDate && endDate) {
-    query = query
-      .where("occurredAt", ">=", Timestamp.fromDate(startDate))
-      .where("occurredAt", "<=", Timestamp.fromDate(endDate));
-  }
+  if (startDate) query = query.where("occurredAt", ">=", Timestamp.fromDate(startDate));
+  if (endDate) query = query.where("occurredAt", "<=", Timestamp.fromDate(endDate));
   const snapshot = await query.get();
 
   type FiadoPaymentMovement = {
@@ -542,13 +537,17 @@ export async function getFiadoPaymentEntries(startDate?: Date, endDate?: Date): 
     });
 }
 
+/** `createdAt` between the bounds that are set (either may be missing). */
+function withCreatedAtRange(query: FirebaseFirestore.Query, startDate?: Date, endDate?: Date): FirebaseFirestore.Query {
+  let ranged = query;
+  if (startDate) ranged = ranged.where("createdAt", ">=", Timestamp.fromDate(startDate));
+  if (endDate) ranged = ranged.where("createdAt", "<=", Timestamp.fromDate(endDate));
+  return ranged;
+}
+
 /** Items written in a period (checkout stamps each item with its sale's time). */
-async function getItemsInRange(startDate: Date, endDate: Date): Promise<Map<string, OrderItem[]>> {
-  const snapshot = await adminDb
-    .collection("orderItems")
-    .where("createdAt", ">=", Timestamp.fromDate(startDate))
-    .where("createdAt", "<=", Timestamp.fromDate(endDate))
-    .get();
+async function getItemsInRange(startDate?: Date, endDate?: Date): Promise<Map<string, OrderItem[]>> {
+  const snapshot = await withCreatedAtRange(adminDb.collection("orderItems"), startDate, endDate).get();
   const itemsByOrderId = new Map<string, OrderItem[]>();
   for (const itemDoc of snapshot.docs) {
     const item = { id: itemDoc.id, ...itemDoc.data() } as OrderItem;

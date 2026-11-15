@@ -23,10 +23,10 @@ function pngHeaderDataUrl(width: number, height: number): string {
   return `data:image/png;base64,${bytes.toString("base64")}`;
 }
 
-// Datas locais (sem "Z"): o relatório tem que mostrar o horário da loja.
+// Instantes no horário de Brasília: o relatório mostra o horário da loja, seja qual for o fuso da máquina.
 const sales: SalesReportSale[] = [
   {
-    createdAt: new Date(2026, 10, 12, 18, 5).toISOString(),
+    createdAt: new Date("2026-11-12T18:05:00-03:00").toISOString(),
     totalAmount: 150,
     items: [{ quantity: 1 }],
     isPaidLater: true,
@@ -35,7 +35,7 @@ const sales: SalesReportSale[] = [
     clientName: "Maria Souza",
   },
   {
-    createdAt: new Date(2026, 10, 10, 9, 30).toISOString(),
+    createdAt: new Date("2026-11-10T09:30:00-03:00").toISOString(),
     totalAmount: 249.9,
     items: [{ quantity: 2 }, { quantity: 1 }],
     payments: [
@@ -44,7 +44,7 @@ const sales: SalesReportSale[] = [
     ],
   },
   {
-    createdAt: new Date(2026, 10, 11, 14, 0).toISOString(),
+    createdAt: new Date("2026-11-11T14:00:00-03:00").toISOString(),
     totalAmount: 80,
     items: [{ quantity: 1 }],
     payments: [{ method: "DEBITO", amount: 80 }],
@@ -56,7 +56,7 @@ const baseInput: SalesReportInput = {
   sales,
   store: { storeName: "Boutique & Cia", address: "Rua A, 10", phone: "(11) 9999-0000", cnpj: "00.000.000/0001-00" },
   period: { startDate: "2026-11-01", endDate: "2026-11-15" },
-  generatedAt: new Date(2026, 10, 15, 16, 42),
+  generatedAt: new Date("2026-11-15T16:42:00-03:00"),
 };
 
 async function roundTrip(input: SalesReportInput) {
@@ -153,7 +153,7 @@ describe("buildSalesReportWorkbook", () => {
   it("lists fiado receipts in their own section, outside the sales table and its total", async () => {
     const receipts: SalesReportSale[] = [
       {
-        createdAt: new Date(2026, 10, 13, 11, 15).toISOString(),
+        createdAt: new Date("2026-11-13T11:15:00-03:00").toISOString(),
         totalAmount: 50,
         entryType: "fiado_payment",
         items: [],
@@ -161,7 +161,7 @@ describe("buildSalesReportWorkbook", () => {
         clientName: "Maria Souza",
       },
       {
-        createdAt: new Date(2026, 10, 14, 16, 0).toISOString(),
+        createdAt: new Date("2026-11-14T16:00:00-03:00").toISOString(),
         totalAmount: 30,
         entryType: "fiado_payment",
         items: [],
@@ -221,7 +221,7 @@ describe("formatPeriodLabel / salesReportFilename", () => {
   });
 
   it("names the file after the period", () => {
-    const now = new Date(2026, 10, 15, 23, 30);
+    const now = new Date("2026-11-15T23:30:00-03:00");
     expect(salesReportFilename({ startDate: "2026-11-01", endDate: "2026-11-15" }, now)).toBe("vendas_2026-11-01_a_2026-11-15.xlsx");
     expect(salesReportFilename({ startDate: "2026-11-15", endDate: "2026-11-15" }, now)).toBe("vendas_2026-11-15.xlsx");
     expect(salesReportFilename({ startDate: "2026-11-01" }, now)).toBe("vendas_desde_2026-11-01.xlsx");
