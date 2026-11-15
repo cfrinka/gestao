@@ -1,6 +1,6 @@
 # Gestão Loja
 
-Sistema de gestão para loja de roupas (PDV, estoque, financeiro e clientes), construído com Next.js 14 (App Router), Firebase (Auth + Firestore) e Shadcn UI.
+Sistema de gestão para loja de roupas (PDV, estoque, financeiro e clientes), construído com Next.js 16 (App Router), React 19, Firebase (Auth + Firestore) e Shadcn UI.
 
 ## Funcionalidades
 
@@ -66,12 +66,12 @@ Mecanismos compartilhados entre domínios:
 
 ## Tecnologias
 
-- **Framework**: Next.js 14 (App Router) + React 18 + TypeScript
+- **Framework**: Next.js 16 (App Router, Turbopack) + React 19 + TypeScript 5.9
 - **Banco de Dados**: Firebase Firestore (via `firebase-admin` no servidor)
 - **Autenticação**: Firebase Authentication (Email/Password)
-- **UI**: Shadcn UI + Tailwind CSS + Lucide React
-- **Validação**: Zod
-- **Exportação**: jsPDF + jspdf-autotable, JsBarcode
+- **UI**: Shadcn UI + Tailwind CSS 3 + Lucide React
+- **Validação**: Zod 4
+- **Exportação**: jsPDF + jspdf-autotable; JsBarcode (carregado via CDN na tela de códigos de barras)
 - **Testes**: Vitest (testes unitários de service contra repositório fake em memória)
 
 ## Instalação
@@ -104,7 +104,10 @@ Variáveis usadas:
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase Client SDK (browser) |
 | `FIREBASE_PROJECT_ID` | Firebase Admin SDK (servidor) |
 | `FIREBASE_CLIENT_EMAIL` | Firebase Admin SDK (servidor) |
-| `FIREBASE_PRIVATE_KEY` | Firebase Admin SDK (servidor) |
+| `FIREBASE_PRIVATE_KEY` | Firebase Admin SDK (servidor) — PEM com `
+` escapado |
+| `FIREBASE_PRIVATE_KEY_BASE64` | (alternativa) a chave privada em base64; tem precedência sobre `FIREBASE_PRIVATE_KEY` quando definida |
+| `FIREBASE_STORAGE_BUCKET` | Bucket usado pelo upload de imagens de produto (rota server-side). Normalmente igual a `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` |
 | `FINANCIAL_AUTOMATION_SECRET` | (opcional) segredo para chamar `/api/automation/financial-health` sem login, a partir de um cron externo |
 
 ### 3. Instale as dependências
@@ -129,15 +132,31 @@ npm run build    # build de produção
 npm run start    # servidor de produção
 npm run lint     # eslint
 npm test         # vitest run
+npm run coverage # vitest com relatório de cobertura (limite: 80%)
 ```
 
-## Deploy das regras do Firestore
+## Deploy das regras e índices do Firestore
 
-O projeto Firebase (`loja-7cb7b`) já está configurado em `.firebaserc`/`firebase.json`. Para publicar `firestore.rules`:
+O projeto Firebase já está configurado em `.firebaserc`/`firebase.json` (rules, indexes e storage rules).
+Publique tudo antes do primeiro deploy da aplicação — os índices compostos em
+`firestore.indexes.json` são obrigatórios (pagamento de fiado, cancelamento/edição de venda,
+trocas e relatórios falham sem eles):
 
 ```bash
-npx firebase deploy --only firestore:rules
+npx firebase deploy --only firestore:rules,firestore:indexes,storage
 ```
+
+### Atualizações de dependência pendentes
+
+- **firebase-admin 13 → 14**: a 14 exige Node 22+, e a produção ainda roda `nodejs_20`
+  (`nixpacks.toml`). O Node 20 saiu de suporte em abril de 2026; subir o runtime para 22 e
+  então o firebase-admin para 14 (que fecha os avisos moderados restantes do `npm audit`).
+- **Tailwind CSS 3 → 4**: adiado. A v4 troca o modelo de configuração (tema em CSS via
+  `@theme`), renomeia utilitários de `shadow`/`ring`/`radius` e exige trocar
+  `tailwindcss-animate` por `tw-animate-css` — mudanças com risco visual em todas as telas que
+  precisam de revisão manual da UI. A 3.4.x é mantida.
+- **TypeScript 7 / ESLint 10**: adiados até `typescript-eslint` e `eslint-plugin-react`
+  (empacotado no `eslint-config-next`) suportarem essas versões.
 
 ## Estrutura do Projeto
 
