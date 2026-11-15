@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStoreSettings, updateStoreSettings } from "@/domains/settings/settings-facade";
 import { discountSettingsSchema } from "@/domains/settings/discount-settings-schema";
+import { parseStoreLogo } from "@/domains/settings/store-logo-schema";
 import { withAuthorizedRoute } from "@/lib/api/authorized-route";
 import { HttpError } from "@/lib/api/http-errors";
 
@@ -31,6 +32,13 @@ export async function PUT(request: NextRequest) {
         }
       }
 
+      let logoDataUrl: string | undefined;
+      if (body.logoDataUrl !== undefined) {
+        const logo = parseStoreLogo(body.logoDataUrl);
+        if (!logo.ok) throw new HttpError(400, logo.error);
+        logoDataUrl = logo.value;
+      }
+
       const settings = await updateStoreSettings({
         storeName,
         address,
@@ -39,6 +47,7 @@ export async function PUT(request: NextRequest) {
         footerMessage,
         exchangeDays,
         discounts,
+        ...(logoDataUrl !== undefined ? { logoDataUrl } : {}),
       });
 
       return NextResponse.json(settings);

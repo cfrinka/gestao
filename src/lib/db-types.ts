@@ -258,5 +258,7 @@ export interface StoreSettings {
   footerMessage: string;
   exchangeDays: number;
   discounts: DiscountSettings;
+  /** PNG da logo da loja como data URL (base64). String vazia = sem logo. */
+  logoDataUrl?: string;
   updatedAt: Date;
 }

@@ -71,7 +71,7 @@ Mecanismos compartilhados entre domínios:
 - **Autenticação**: Firebase Authentication (Email/Password)
 - **UI**: Shadcn UI + Tailwind CSS 3 + Lucide React
 - **Validação**: Zod 4
-- **Exportação**: jsPDF + jspdf-autotable; JsBarcode (carregado via CDN na tela de códigos de barras)
+- **Exportação**: jsPDF + jspdf-autotable; ExcelJS (planilha de vendas, carregado sob demanda); JsBarcode (carregado via CDN na tela de códigos de barras)
 - **Testes**: Vitest (testes unitários de service contra repositório fake em memória)
 
 ### Atualizações de dependência pendentes

@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS: Omit<StoreSettings, "id" | "updatedAt"> = {
   footerMessage: "Obrigado pela preferencia!\nVolte sempre!",
   exchangeDays: 10,
   discounts: DEFAULT_DISCOUNT_SETTINGS,
+  logoDataUrl: "",
 };
 
 export async function getStoreSettings(): Promise<StoreSettings> {

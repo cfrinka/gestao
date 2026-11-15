@@ -17,6 +17,7 @@ export function applyStoreSettingsUpdate(
     ...(update.footerMessage !== undefined ? { footerMessage: update.footerMessage } : {}),
     ...(update.exchangeDays !== undefined ? { exchangeDays: update.exchangeDays } : {}),
     ...(update.discounts !== undefined ? { discounts: update.discounts } : {}),
+    ...(update.logoDataUrl !== undefined ? { logoDataUrl: update.logoDataUrl } : {}),
     updatedAt: new Date(),
   };
 }

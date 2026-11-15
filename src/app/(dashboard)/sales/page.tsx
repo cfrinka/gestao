@@ -25,7 +25,8 @@ import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { auth } from "@/lib/firebase";
-import { ClipboardList, Eye, Download, Banknote, CreditCard, Smartphone, Printer } from "lucide-react";
+import { summarizeSales } from "@/domains/orders/sales-summary";
+import { ClipboardList, Eye, FileSpreadsheet, Banknote, CreditCard, Smartphone, Printer } from "lucide-react";
 
 interface OrderItem {
   id: string;
@@ -47,6 +48,7 @@ interface StoreSettings {
   cnpj: string;
   footerMessage: string;
   exchangeDays: number;
+  logoDataUrl: string;
 }
 
 interface PaymentMethod {
@@ -102,6 +104,12 @@ export default function SalesPage() {
   });
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  // Período da lista carregada de fato (os campos de data só valem depois de "Filtrar").
+  const [appliedRange, setAppliedRange] = useState<{ startDate: string; endDate: string }>({
+    startDate: "",
+    endDate: "",
+  });
+  const [exporting, setExporting] = useState(false);
   const [storeSettings, setStoreSettings] = useState<StoreSettings>({
     storeName: "Gestão Loja",
     address: "",
@@ -109,19 +117,14 @@ export default function SalesPage() {
     cnpj: "",
     footerMessage: "Obrigado pela preferência!\nVolte sempre!",
     exchangeDays: 10,
+    logoDataUrl: "",
   });
 
-  const periodTotalSold = orders.reduce((sum, o) => {
-    if (o.isCancelled) return sum;
-    return sum + (typeof o.totalAmount === "number" ? o.totalAmount : 0);
-  }, 0);
-
-  const periodFiadoOutstanding = orders.reduce((sum, o) => {
-    if (o.isCancelled) return sum;
-    if (!o.isPaidLater) return sum;
-    if (typeof o.remainingAmount === "number") return sum + o.remainingAmount;
-    return sum + (o.paidAt ? 0 : (typeof o.totalAmount === "number" ? o.totalAmount : 0));
-  }, 0);
+  const {
+    totalSold: periodTotalSold,
+    fiadoOutstanding: periodFiadoOutstanding,
+    totalReceived: periodReceived,
+  } = summarizeSales(orders);
 
   const canEditSales = userData?.role === "ADMIN";
 
@@ -156,14 +159,6 @@ export default function SalesPage() {
     setCancelPassword("");
   }, [selectedOrder]);
 
-  const periodReceived = orders.reduce((sum, o) => {
-    if (o.isCancelled) return sum;
-    const total = typeof o.totalAmount === "number" ? o.totalAmount : 0;
-    if (!o.isPaidLater) return sum + total;
-    if (typeof o.amountPaid === "number") return sum + o.amountPaid;
-    return sum + (o.paidAt ? total : 0);
-  }, 0);
-
   const fetchOrders = async (override?: { startDate?: string; endDate?: string }) => {
     setLoading(true);
     try {
@@ -182,6 +177,7 @@ export default function SalesPage() {
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       setOrders(normalizedOrders);
+      setAppliedRange({ startDate: effectiveStartDate, endDate: effectiveEndDate });
     } catch {
       toast({ title: "Erro ao carregar vendas", variant: "destructive" });
     } finally {
@@ -209,6 +205,7 @@ export default function SalesPage() {
         cnpj: data.cnpj || "",
         footerMessage: data.footerMessage || "Obrigado pela preferência!\nVolte sempre!",
         exchangeDays: Number.isFinite(data.exchangeDays) ? data.exchangeDays : 10,
+        logoDataUrl: typeof data.logoDataUrl === "string" ? data.logoDataUrl : "",
       });
     } catch {
       // keep default settings
@@ -472,22 +469,26 @@ export default function SalesPage() {
     }
   };
 
-  const exportCSV = () => {
-    const headers = ["ID", "Data", "Total", "Itens"];
-    const rows = orders.map((order) => [
-      order.id,
-      new Date(order.createdAt).toLocaleString("pt-BR"),
-      order.totalAmount.toFixed(2),
-      order.items.length.toString(),
-    ]);
-
-    const csv = [headers, ...rows].map((row) => row.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `vendas-${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
+  const exportExcel = async () => {
+    if (orders.length === 0) return;
+    setExporting(true);
+    try {
+      // Carregado só no clique: o gerador de planilha pesa ~1 MB.
+      const { downloadSalesReportXlsx } = await import("@/lib/export/sales-report-xlsx");
+      await downloadSalesReportXlsx({
+        sales: orders,
+        store: storeSettings,
+        period: appliedRange,
+      });
+    } catch (error) {
+      toast({
+        title: "Erro ao gerar planilha",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleSaveSaleEdit = async () => {
@@ -587,9 +588,9 @@ export default function SalesPage() {
           <h1 className="text-3xl font-bold text-gray-900">Vendas</h1>
           <p className="text-gray-500">Histórico de vendas realizadas</p>
         </div>
-        <Button variant="outline" onClick={exportCSV}>
-          <Download className="h-4 w-4 mr-2" />
-          Exportar CSV
+        <Button variant="outline" onClick={exportExcel} disabled={loading || exporting || orders.length === 0}>
+          <FileSpreadsheet className="h-4 w-4 mr-2" />
+          {exporting ? "Gerando..." : "Exportar Excel"}
         </Button>
       </div>
 
