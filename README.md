@@ -148,9 +148,11 @@ npx firebase deploy --only firestore:rules,firestore:indexes,storage
 
 ### Atualizações de dependência pendentes
 
-- **firebase-admin 13 → 14**: a 14 exige Node 22+, e a produção ainda roda `nodejs_20`
-  (`nixpacks.toml`). O Node 20 saiu de suporte em abril de 2026; subir o runtime para 22 e
-  então o firebase-admin para 14 (que fecha os avisos moderados restantes do `npm audit`).
+- **firebase-admin 13 → 14**: a 14 exige Node 22+. A produção roda na Vercel, onde a versão
+  do Node é a da configuração do projeto (Settings → Build and Deployment → Node.js Version);
+  o `nixpacks.toml` ainda fixa `nodejs_20` para quem fizer deploy por Nixpacks. Confirme Node
+  22+ nos dois antes de subir o firebase-admin para 14 (que fecha os avisos moderados
+  restantes do `npm audit`). O Node 20 saiu de suporte em abril de 2026.
 - **Tailwind CSS 3 → 4**: adiado. A v4 troca o modelo de configuração (tema em CSS via
   `@theme`), renomeia utilitários de `shadow`/`ring`/`radius` e exige trocar
   `tailwindcss-animate` por `tw-animate-css` — mudanças com risco visual em todas as telas que
