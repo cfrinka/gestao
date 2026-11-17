@@ -9,6 +9,6 @@ export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async () => NextResponse.json(await getStagnantStockReport()),
-    { roles: ["ADMIN"], operationName: "Stagnant stock report GET", cache: { scope: "shared" } }
+    { roles: ["ADMIN", "AUDITOR"], operationName: "Stagnant stock report GET", cache: { scope: "shared" } }
   );
 }

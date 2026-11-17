@@ -12,6 +12,6 @@ export async function GET(request: NextRequest) {
       const days = Number(new URL(authorizedRequest.url).searchParams.get("days") || 30);
       return NextResponse.json(await getRestockReport(days));
     },
-    { roles: ["ADMIN"], operationName: "Restock report GET", cache: { scope: "shared" } }
+    { roles: ["ADMIN", "AUDITOR"], operationName: "Restock report GET", cache: { scope: "shared" } }
   );
 }

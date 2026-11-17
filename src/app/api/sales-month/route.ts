@@ -133,6 +133,6 @@ export async function GET(request: NextRequest) {
         days: sortedDays,
       });
     },
-    { roles: ["ADMIN"], operationName: "Sales Month GET", cache: { scope: "shared" } }
+    { roles: ["ADMIN", "AUDITOR"], operationName: "Sales Month GET", cache: { scope: "shared" } }
   );
 }

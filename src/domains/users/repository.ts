@@ -10,8 +10,8 @@ export interface UsersRepository {
   disableAuthUser(uid: string): Promise<void>;
   enableAuthUser(uid: string): Promise<void>;
 
-  createUserRecord(input: { id: string; email: string; name: string; role: "ADMIN" | "CASHIER" }): Promise<UserRecord>;
-  updateUserRole(id: string, role: "ADMIN" | "CASHIER"): Promise<UserRecord>;
+  createUserRecord(input: { id: string; email: string; name: string; role: "ADMIN" | "CASHIER" | "AUDITOR" }): Promise<UserRecord>;
+  updateUserRole(id: string, role: "ADMIN" | "CASHIER" | "AUDITOR"): Promise<UserRecord>;
   deactivateUserRecord(id: string, actorId: string): Promise<void>;
   reactivateUserRecord(id: string): Promise<void>;
 

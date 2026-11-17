@@ -142,6 +142,8 @@ export default function UsersPage() {
         return "Administrador";
       case "CASHIER":
         return "Caixa";
+      case "AUDITOR":
+        return "Auditoria";
       default:
         return role;
     }
@@ -248,6 +250,7 @@ export default function UsersPage() {
                   <SelectContent>
                     <SelectItem value="ADMIN">Administrador</SelectItem>
                     <SelectItem value="CASHIER">Caixa</SelectItem>
+                    <SelectItem value="AUDITOR">Auditoria</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -316,6 +319,7 @@ export default function UsersPage() {
                         <SelectContent>
                           <SelectItem value="ADMIN">Administrador</SelectItem>
                           <SelectItem value="CASHIER">Caixa</SelectItem>
+                          <SelectItem value="AUDITOR">Auditoria</SelectItem>
                         </SelectContent>
                       </Select>
                     </TableCell>

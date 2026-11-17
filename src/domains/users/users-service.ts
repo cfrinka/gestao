@@ -14,8 +14,8 @@ function isAdminRole(role: string): boolean {
   return role === "ADMIN" || role === "OWNER";
 }
 
-function isValidRole(role: string): role is "ADMIN" | "CASHIER" {
-  return role === "ADMIN" || role === "CASHIER";
+function isValidRole(role: string): role is "ADMIN" | "CASHIER" | "AUDITOR" {
+  return role === "ADMIN" || role === "CASHIER" || role === "AUDITOR";
 }
 
 export class UsersService {

@@ -44,7 +44,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ access: "inactive" });
   }
 
-  const role = record.role === "OWNER" ? "ADMIN" : record.role === "ADMIN" ? "ADMIN" : "CASHIER";
+  const role =
+    record.role === "OWNER" || record.role === "ADMIN"
+      ? "ADMIN"
+      : record.role === "AUDITOR"
+        ? "AUDITOR"
+        : "CASHIER";
   return NextResponse.json({
     access: "ok",
     user: { id: uid, email, name: String(record.name || email || uid), role },

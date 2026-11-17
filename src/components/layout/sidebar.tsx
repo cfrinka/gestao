@@ -102,7 +102,9 @@ export function Sidebar({ mobile = false, onNavigate }: SidebarProps) {
             <p className="truncate text-sm font-semibold text-ink" title={userData?.email || undefined}>
               {userData?.name || "Usuário"}
             </p>
-            <p className="truncate text-xs text-ink-3">{userData?.role === "ADMIN" ? "Administrador" : "Caixa"}</p>
+            <p className="truncate text-xs text-ink-3">
+              {userData?.role === "ADMIN" ? "Administrador" : userData?.role === "AUDITOR" ? "Auditoria" : "Caixa"}
+            </p>
           </div>
           <button
             type="button"

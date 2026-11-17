@@ -3,7 +3,7 @@ import { unauthorizedResponse, verifyAuth } from "@/lib/auth-api";
 import { INTERNAL_ERROR_MESSAGE, toHttpError } from "@/lib/api/http-errors";
 import { bumpDataVersion, cached } from "@/lib/server-cache";
 
-type Role = "ADMIN" | "CASHIER" | "SYSTEM";
+type Role = "ADMIN" | "CASHIER" | "AUDITOR" | "SYSTEM";
 
 type AuthorizedUser = {
   uid: string;
@@ -74,6 +74,12 @@ export async function withAuthorizedRoute(
   try {
     const user = options?.authorize ? await options.authorize(request) : await verifyAuth(request);
     if (!user) return unauthorizedResponse();
+
+    // Belt-and-suspenders: AUDITOR is a read-only role everywhere, enforced here once
+    // rather than trusted to every route's own `roles` allowlist.
+    if (user.role === "AUDITOR" && isWrite) {
+      return NextResponse.json({ error: "Perfil de auditoria tem acesso somente leitura." }, { status: 403 });
+    }
 
     if (options?.roles && !options.roles.includes(user.role as Role)) {
       return NextResponse.json({ error: "Seu perfil não tem permissão para esta ação." }, { status: 403 });

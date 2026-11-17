@@ -18,7 +18,7 @@ interface UserData {
   id: string;
   email: string;
   name: string;
-  role: "ADMIN" | "CASHIER";
+  role: "ADMIN" | "CASHIER" | "AUDITOR";
 }
 
 interface AuthContextType {

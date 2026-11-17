@@ -20,7 +20,7 @@ import {
   UserCog,
 } from "lucide-react";
 
-export type Role = "ADMIN" | "CASHIER";
+export type Role = "ADMIN" | "CASHIER" | "AUDITOR";
 
 export interface NavItem {
   name: string;
@@ -34,8 +34,10 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-const BOTH: Role[] = ["ADMIN", "CASHIER"];
-const ADMIN: Role[] = ["ADMIN"];
+// AUDITOR is read-only everywhere (enforced server-side in authorized-route.ts), so it
+// can open every screen in the menu, same as ADMIN.
+const BOTH: Role[] = ["ADMIN", "CASHIER", "AUDITOR"];
+const ADMIN: Role[] = ["ADMIN", "AUDITOR"];
 
 /** Every screen, who may open it, and where it sits in the menu. */
 export const navigation: NavGroup[] = [

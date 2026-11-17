@@ -9,6 +9,6 @@ export async function GET(request: NextRequest) {
   return withAuthorizedRoute(
     request,
     async () => NextResponse.json(await getFiadoCollectionReport()),
-    { roles: ["ADMIN"], operationName: "Fiado collection report GET", cache: { scope: "shared" } }
+    { roles: ["ADMIN", "AUDITOR"], operationName: "Fiado collection report GET", cache: { scope: "shared" } }
   );
 }

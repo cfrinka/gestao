@@ -24,6 +24,6 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json(result.payload);
     },
-    { roles: ["ADMIN"], operationName: "Reports GET", cache: { scope: "role" } }
+    { roles: ["ADMIN", "AUDITOR"], operationName: "Reports GET", cache: { scope: "role" } }
   );
 }

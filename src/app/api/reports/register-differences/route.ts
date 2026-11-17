@@ -12,6 +12,6 @@ export async function GET(request: NextRequest) {
       const days = Number(new URL(authorizedRequest.url).searchParams.get("days") || 90);
       return NextResponse.json(await getRegisterDifferencesReport(days));
     },
-    { roles: ["ADMIN"], operationName: "Register differences report GET", cache: { scope: "shared" } }
+    { roles: ["ADMIN", "AUDITOR"], operationName: "Register differences report GET", cache: { scope: "shared" } }
   );
 }

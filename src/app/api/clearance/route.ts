@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       const days = Number(new URL(authorizedRequest.url).searchParams.get("days") || 30);
       return NextResponse.json(await getClearanceOverview(days));
     },
-    { roles: ["ADMIN"], operationName: "Clearance GET", cache: { scope: "shared" } }
+    { roles: ["ADMIN", "AUDITOR"], operationName: "Clearance GET", cache: { scope: "shared" } }
   );
 }
 

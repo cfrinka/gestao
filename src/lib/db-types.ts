@@ -191,7 +191,7 @@ export interface UserRecord {
   id: string;
   email: string;
   name: string;
-  role: "ADMIN" | "CASHIER";
+  role: "ADMIN" | "CASHIER" | "AUDITOR";
   isActive?: boolean;
   deactivatedAt?: Date | null;
   deactivatedBy?: string | null;

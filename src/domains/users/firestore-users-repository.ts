@@ -43,11 +43,11 @@ export class FirestoreUsersRepository implements UsersRepository {
     return enableAuthUser(uid);
   }
 
-  async createUserRecord(input: { id: string; email: string; name: string; role: "ADMIN" | "CASHIER" }): Promise<UserRecord> {
+  async createUserRecord(input: { id: string; email: string; name: string; role: "ADMIN" | "CASHIER" | "AUDITOR" }): Promise<UserRecord> {
     return createUserRecord(input);
   }
 
-  async updateUserRole(id: string, role: "ADMIN" | "CASHIER"): Promise<UserRecord> {
+  async updateUserRole(id: string, role: "ADMIN" | "CASHIER" | "AUDITOR"): Promise<UserRecord> {
     return updateUserRole(id, role);
   }
 

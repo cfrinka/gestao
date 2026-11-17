@@ -106,6 +106,6 @@ export async function GET(request: NextRequest) {
         days,
       });
     },
-    { roles: ["ADMIN"], operationName: "Stock Entries GET", cache: { scope: "shared" } }
+    { roles: ["ADMIN", "AUDITOR"], operationName: "Stock Entries GET", cache: { scope: "shared" } }
   );
 }

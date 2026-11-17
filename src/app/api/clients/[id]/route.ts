@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       const client = await service.get(id);
       return NextResponse.json(client);
     },
-    { roles: ["ADMIN", "CASHIER"], operationName: "Client GET", cache: { scope: "shared" } }
+    { roles: ["ADMIN", "CASHIER", "AUDITOR"], operationName: "Client GET", cache: { scope: "shared" } }
   );
 }
 

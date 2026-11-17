@@ -25,6 +25,6 @@ export async function GET(request: NextRequest) {
       const report = await service.getReport(user.uid, user.role);
       return NextResponse.json(report);
     },
-    { roles: ["ADMIN", "CASHIER"], operationName: "Comission GET", cache: { scope: "user" } }
+    { roles: ["ADMIN", "CASHIER", "AUDITOR"], operationName: "Comission GET", cache: { scope: "user" } }
   );
 }

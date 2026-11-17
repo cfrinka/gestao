@@ -48,7 +48,7 @@ export async function createUserRecord(input: {
   id: string;
   email: string;
   name: string;
-  role: "ADMIN" | "CASHIER";
+  role: "ADMIN" | "CASHIER" | "AUDITOR";
 }): Promise<UserRecord> {
   const now = new Date();
   const nowTs = Timestamp.fromDate(now);
@@ -66,7 +66,7 @@ export async function createUserRecord(input: {
   return { id: input.id, ...data, createdAt: now, updatedAt: now };
 }
 
-export async function updateUserRole(id: string, role: "ADMIN" | "CASHIER"): Promise<UserRecord> {
+export async function updateUserRole(id: string, role: "ADMIN" | "CASHIER" | "AUDITOR"): Promise<UserRecord> {
   const userRef = adminDb.collection("users").doc(id);
   const now = new Date();
   await userRef.update({ role, updatedAt: Timestamp.fromDate(now) });
